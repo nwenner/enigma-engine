@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-d2bg text-amber-100 min-h-screen;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-d2bg;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-d2bg-border rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-d2gold-dark;
+}
