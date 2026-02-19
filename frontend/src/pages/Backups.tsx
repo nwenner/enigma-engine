@@ -3,6 +3,8 @@ import { useBackups, useDeleteBackup, useRestoreBackup } from "../api/hooks";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { SnapshotResponse } from "../api/types";
 
+const fmtUtc = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z").toLocaleString();
+
 export default function Backups() {
   const { data: backups, isLoading, error, refetch } = useBackups();
   const deleteBackup = useDeleteBackup();
@@ -147,7 +149,7 @@ function SnapshotRow({ snapshot, onDelete, onRestore }: RowProps) {
               {snapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
             </span>
             <span className="text-amber-300 text-sm font-medium">
-              {new Date(snapshot.created_at).toLocaleString()}
+              {fmtUtc(snapshot.created_at)}
             </span>
             <span className="text-amber-700 text-xs">
               {snapshot.file_count} file{snapshot.file_count !== 1 ? "s" : ""}

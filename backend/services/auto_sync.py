@@ -175,7 +175,7 @@ async def run_auto_sync_watcher() -> None:
     """Runs forever as an asyncio background task."""
     prev: dict[str, bool | None] = {"pc": None, "deck": None}
 
-    log.info("auto_sync: watcher started")
+    log.warning("auto_sync: watcher started")
 
     while True:
         interval = 30  # default; overwritten below when enabled
@@ -228,7 +228,7 @@ async def run_auto_sync_watcher() -> None:
             ]:
                 if was_val is True and now_val is False:
                     # Game just closed on this machine
-                    log.info("auto_sync: D2R closed on %s", machine)
+                    log.warning("auto_sync: D2R closed on %s, triggering %s", machine, "pc_to_deck" if machine == "pc" else "deck_to_pc")
                     direction = "pc_to_deck" if machine == "pc" else "deck_to_pc"
                     dest = "deck" if machine == "pc" else "pc"
                     dest_is_windows = dest == "pc"

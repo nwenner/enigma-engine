@@ -91,19 +91,18 @@ async def get_characters(
     session: AsyncSession = Depends(get_session),
 ):
     if source == "all":
-        pc_task = asyncio.create_task(_fetch_characters(session, "pc"))
-        deck_task = asyncio.create_task(_fetch_characters(session, "deck"))
-
+        # Fetch sequentially to avoid concurrent access on the shared DB session.
+        # Partial results are returned if one machine is unreachable.
         pc_chars: list[CharacterInfo] = []
         deck_chars: list[CharacterInfo] = []
 
         try:
-            pc_chars = await pc_task
+            pc_chars = await _fetch_characters(session, "pc")
         except HTTPException:
-            pass  # Return partial results if one machine is unreachable
+            pass
 
         try:
-            deck_chars = await deck_task
+            deck_chars = await _fetch_characters(session, "deck")
         except HTTPException:
             pass
 

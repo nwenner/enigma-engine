@@ -69,6 +69,7 @@ async def run_sync(
     try:
         operation.status = "running"
         await session.commit()
+        print(f"[sync] op_id={operation.id} starting: {source_machine} → {dest_machine}", flush=True)
 
         # --- 1. Preflight: check D2R is not running ---
         def _preflight():
@@ -199,6 +200,7 @@ async def run_sync(
         operation.status = "success"
         operation.completed_at = datetime.utcnow()
         await session.commit()
+        print(f"[sync] op_id={operation.id} success: {len(upload_results)} files synced", flush=True)
 
         # --- 9. Prune old backups ---
         await _prune_backups(session, dest_machine, cfg)

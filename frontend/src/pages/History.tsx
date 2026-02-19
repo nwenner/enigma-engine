@@ -2,6 +2,10 @@ import { useState } from "react";
 import { useHistory } from "../api/hooks";
 import type { SyncOperationResponse } from "../api/types";
 
+// Backend stores naive UTC datetimes; append Z so JS parses them as UTC
+// before toLocaleString() converts to the browser's local timezone.
+const fmtUtc = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z").toLocaleString();
+
 const STATUS_STYLES: Record<string, string> = {
   success: "bg-green-900/40 text-green-300 border-green-800",
   failed: "bg-red-900/40 text-red-300 border-red-800",
@@ -94,7 +98,7 @@ function OperationRow({ operation }: { operation: SyncOperationResponse }) {
         </span>
         <span className="text-amber-300 text-sm flex-1">{dirLabel}</span>
         <span className="text-amber-700 text-xs">
-          {new Date(operation.started_at).toLocaleString()}
+          {fmtUtc(operation.started_at)}
         </span>
         {duration !== null && (
           <span className="text-amber-700 text-xs">{duration}s</span>

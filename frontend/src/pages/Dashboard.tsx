@@ -23,8 +23,12 @@ function computeRecommendation(
   lastSync: SyncStatusResponse | null
 ): Recommendation {
   if (!lastSync?.completed_at) return null;
-  const syncTime = new Date(lastSync.completed_at).getTime() / 1000;
   const d2s = chars.filter((c) => c.filename.endsWith(".d2s"));
+  // Can't determine sync status if we don't have data from both machines
+  const hasPc = d2s.some((c) => c.source === "pc");
+  const hasDeck = d2s.some((c) => c.source === "deck");
+  if (!hasPc || !hasDeck) return null;
+  const syncTime = new Date(lastSync.completed_at).getTime() / 1000;
   const pcNewer = d2s.some(
     (c) => c.source === "pc" && c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS
   );

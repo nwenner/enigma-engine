@@ -166,7 +166,11 @@ def check_d2r_running(ssh: paramiko.SSHClient, is_windows: bool) -> bool:
     if is_windows:
         cmd = 'tasklist /FI "IMAGENAME eq D2R.exe" /NH'
     else:
-        cmd = "pgrep -x D2R.exe || pgrep -x D2R"
+        # On Steam Deck, D2R runs through Proton/Wine.
+        # Split the search string across a shell variable so the literal "D2R.exe"
+        # never appears in the parent shell's argv — prevents pgrep -f from
+        # permanently matching the SSH shell that invoked it (false-positive bug).
+        cmd = "_p=D2R; pgrep -f \"${_p}.exe\" 2>/dev/null"
 
     _stdin, stdout, _stderr = ssh.exec_command(cmd)
     output = stdout.read().decode("utf-8", errors="replace").lower()
@@ -174,5 +178,5 @@ def check_d2r_running(ssh: paramiko.SSHClient, is_windows: bool) -> bool:
     if is_windows:
         return "d2r.exe" in output
     else:
-        # pgrep returns exit code 0 if found
+        # pgrep returns exit code 0 and prints PIDs if found
         return bool(output.strip())
