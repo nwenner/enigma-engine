@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -8,6 +9,8 @@ from fastapi.responses import FileResponse
 from backend.database import init_db
 from backend.config import get_settings
 from backend.routers import characters, sync, backups, history, settings as settings_router
+from backend.routers import autosync as autosync_router
+from backend.services.auto_sync import run_auto_sync_watcher
 
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
@@ -22,7 +25,13 @@ async def lifespan(app: FastAPI):
     cfg.keys_dir.mkdir(parents=True, exist_ok=True)
     cfg.tmp_dir.mkdir(parents=True, exist_ok=True)
     await init_db()
+    watcher_task = asyncio.create_task(run_auto_sync_watcher())
     yield
+    watcher_task.cancel()
+    try:
+        await watcher_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="Enigma Engine", lifespan=lifespan)
@@ -33,6 +42,7 @@ app.include_router(sync.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
 app.include_router(settings_router.router, prefix="/api")
+app.include_router(autosync_router.router, prefix="/api")
 
 # Serve React SPA static assets
 if FRONTEND_DIST.exists():

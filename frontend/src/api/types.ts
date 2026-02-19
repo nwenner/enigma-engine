@@ -89,3 +89,17 @@ export interface TestConnectionResponse {
   success: boolean;
   message: string;
 }
+
+export interface AutoSyncState {
+  status: "idle" | "pending" | "conflict";
+  direction: "pc_to_deck" | "deck_to_pc" | null;
+  detected_at: string | null;
+  expires_at: string | null;
+  reason: string | null;
+}
+
+export interface AutoSyncStatus {
+  enabled: boolean;
+  poll_interval: number;
+  state: AutoSyncState | null;
+}

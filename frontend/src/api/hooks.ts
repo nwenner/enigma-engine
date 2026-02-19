@@ -9,6 +9,7 @@ import type {
   SettingsResponse,
   TestConnectionResponse,
   MachineSettings,
+  AutoSyncStatus,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
@@ -26,7 +27,8 @@ export function usePreflight() {
   return useQuery<PreflightResponse>({
     queryKey: ["preflight"],
     queryFn: () => api.get("/sync/preflight").then((r) => r.data),
-    staleTime: 10_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 
@@ -43,6 +45,14 @@ export function useSyncStatus(id: number | null, enabled: boolean) {
   });
 }
 
+export function useLastSync() {
+  return useQuery<SyncStatusResponse | null>({
+    queryKey: ["sync", "last"],
+    queryFn: () => api.get("/sync/last").then((r) => r.data),
+    staleTime: 30_000,
+  });
+}
+
 export function useStartSync() {
   const qc = useQueryClient();
   return useMutation<SyncStatusResponse, Error, "pc_to_deck" | "deck_to_pc">({
@@ -50,6 +60,8 @@ export function useStartSync() {
       api.post("/sync", { direction }).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["preflight"] });
+      qc.invalidateQueries({ queryKey: ["sync", "last"] });
+      qc.invalidateQueries({ queryKey: ["autosync"] });
     },
   });
 }
@@ -134,5 +146,31 @@ export function useUploadKey() {
         .then((r) => r.data);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+}
+
+// ─── Auto-Sync ───────────────────────────────────────────────────────────────
+
+export function useAutoSyncStatus() {
+  return useQuery<AutoSyncStatus>({
+    queryKey: ["autosync", "status"],
+    queryFn: () => api.get("/autosync/status").then((r) => r.data),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useDismissAutoSync() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, void>({
+    mutationFn: () => api.post("/autosync/dismiss").then(() => undefined),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["autosync"] }),
+  });
+}
+
+export function useUpdateAutoSyncConfig() {
+  const qc = useQueryClient();
+  return useMutation<AutoSyncStatus, Error, { enabled: boolean; poll_interval_seconds: number }>({
+    mutationFn: (body) => api.put("/autosync/config", body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["autosync"] }),
   });
 }

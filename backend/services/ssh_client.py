@@ -135,6 +135,32 @@ def list_d2s_files(
     return results
 
 
+def list_all_files(
+    sftp: paramiko.SFTPClient,
+    remote_dir: str,
+) -> list[dict]:
+    """
+    List all files in remote_dir (no extension filter).
+    Returns list of dicts with keys: filename, path, size, modified_at (epoch float).
+    """
+    remote_dir = normalize_path(remote_dir)
+    try:
+        entries = sftp.listdir_attr(remote_dir)
+    except FileNotFoundError:
+        raise SSHConnectionError(f"Remote directory not found: {remote_dir}")
+
+    return [
+        {
+            "filename": entry.filename,
+            "path": f"{remote_dir}/{entry.filename}",
+            "size": entry.st_size or 0,
+            "modified_at": entry.st_mtime or 0.0,
+        }
+        for entry in entries
+        if entry.filename and not entry.filename.startswith(".")
+    ]
+
+
 def check_d2r_running(ssh: paramiko.SSHClient, is_windows: bool) -> bool:
     """Return True if D2R.exe process is currently running on the remote machine."""
     if is_windows:

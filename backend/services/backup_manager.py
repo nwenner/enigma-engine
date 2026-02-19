@@ -90,19 +90,18 @@ async def run_sync(
         # --- 2. List source files ---
         def _list_source():
             with ssh_mod.get_sftp(**source_conn) as (_ssh, sftp):
-                return ssh_mod.list_d2s_files(sftp, source_dir)
+                return ssh_mod.list_all_files(sftp, source_dir)
 
         source_files = await asyncio.to_thread(_list_source)
 
-        if not source_files:
+        # Sanity check: confirm this is actually a D2R save directory
+        d2s_files = [f for f in source_files if f["filename"].endswith(".d2s")]
+        if not d2s_files:
             raise RuntimeError(f"No .d2s files found in {source_dir} on {source_machine.upper()}")
 
-        # Only process .d2s files (not .bak) for download; we'll grab .bak as pairs
-        d2s_files = [f for f in source_files if f["filename"].endswith(".d2s")]
-
-        # Build full file list including .bak pairs
-        bak_names = {f["filename"] for f in source_files if f["filename"].endswith(".d2s.bak")}
-        files_to_sync = list(source_files)  # includes both .d2s and .d2s.bak
+        # Exclude machine-specific settings (graphics config differs between PC and Deck)
+        EXCLUDED_FILES = {"Settings.json"}
+        files_to_sync = [f for f in source_files if f["filename"] not in EXCLUDED_FILES]
 
         # --- 3. Download source files to tmp ---
         def _download_source():
@@ -136,12 +135,12 @@ async def run_sync(
         def _backup_dest():
             backed_up = []
             with ssh_mod.get_sftp(**dest_conn) as (_ssh, sftp):
-                dest_files = ssh_mod.list_d2s_files(sftp, dest_dir)
+                dest_files = ssh_mod.list_all_files(sftp, dest_dir)
                 for file_info in dest_files:
                     remote = ssh_mod.normalize_path(file_info["path"])
                     local = backup_subdir / file_info["filename"]
-                    if _sftp_download_if_exists(sftp, remote, local):
-                        backed_up.append(file_info["filename"])
+                    _sftp_download(sftp, remote, local)
+                    backed_up.append(file_info["filename"])
             return backed_up
 
         backed_up_files = await asyncio.to_thread(_backup_dest)

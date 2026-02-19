@@ -4,6 +4,7 @@ import Characters from "./pages/Characters";
 import Backups from "./pages/Backups";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
+import { usePreflight } from "./api/hooks";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "⚔️" },
@@ -12,6 +13,35 @@ const NAV_ITEMS = [
   { to: "/history", label: "History", icon: "📜" },
   { to: "/settings", label: "Settings", icon: "⚙️" },
 ];
+
+function ConnectionStatus() {
+  const { data, isLoading } = usePreflight();
+
+  const StatusDot = ({ online }: { online: boolean | null }) => {
+    if (isLoading || online === null) {
+      return <span className="w-2 h-2 rounded-full bg-amber-900 inline-block shrink-0" />;
+    }
+    return online
+      ? <span className="w-2 h-2 rounded-full bg-green-500 inline-block shrink-0" title="Online" />
+      : <span className="w-2 h-2 rounded-full bg-red-600 inline-block shrink-0" title="Offline" />;
+  };
+
+  const pcOnline = data ? data.pc_error === null : null;
+  const deckOnline = data ? data.deck_error === null : null;
+
+  return (
+    <div className="px-4 py-2.5 border-t border-d2bg-border space-y-1.5">
+      <div className="flex items-center gap-2">
+        <StatusDot online={pcOnline} />
+        <span className="text-xs text-amber-700">Windows PC</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <StatusDot online={deckOnline} />
+        <span className="text-xs text-amber-700">Steam Deck</span>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   return (
@@ -41,6 +71,7 @@ export default function App() {
             </NavLink>
           ))}
         </div>
+        <ConnectionStatus />
         <div className="p-3 border-t border-d2bg-border">
           <p className="text-amber-800 text-xs text-center">v1.0.0</p>
         </div>

@@ -7,6 +7,7 @@ A module-level asyncio.Lock prevents concurrent sync operations.
 
 Endpoints:
   POST /api/sync                  - Start a new sync operation
+  GET  /api/sync/last             - Return last successful sync operation
   GET  /api/sync/{id}/status      - Poll status of a sync operation
   GET  /api/sync/preflight        - Check if D2R is running on either machine
 """
@@ -29,7 +30,7 @@ from backend.services.ssh_client import get_sftp, check_d2r_running, SSHConnecti
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["sync"])
 
-_sync_lock = asyncio.Lock()
+sync_lock = asyncio.Lock()
 
 
 class SyncRequest(BaseModel):
@@ -77,9 +78,9 @@ async def _build_sync_kwargs(session: AsyncSession, direction: str) -> dict:
     )
 
 
-async def _do_sync(operation_id: int, sync_kwargs: dict) -> None:
+async def do_sync(operation_id: int, sync_kwargs: dict) -> None:
     """Background task: acquire lock then run sync with its own DB session."""
-    async with _sync_lock:
+    async with sync_lock:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(SyncOperation).where(SyncOperation.id == operation_id)
@@ -95,13 +96,35 @@ async def _do_sync(operation_id: int, sync_kwargs: dict) -> None:
                 pass  # Status already set to failed in run_sync
 
 
+@router.get("/sync/last", response_model=Optional[SyncStatusResponse])
+async def get_last_sync(session: AsyncSession = Depends(get_session)):
+    result = await session.execute(
+        select(SyncOperation)
+        .where(SyncOperation.status == "success")
+        .order_by(SyncOperation.completed_at.desc())
+        .limit(1)
+    )
+    op = result.scalar_one_or_none()
+    if not op:
+        return None
+    return SyncStatusResponse(
+        id=op.id,
+        direction=op.direction,
+        status=op.status,
+        error_message=op.error_message,
+        started_at=op.started_at,
+        completed_at=op.completed_at,
+        file_count=op.file_count,
+    )
+
+
 @router.post("/sync", response_model=SyncStatusResponse, status_code=202)
 async def start_sync(
     body: SyncRequest,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
-    if _sync_lock.locked():
+    if sync_lock.locked():
         raise HTTPException(409, "A sync operation is already in progress")
 
     sync_kwargs = await _build_sync_kwargs(session, body.direction)
@@ -111,7 +134,7 @@ async def start_sync(
     await session.commit()
     await session.refresh(operation)
 
-    background_tasks.add_task(_do_sync, operation.id, sync_kwargs)
+    background_tasks.add_task(do_sync, operation.id, sync_kwargs)
 
     return SyncStatusResponse(
         id=operation.id,

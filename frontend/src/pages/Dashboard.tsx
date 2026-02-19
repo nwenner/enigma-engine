@@ -1,104 +1,289 @@
 import { useState } from "react";
-import { useCharacters, useStartSync, usePreflight } from "../api/hooks";
+import {
+  useCharacters,
+  useStartSync,
+  usePreflight,
+  useLastSync,
+  useAutoSyncStatus,
+  useDismissAutoSync,
+} from "../api/hooks";
 import CharacterCard from "../components/CharacterCard";
 import SyncStatusModal from "../components/SyncStatusModal";
-import type { CharacterInfo } from "../api/types";
+import type { CharacterInfo, SyncStatusResponse } from "../api/types";
 
-function getMachineNewest(chars: CharacterInfo[]): Map<string, "pc" | "deck" | null> {
-  // For each character name, find which source has the newer file
-  const byName = new Map<string, { pc?: number; deck?: number }>();
+// ─── Recommendation logic ─────────────────────────────────────────────────────
+
+const SYNC_THRESHOLD_SECONDS = 60;
+
+type Direction = "pc_to_deck" | "deck_to_pc";
+type Recommendation = Direction | "in_sync" | null;
+
+function computeRecommendation(
+  chars: CharacterInfo[],
+  lastSync: SyncStatusResponse | null
+): Recommendation {
+  if (!lastSync?.completed_at) return null;
+  const syncTime = new Date(lastSync.completed_at).getTime() / 1000;
+  const d2s = chars.filter((c) => c.filename.endsWith(".d2s"));
+  const pcNewer = d2s.some(
+    (c) => c.source === "pc" && c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS
+  );
+  const deckNewer = d2s.some(
+    (c) => c.source === "deck" && c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS
+  );
+  if (deckNewer && !pcNewer) return "deck_to_pc";
+  if (pcNewer && !deckNewer) return "pc_to_deck";
+  if (deckNewer && pcNewer) return null; // conflict — let user decide
+  return "in_sync";
+}
+
+// ─── Deduplication ────────────────────────────────────────────────────────────
+
+function deduplicateChars(chars: CharacterInfo[]): {
+  unified: CharacterInfo[];
+  newerMap: Map<string, "pc" | "deck" | null>;
+} {
+  // For each character name, pick the entry with the newer mtime
+  const byName = new Map<string, { pc?: CharacterInfo; deck?: CharacterInfo }>();
 
   for (const c of chars) {
     const entry = byName.get(c.name) ?? {};
-    entry[c.source] = c.modified_at;
+    entry[c.source] = c;
     byName.set(c.name, entry);
   }
 
-  const result = new Map<string, "pc" | "deck" | null>();
-  for (const [name, times] of byName) {
-    if (times.pc !== undefined && times.deck !== undefined) {
-      result.set(name, times.pc > times.deck ? "pc" : times.deck > times.pc ? "deck" : null);
+  const unified: CharacterInfo[] = [];
+  const newerMap = new Map<string, "pc" | "deck" | null>();
+
+  for (const [name, entries] of byName) {
+    if (entries.pc && entries.deck) {
+      // Both machines have this character
+      const winner =
+        entries.pc.modified_at >= entries.deck.modified_at ? entries.pc : entries.deck;
+      unified.push(winner);
+      if (entries.pc.modified_at === entries.deck.modified_at) {
+        newerMap.set(name, null);
+      } else {
+        newerMap.set(name, entries.pc.modified_at > entries.deck.modified_at ? "pc" : "deck");
+      }
     } else {
-      result.set(name, null);
+      const only = (entries.pc ?? entries.deck)!;
+      unified.push(only);
+      newerMap.set(name, null);
     }
   }
-  return result;
+
+  // Sort: newer first
+  unified.sort((a, b) => b.modified_at - a.modified_at);
+
+  return { unified, newerMap };
 }
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function RecommendationBanner({ rec }: { rec: Recommendation }) {
+  if (rec === "in_sync") {
+    return (
+      <div className="bg-green-950/30 border border-green-800/50 rounded-lg px-4 py-3 text-green-300 text-sm mb-6">
+        ✓ Save files are in sync
+      </div>
+    );
+  }
+  if (rec === "deck_to_pc") {
+    return (
+      <div className="bg-d2gold/10 border border-d2gold/40 rounded-lg px-4 py-3 text-d2gold text-sm mb-6">
+        🎮 Steam Deck has newer saves — sync Deck → PC
+      </div>
+    );
+  }
+  if (rec === "pc_to_deck") {
+    return (
+      <div className="bg-d2gold/10 border border-d2gold/40 rounded-lg px-4 py-3 text-d2gold text-sm mb-6">
+        🖥️ PC has newer saves — sync PC → Steam Deck
+      </div>
+    );
+  }
+  return null;
+}
+
+function AutoSyncStatusLine({
+  onDismiss,
+  dismissPending,
+}: {
+  onDismiss: () => void;
+  dismissPending: boolean;
+}) {
+  const { data: autosync } = useAutoSyncStatus();
+
+  if (!autosync?.enabled) return null;
+
+  const state = autosync.state;
+
+  if (!state || state.status === "idle") {
+    return (
+      <p className="text-amber-800 text-xs mt-3">Auto-sync: monitoring</p>
+    );
+  }
+
+  if (state.status === "pending") {
+    const dest = state.direction === "pc_to_deck" ? "Steam Deck" : "PC";
+    return (
+      <div className="mt-3 flex items-center gap-3 text-xs text-amber-600">
+        <span>
+          Auto-sync: pending {state.direction?.replace("_to_", " → ")}, waiting for{" "}
+          {dest} to come online
+        </span>
+        <button
+          onClick={onDismiss}
+          disabled={dismissPending}
+          className="text-amber-400 underline hover:text-amber-300 disabled:opacity-50"
+        >
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  if (state.status === "conflict") {
+    return (
+      <div className="mt-3 flex items-center gap-3 text-xs text-red-400">
+        <span>
+          ⚠️ Auto-sync paused: both machines have unseen progress — choose a direction
+          manually
+        </span>
+        <button
+          onClick={onDismiss}
+          disabled={dismissPending}
+          className="text-amber-400 underline hover:text-amber-300 disabled:opacity-50"
+        >
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { data: allChars, isLoading, error } = useCharacters("all");
   const { data: preflight } = usePreflight();
+  const { data: lastSync } = useLastSync();
   const startSync = useStartSync();
+  const dismissAutoSync = useDismissAutoSync();
   const [activeSyncId, setActiveSyncId] = useState<number | null>(null);
 
-  const pcChars = allChars?.filter((c) => c.source === "pc") ?? [];
-  const deckChars = allChars?.filter((c) => c.source === "deck") ?? [];
-  const newerMap = allChars ? getMachineNewest(allChars) : new Map();
+  const { unified, newerMap } = allChars
+    ? deduplicateChars(allChars)
+    : { unified: [], newerMap: new Map<string, "pc" | "deck" | null>() };
 
-  const handleSync = async (direction: "pc_to_deck" | "deck_to_pc") => {
+  const rec = allChars ? computeRecommendation(allChars, lastSync ?? null) : null;
+
+  const handleSync = async (direction: Direction) => {
     const result = await startSync.mutateAsync(direction);
     setActiveSyncId(result.id);
   };
 
-  return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-d2gold">Dashboard</h1>
-          <p className="text-amber-700 text-sm mt-0.5">Sync save files between your PC and Steam Deck</p>
-        </div>
+  const isRecommended = (direction: Direction) =>
+    rec === direction;
 
-        {preflight && !preflight.safe_to_sync && (preflight.pc_running || preflight.deck_running) && (
-          <div className="bg-red-950/50 border border-red-800 rounded px-3 py-2 text-red-300 text-sm">
-            ⚠️ D2R is running — close the game before syncing
-          </div>
-        )}
+  const buttonClass = (direction: Direction) =>
+    isRecommended(direction)
+      ? "flex items-center gap-2 px-5 py-2.5 bg-d2gold hover:bg-d2gold-light text-d2bg font-bold rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      : "flex items-center gap-2 px-5 py-2.5 border border-d2bg-border text-amber-400 hover:border-d2gold/50 hover:text-amber-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+
+  const buttonLabel = (direction: Direction, base: string) =>
+    isRecommended(direction) ? `★ ${base}` : base;
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-d2gold">Dashboard</h1>
+        <p className="text-amber-700 text-sm mt-0.5">
+          Sync save files between your PC and Steam Deck
+        </p>
       </div>
 
+      {/* Recommendation banner */}
+      <RecommendationBanner rec={rec} />
+
       {/* Sync buttons */}
-      <div className="flex gap-3 justify-center mb-8">
+      <div className="flex gap-3 justify-center mb-4">
         <button
           onClick={() => handleSync("pc_to_deck")}
           disabled={startSync.isPending}
-          className="flex items-center gap-2 px-5 py-2.5 bg-d2gold hover:bg-d2gold-light text-d2bg font-bold rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className={buttonClass("pc_to_deck")}
         >
-          PC → Steam Deck
+          {buttonLabel("pc_to_deck", "PC → Steam Deck")}
         </button>
         <button
           onClick={() => handleSync("deck_to_pc")}
           disabled={startSync.isPending}
-          className="flex items-center gap-2 px-5 py-2.5 bg-d2gold hover:bg-d2gold-light text-d2bg font-bold rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className={buttonClass("deck_to_pc")}
         >
-          Steam Deck → PC
+          {buttonLabel("deck_to_pc", "Steam Deck → PC")}
         </button>
       </div>
 
+      {/* D2R running warning */}
+      {preflight && !preflight.safe_to_sync && (preflight.pc_running || preflight.deck_running) && (
+        <div className="bg-red-950/50 border border-red-800 rounded px-3 py-2 text-red-300 text-sm mb-4 text-center">
+          ⚠️ D2R is running — close the game before syncing
+        </div>
+      )}
+
       {startSync.error && (
-        <div className="bg-red-950/50 border border-red-800 rounded p-3 text-red-300 text-sm mb-6">
+        <div className="bg-red-950/50 border border-red-800 rounded p-3 text-red-300 text-sm mb-4">
           {startSync.error.message}
         </div>
       )}
 
-      {/* Side-by-side panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MachinePanel
-          title="Windows PC"
-          icon="🖥️"
-          chars={pcChars}
-          newerMap={newerMap}
-          isLoading={isLoading}
-          error={error as Error | null}
-          online={preflight?.pc_error === null && preflight?.pc_error !== undefined ? true : undefined}
+      {/* Auto-sync status line */}
+      <div className="text-center mb-6">
+        <AutoSyncStatusLine
+          onDismiss={() => dismissAutoSync.mutate()}
+          dismissPending={dismissAutoSync.isPending}
         />
-        <MachinePanel
-          title="Steam Deck"
-          icon="🎮"
-          chars={deckChars}
-          newerMap={newerMap}
-          isLoading={isLoading}
-          error={error as Error | null}
-          online={preflight?.deck_error === null && preflight?.deck_error !== undefined ? true : undefined}
-        />
+      </div>
+
+      {/* Unified character list */}
+      <div className="bg-d2bg-surface border border-d2bg-border rounded-lg p-4">
+        <h2 className="text-d2gold font-semibold text-base mb-3 flex items-center gap-2">
+          Characters
+          <span className="ml-1 text-amber-700 font-normal text-sm">
+            ({unified.length})
+          </span>
+        </h2>
+
+        {isLoading && (
+          <div className="text-amber-600 text-sm py-6 text-center">
+            Loading characters...
+          </div>
+        )}
+
+        {error && !isLoading && (
+          <div className="text-amber-700 text-sm py-6 text-center">
+            Could not load characters
+          </div>
+        )}
+
+        {!isLoading && unified.length === 0 && !error && (
+          <div className="text-amber-700 text-sm py-6 text-center">
+            No characters found
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {unified.map((c) => (
+            <CharacterCard
+              key={c.name}
+              character={c}
+              newerOn={newerMap.get(c.name) ?? null}
+            />
+          ))}
+        </div>
       </div>
 
       {activeSyncId !== null && (
@@ -107,54 +292,6 @@ export default function Dashboard() {
           onClose={() => setActiveSyncId(null)}
         />
       )}
-    </div>
-  );
-}
-
-interface MachinePanelProps {
-  title: string;
-  icon: string;
-  chars: CharacterInfo[];
-  newerMap: Map<string, "pc" | "deck" | null>;
-  isLoading: boolean;
-  error: Error | null;
-  online?: boolean;
-}
-
-function MachinePanel({ title, icon, chars, newerMap, isLoading, error }: MachinePanelProps) {
-  return (
-    <div className="bg-d2bg-surface border border-d2bg-border rounded-lg p-4">
-      <h2 className="text-d2gold font-semibold text-base mb-3 flex items-center gap-2">
-        <span>{icon}</span>
-        {title}
-        <span className="ml-auto text-amber-700 font-normal text-sm">
-          {chars.length} character{chars.length !== 1 ? "s" : ""}
-        </span>
-      </h2>
-
-      {isLoading && (
-        <div className="text-amber-600 text-sm py-4 text-center">Loading characters...</div>
-      )}
-
-      {error && !isLoading && (
-        <div className="text-amber-700 text-sm py-4 text-center">
-          Could not load characters
-        </div>
-      )}
-
-      {!isLoading && chars.length === 0 && !error && (
-        <div className="text-amber-700 text-sm py-4 text-center">No characters found</div>
-      )}
-
-      <div className="space-y-2">
-        {chars.map((c) => (
-          <CharacterCard
-            key={c.filename}
-            character={c}
-            newerOn={newerMap.get(c.name) ?? null}
-          />
-        ))}
-      </div>
     </div>
   );
 }

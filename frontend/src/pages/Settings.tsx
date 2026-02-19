@@ -1,14 +1,30 @@
 import { useState, useRef } from "react";
-import { useSettings, useUpdateSettings, useTestConnection, useUploadKey } from "../api/hooks";
+import {
+  useSettings,
+  useUpdateSettings,
+  useTestConnection,
+  useUploadKey,
+  useAutoSyncStatus,
+  useUpdateAutoSyncConfig,
+} from "../api/hooks";
 import type { MachineSettings } from "../api/types";
 
 type Machine = "pc" | "deck";
+
+const POLL_INTERVAL_OPTIONS = [
+  { label: "15 seconds", value: 15 },
+  { label: "30 seconds (default)", value: 30 },
+  { label: "60 seconds", value: 60 },
+  { label: "2 minutes", value: 120 },
+];
 
 export default function Settings() {
   const { data: settings, isLoading } = useSettings();
   const updateSettings = useUpdateSettings();
   const testConn = useTestConnection();
   const uploadKey = useUploadKey();
+  const { data: autoSync } = useAutoSyncStatus();
+  const updateAutoSync = useUpdateAutoSyncConfig();
 
   const [pcForm, setPcForm] = useState<Partial<MachineSettings> | null>(null);
   const [deckForm, setDeckForm] = useState<Partial<MachineSettings> | null>(null);
@@ -104,6 +120,64 @@ export default function Settings() {
           testLoading={testConn.isPending}
           uploadKey={uploadKey}
         />
+
+        {/* Auto-Sync section */}
+        <div className="bg-d2bg-surface border border-d2bg-border rounded-lg p-5">
+          <h2 className="text-d2gold font-semibold mb-1 flex items-center gap-2">
+            🔄 Auto-Sync
+          </h2>
+          <p className="text-amber-700 text-xs mb-4">
+            When enabled, automatically syncs saves when D2R closes. Both machines must be
+            reachable.
+          </p>
+
+          <div className="space-y-4">
+            {/* Enable toggle */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-amber-300">Enable auto-sync</span>
+              <button
+                onClick={() =>
+                  updateAutoSync.mutate({
+                    enabled: !(autoSync?.enabled ?? false),
+                    poll_interval_seconds: autoSync?.poll_interval ?? 30,
+                  })
+                }
+                disabled={updateAutoSync.isPending}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${
+                  autoSync?.enabled ? "bg-d2gold" : "bg-d2bg-elevated border border-d2bg-border"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    autoSync?.enabled ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Poll interval */}
+            <div>
+              <label className="block text-xs text-amber-600 mb-1">Poll interval</label>
+              <select
+                value={autoSync?.poll_interval ?? 30}
+                onChange={(e) =>
+                  updateAutoSync.mutate({
+                    enabled: autoSync?.enabled ?? false,
+                    poll_interval_seconds: Number(e.target.value),
+                  })
+                }
+                disabled={updateAutoSync.isPending}
+                className="bg-d2bg border border-d2bg-border rounded px-3 py-1.5 text-sm text-amber-100 focus:outline-none focus:border-d2gold disabled:opacity-50"
+              >
+                {POLL_INTERVAL_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
 
       {isDirty && (
