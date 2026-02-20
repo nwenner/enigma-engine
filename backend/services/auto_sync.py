@@ -354,22 +354,57 @@ async def run_auto_sync_watcher() -> None:
 
                             cur_state = await _get_state()
                             if cur_state["status"] == "pending" and cur_state.get("staged_path"):
-                                # Conflict guard: a second machine closed while first machine's staged
-                                # save is still waiting. Overwriting would silently discard captured progress.
-                                log.warning(
-                                    "auto_sync: conflict — %s closed but %s has staged saves waiting; "
-                                    "marking conflict instead of overwriting",
-                                    machine, "deck" if machine == "pc" else "pc",
-                                )
-                                await _set_state({
-                                    "status": "conflict",
-                                    "direction": None,
-                                    "detected_at": now_iso,
-                                    "expires_at": None,
-                                    "staged_path": cur_state["staged_path"],  # preserve for dismiss cleanup
-                                    "reason": "Both machines played since last sync. Staged saves waiting. Choose manually.",
-                                })
-                                asyncio.create_task(notify_conflict())
+                                pending_source = "pc" if cur_state["direction"] == "pc_to_deck" else "deck"
+
+                                if machine == pending_source:
+                                    # Same machine played again — not a conflict, just re-stage
+                                    # with the fresher saves (source machine is still online).
+                                    log.info(
+                                        "auto_sync: %s played again before dest came online; "
+                                        "re-staging with fresher saves",
+                                        machine,
+                                    )
+                                    await _cleanup_staged(cur_state["staged_path"])
+                                    try:
+                                        staged_path, count = await _stage_files(machine, is_windows)
+                                        log.info("auto_sync: re-staged %d files from %s", count, machine)
+                                        await _set_state({
+                                            "status": "pending",
+                                            "direction": direction,
+                                            "staged_path": str(staged_path),
+                                            "staged_file_count": count,
+                                            "detected_at": now_iso,
+                                            "expires_at": expires_iso,
+                                            "reason": f"Waiting for {dest} to come online",
+                                        })
+                                    except Exception as exc:
+                                        log.warning(
+                                            "auto_sync: re-staging failed (%s), keeping pending without staged files", exc
+                                        )
+                                        await _set_state({
+                                            "status": "pending",
+                                            "direction": direction,
+                                            "detected_at": now_iso,
+                                            "expires_at": expires_iso,
+                                            "reason": f"Waiting for {dest} to come online",
+                                        })
+                                else:
+                                    # Different machine played while first machine's staged saves
+                                    # are still waiting — genuine conflict.
+                                    log.warning(
+                                        "auto_sync: conflict — %s closed but %s has staged saves waiting; "
+                                        "marking conflict instead of overwriting",
+                                        machine, pending_source,
+                                    )
+                                    await _set_state({
+                                        "status": "conflict",
+                                        "direction": None,
+                                        "detected_at": now_iso,
+                                        "expires_at": None,
+                                        "staged_path": cur_state["staged_path"],  # preserve for dismiss cleanup
+                                        "reason": "Both machines played since last sync. Staged saves waiting. Choose manually.",
+                                    })
+                                    asyncio.create_task(notify_conflict())
                             else:
                                 try:
                                     staged_path, count = await _stage_files(machine, is_windows)
