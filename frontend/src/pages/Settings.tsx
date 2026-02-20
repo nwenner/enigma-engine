@@ -77,7 +77,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto animate-fadeIn">
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn">
       <div className="mb-7">
         <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Settings</h1>
       </div>

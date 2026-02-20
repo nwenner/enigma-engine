@@ -1,4 +1,5 @@
-import { Routes, Route, NavLink, Navigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Characters from "./pages/Characters";
 import Backups from "./pages/Backups";
@@ -48,13 +49,34 @@ function ConnectionStatus() {
   );
 }
 
+const SIDEBAR_BG = "linear-gradient(180deg, #0d0f14 0%, #0b0d11 100%)";
+
 export default function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+
+  // Close sidebar on navigation
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar */}
+      {/* Mobile backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar — fixed off-canvas on mobile, static on desktop */}
       <nav
-        className="w-52 shrink-0 flex flex-col border-r border-d2bg-border"
-        style={{ background: "linear-gradient(180deg, #0d0f14 0%, #0b0d11 100%)" }}
+        className={`fixed inset-y-0 left-0 z-40 w-52 flex flex-col border-r border-d2bg-border
+          transition-transform duration-200 ease-in-out
+          md:relative md:translate-x-0 md:shrink-0
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        style={{ background: SIDEBAR_BG }}
       >
         {/* Branding */}
         <div className="px-5 py-6 border-b border-d2bg-border">
@@ -101,32 +123,50 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Main content */}
-      <main
-        className="flex-1 overflow-auto"
-        style={{
-          backgroundColor: "#0c0e12",
-          backgroundImage: [
-            // Circular vignette — listed first so it renders on top of the grid
-            "radial-gradient(ellipse 58% 80% at 50% 44%, transparent 0%, rgba(12,14,18,0.72) 50%, rgba(12,14,18,0.99) 82%)",
-            // Vertical lines (0°)
-            "repeating-linear-gradient(0deg,  rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 40px)",
-            // Horizontal lines (90°)
-            "repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 40px)",
-          ].join(", "),
-          // Inset shadow pins an additional vignette to the viewport edges as content scrolls
-          boxShadow: "inset 0 0 200px rgba(12,14,18,0.98)",
-        }}
-      >
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/characters" element={<Characters />} />
-          <Route path="/backups" element={<Backups />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </main>
+      {/* Content wrapper */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile header */}
+        <header
+          className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-d2bg-border shrink-0"
+          style={{ background: SIDEBAR_BG }}
+        >
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="text-slate-400 hover:text-slate-200 transition-colors p-1 -ml-1"
+            aria-label="Open menu"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="square" strokeLinejoin="miter" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <h1 className="font-diablo text-d2gold text-sm tracking-widest leading-tight">
+            Enigma Engine
+          </h1>
+        </header>
+
+        {/* Main content */}
+        <main
+          className="flex-1 overflow-auto"
+          style={{
+            backgroundColor: "#0c0e12",
+            backgroundImage: [
+              "radial-gradient(ellipse 58% 80% at 50% 44%, transparent 0%, rgba(12,14,18,0.72) 50%, rgba(12,14,18,0.99) 82%)",
+              "repeating-linear-gradient(0deg,  rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 40px)",
+              "repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 40px)",
+            ].join(", "),
+            boxShadow: "inset 0 0 200px rgba(12,14,18,0.98)",
+          }}
+        >
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/characters" element={<Characters />} />
+            <Route path="/backups" element={<Backups />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }

@@ -41,7 +41,7 @@ export default function Backups() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto animate-fadeIn">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fadeIn">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Backups</h1>
@@ -156,7 +156,7 @@ function SnapshotRow({ snapshot, onDelete, onRestore }: RowProps) {
             )}
           </div>
         </div>
-        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
           <button onClick={onRestore} className="btn-d2 text-xs px-3 py-1.5">
             Restore
           </button>

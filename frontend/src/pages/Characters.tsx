@@ -40,7 +40,7 @@ export default function Characters() {
     sortKey === k ? (sortAsc ? " ↑" : " ↓") : "";
 
   return (
-    <div className="p-6 max-w-5xl mx-auto animate-fadeIn">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto animate-fadeIn">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Characters</h1>
@@ -57,7 +57,7 @@ export default function Characters() {
           placeholder="Search name or class..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="input-d2 w-56"
+          className="input-d2 w-full sm:w-56"
         />
         <div className="flex gap-1">
           {(["all", "pc", "deck"] as const).map((s) => (
@@ -82,7 +82,15 @@ export default function Characters() {
         </div>
       )}
 
-      <div className="card-d2 overflow-hidden">
+      {/* Mobile card list */}
+      <div className="md:hidden space-y-2">
+        {isLoading && <div className="text-slate-500 text-sm py-8 text-center">Loading characters...</div>}
+        {!isLoading && filtered.length === 0 && <div className="text-slate-500 text-sm py-8 text-center">No characters found</div>}
+        {filtered.map((c) => <CharacterMobileCard key={`${c.source}-${c.filename}`} char={c} />)}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block card-d2 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-d2bg-border">
@@ -126,6 +134,33 @@ export default function Characters() {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function CharacterMobileCard({ char }: { char: CharacterInfo }) {
+  return (
+    <div className="card-d2 p-3 flex items-center gap-3">
+      <span className="text-xl leading-none shrink-0">{CLASS_ICONS[char.class_id] ?? "🎮"}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-medium text-slate-100 text-sm truncate">{char.name}</span>
+          {char.hardcore && (
+            <span className="text-[10px] bg-red-950/60 text-red-400 px-1.5 py-0.5 border border-red-900/80">HC</span>
+          )}
+          <span className={`text-[10px] px-1.5 py-0.5 border ${
+            char.source === "pc"
+              ? "bg-violet-950/40 text-violet-400 border-violet-900/60"
+              : "bg-cyan-950/40 text-cyan-400 border-cyan-900/60"
+          }`}>
+            {char.source === "pc" ? "PC" : "Deck"}
+          </span>
+        </div>
+        <div className="text-xs text-slate-400 mt-0.5">{char.class_name} · Lvl {char.level}</div>
+      </div>
+      <div className="text-xs text-slate-500 tabular-nums shrink-0">
+        {new Date(char.modified_at * 1000).toLocaleDateString()}
       </div>
     </div>
   );

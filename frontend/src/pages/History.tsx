@@ -17,7 +17,7 @@ export default function History() {
   const totalPages = data ? Math.ceil(data.total / data.page_size) : 0;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto animate-fadeIn">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto animate-fadeIn">
       <div className="mb-7">
         <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Sync History</h1>
       </div>
@@ -130,7 +130,7 @@ function OperationRow({ operation }: { operation: SyncOperationResponse }) {
               <span className={f.success ? "text-green-400" : "text-red-400"}>
                 {f.success ? "✓" : "✗"}
               </span>
-              <span className="text-slate-100 font-medium flex-1">{f.filename}</span>
+              <span className="text-slate-100 font-medium flex-1 truncate min-w-0">{f.filename}</span>
               {f.char_snapshot && (
                 <span className="text-slate-500">
                   {(f.char_snapshot as { name?: string }).name} Lvl{" "}

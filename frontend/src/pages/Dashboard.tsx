@@ -232,7 +232,7 @@ export default function Dashboard() {
   const isRecommended = (direction: Direction) => rec === direction;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto animate-fadeIn">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fadeIn">
       {/* Header */}
       <div className="mb-7">
         <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Dashboard</h1>
@@ -243,11 +243,11 @@ export default function Dashboard() {
       <RecommendationBanner rec={rec} />
 
       {/* Sync buttons */}
-      <div className="flex gap-3 justify-center mb-4">
+      <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
         <button
           onClick={() => handleSync("pc_to_deck")}
           disabled={startSync.isPending}
-          className={isRecommended("pc_to_deck") ? "btn-d2-filled" : "btn-d2"}
+          className={`${isRecommended("pc_to_deck") ? "btn-d2-filled" : "btn-d2"} w-full sm:w-auto`}
         >
           {isRecommended("pc_to_deck") && <span>★</span>}
           PC → Steam Deck
@@ -255,7 +255,7 @@ export default function Dashboard() {
         <button
           onClick={() => handleSync("deck_to_pc")}
           disabled={startSync.isPending}
-          className={isRecommended("deck_to_pc") ? "btn-d2-filled" : "btn-d2"}
+          className={`${isRecommended("deck_to_pc") ? "btn-d2-filled" : "btn-d2"} w-full sm:w-auto`}
         >
           {isRecommended("deck_to_pc") && <span>★</span>}
           Steam Deck → PC
