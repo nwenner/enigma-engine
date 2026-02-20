@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     def tmp_dir(self) -> Path:
         return self.data_dir / "tmp"
 
+    @property
+    def staging_dir(self) -> Path:
+        return self.data_dir / "staging"
+
 
 @lru_cache
 def get_settings() -> Settings:

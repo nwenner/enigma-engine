@@ -96,6 +96,8 @@ export interface AutoSyncState {
   detected_at: string | null;
   expires_at: string | null;
   reason: string | null;
+  staged_path: string | null;
+  staged_file_count: number | null;
 }
 
 export interface AutoSyncStatus {

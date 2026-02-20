@@ -7,19 +7,23 @@ Endpoints:
   GET  /api/autosync/status  - Current auto-sync state + config
   PUT  /api/autosync/config  - Enable/disable and set poll interval
   POST /api/autosync/dismiss - Clear pending/conflict state
+  POST /api/autosync/trigger - Manually dispatch a pending sync now
 """
 
+import asyncio
 import json
 import logging
+import shutil
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.database import get_session
-from backend.models import Settings
+from backend.models import Settings, SyncOperation
 from backend.routers.settings import _get_setting, _set_setting
 
 log = logging.getLogger(__name__)
@@ -91,8 +95,55 @@ async def update_autosync_config(
     )
 
 
+@router.post("/autosync/trigger")
+async def trigger_autosync(session: AsyncSession = Depends(get_session)):
+    """Manually dispatch the pending sync right now (uses staged files if available)."""
+    from backend.routers.sync import do_sync, sync_lock, _build_sync_kwargs
+
+    state_raw = await _get_setting(session, "autosync_state")
+    if not state_raw:
+        raise HTTPException(400, "No pending auto-sync state")
+    try:
+        state = json.loads(state_raw)
+    except Exception:
+        raise HTTPException(400, "Invalid auto-sync state")
+
+    if state.get("status") != "pending" or not state.get("direction"):
+        raise HTTPException(400, "No pending auto-sync to trigger")
+
+    if sync_lock.locked():
+        raise HTTPException(409, "A sync operation is already in progress")
+
+    direction = state["direction"]
+    staged_path = state.get("staged_path")
+
+    sync_kwargs = await _build_sync_kwargs(session, direction)
+    if staged_path:
+        sync_kwargs["staged_path"] = staged_path
+
+    # Clear state before dispatching so watcher doesn't re-trigger
+    await _set_setting(session, "autosync_state", json.dumps(IDLE_STATE))
+
+    op = SyncOperation(direction=direction, status="pending")
+    session.add(op)
+    await session.commit()
+    await session.refresh(op)
+
+    asyncio.create_task(do_sync(op.id, sync_kwargs))
+    return {"success": True, "operation_id": op.id}
+
+
 @router.post("/autosync/dismiss")
 async def dismiss_autosync(session: AsyncSession = Depends(get_session)):
+    state_raw = await _get_setting(session, "autosync_state")
+    if state_raw:
+        try:
+            state = json.loads(state_raw)
+            staged = state.get("staged_path")
+            if staged:
+                shutil.rmtree(Path(staged), ignore_errors=True)
+        except Exception:
+            pass
     await _set_setting(session, "autosync_state", json.dumps(IDLE_STATE))
     await session.commit()
     return {"success": True}

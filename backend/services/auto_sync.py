@@ -24,10 +24,13 @@ autosync_state shape:
 import asyncio
 import json
 import logging
+import shutil
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import select
 
+from backend.config import get_settings
 from backend.database import AsyncSessionLocal
 from backend.models import Settings, SyncOperation
 from backend.routers.settings import _get_conn_kwargs, _get_setting
@@ -35,6 +38,7 @@ from backend.services.ssh_client import (
     get_sftp,
     check_d2r_running,
     list_d2s_files,
+    list_all_files,
     SSHConnectionError,
 )
 
@@ -168,6 +172,85 @@ async def _trigger_sync(direction: str) -> None:
     log.info("auto_sync: triggered %s (op_id=%d)", direction, op_id)
 
 
+async def _stage_files(machine: str, is_windows: bool) -> tuple[Path, int]:
+    """
+    SFTP source machine and copy all save files (excluding Settings.json) to
+    data/staging/{machine}/. Returns (staged_path, file_count). Raises on any failure.
+    """
+    cfg = get_settings()
+
+    async with AsyncSessionLocal() as session:
+        kwargs = await _get_conn_kwargs(session, machine)
+        save_dir = await _get_setting(session, f"{machine}_save_path") or ""
+
+    staged_path = cfg.staging_dir / machine
+    EXCLUDED_FILES = {"Settings.json"}
+
+    def _do() -> int:
+        with get_sftp(**kwargs) as (_ssh, sftp):
+            all_files = list_all_files(sftp, save_dir)
+
+            d2s_files = [f for f in all_files if f["filename"].endswith(".d2s")]
+            if not d2s_files:
+                raise RuntimeError(f"No .d2s files found in {save_dir} on {machine.upper()}")
+
+            files_to_stage = [f for f in all_files if f["filename"] not in EXCLUDED_FILES]
+
+            # Clear prior staged content for this machine
+            if staged_path.exists():
+                shutil.rmtree(str(staged_path))
+            staged_path.mkdir(parents=True, exist_ok=True)
+
+            for file_info in files_to_stage:
+                remote = file_info["path"].replace("\\", "/")
+                local = staged_path / file_info["filename"]
+                sftp.get(remote, str(local))
+
+        return len(files_to_stage)
+
+    count = await asyncio.to_thread(_do)
+    return staged_path, count
+
+
+async def _cleanup_staged(staged_path_str: str | None) -> None:
+    """Remove a staged directory if it exists. No-op if path is None."""
+    if not staged_path_str:
+        return
+    path = Path(staged_path_str)
+
+    def _do() -> None:
+        shutil.rmtree(str(path), ignore_errors=True)
+
+    await asyncio.to_thread(_do)
+
+
+async def _trigger_staged_sync(direction: str, staged_path: str) -> None:
+    """Like _trigger_sync but passes staged_path so source SFTP is skipped."""
+    from backend.routers.sync import do_sync, sync_lock, _build_sync_kwargs
+
+    if sync_lock.locked():
+        log.info("auto_sync: sync already in progress, skipping staged trigger")
+        return
+
+    async with AsyncSessionLocal() as session:
+        try:
+            sync_kwargs = await _build_sync_kwargs(session, direction)
+        except Exception as exc:
+            log.error("auto_sync: could not build sync kwargs for staged sync: %s", exc)
+            return
+
+        sync_kwargs["staged_path"] = staged_path
+
+        op = SyncOperation(direction=direction, status="pending")
+        session.add(op)
+        await session.commit()
+        await session.refresh(op)
+        op_id = op.id
+
+    asyncio.create_task(do_sync(op_id, sync_kwargs))
+    log.info("auto_sync: triggered staged %s (op_id=%d, staged_path=%s)", direction, op_id, staged_path)
+
+
 # ─── Main watcher loop ────────────────────────────────────────────────────────
 
 
@@ -202,6 +285,7 @@ async def run_auto_sync_watcher() -> None:
                         expires = expires.replace(tzinfo=timezone.utc)
                     if datetime.now(timezone.utc) > expires:
                         log.info("auto_sync: pending state expired, clearing")
+                        await _cleanup_staged(state.get("staged_path"))
                         await _set_state({"status": "idle", "direction": None, "detected_at": None, "expires_at": None, "reason": None})
                         state = await _get_state()
                 except Exception:
@@ -215,8 +299,12 @@ async def run_auto_sync_watcher() -> None:
                 dest_alive = await _get_d2s_mtimes(dest, dest_is_windows)
                 if dest_alive is not None:
                     log.info("auto_sync: dest %s is now reachable, executing pending %s", dest, direction)
+                    staged_path = state.get("staged_path")
                     await _set_state({"status": "idle", "direction": None, "detected_at": None, "expires_at": None, "reason": None})
-                    await _trigger_sync(direction)
+                    if staged_path:
+                        await _trigger_staged_sync(direction, staged_path)
+                    else:
+                        await _trigger_sync(direction)
 
             # Poll D2R state
             pc_now = await _check_d2r("pc", True)
@@ -257,17 +345,52 @@ async def run_auto_sync_watcher() -> None:
                                 "reason": f"Both PC and Deck have unseen saves since last sync",
                             })
                         elif dest_has_new is None:
-                            # Dest offline — record pending
-                            log.info("auto_sync: dest %s offline, recording pending %s", dest, direction)
+                            # Dest offline — stage files then record pending
+                            log.info("auto_sync: dest %s offline, staging files from %s", dest, machine)
                             now_iso = datetime.now(timezone.utc).isoformat()
                             expires_iso = (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat()
-                            await _set_state({
-                                "status": "pending",
-                                "direction": direction,
-                                "detected_at": now_iso,
-                                "expires_at": expires_iso,
-                                "reason": f"Waiting for {dest} to come online",
-                            })
+
+                            cur_state = await _get_state()
+                            if cur_state["status"] == "pending" and cur_state.get("staged_path"):
+                                # Conflict guard: a second machine closed while first machine's staged
+                                # save is still waiting. Overwriting would silently discard captured progress.
+                                log.warning(
+                                    "auto_sync: conflict — %s closed but %s has staged saves waiting; "
+                                    "marking conflict instead of overwriting",
+                                    machine, "deck" if machine == "pc" else "pc",
+                                )
+                                await _set_state({
+                                    "status": "conflict",
+                                    "direction": None,
+                                    "detected_at": now_iso,
+                                    "expires_at": None,
+                                    "staged_path": cur_state["staged_path"],  # preserve for dismiss cleanup
+                                    "reason": "Both machines played since last sync. Staged saves waiting. Choose manually.",
+                                })
+                            else:
+                                try:
+                                    staged_path, count = await _stage_files(machine, is_windows)
+                                    log.info("auto_sync: staged %d files from %s", count, machine)
+                                    await _set_state({
+                                        "status": "pending",
+                                        "direction": direction,
+                                        "staged_path": str(staged_path),
+                                        "staged_file_count": count,
+                                        "detected_at": now_iso,
+                                        "expires_at": expires_iso,
+                                        "reason": f"Waiting for {dest} to come online",
+                                    })
+                                except Exception as exc:
+                                    log.warning(
+                                        "auto_sync: staging failed (%s), recording pending without staged files", exc
+                                    )
+                                    await _set_state({
+                                        "status": "pending",
+                                        "direction": direction,
+                                        "detected_at": now_iso,
+                                        "expires_at": expires_iso,
+                                        "reason": f"Waiting for {dest} to come online",
+                                    })
                         else:
                             # No conflict, dest reachable — sync now
                             cur_state = await _get_state()

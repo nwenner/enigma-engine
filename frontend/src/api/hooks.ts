@@ -167,6 +167,17 @@ export function useDismissAutoSync() {
   });
 }
 
+export function useTriggerAutoSync() {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; operation_id: number }, Error, void>({
+    mutationFn: () => api.post("/autosync/trigger").then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["autosync"] });
+      qc.invalidateQueries({ queryKey: ["sync", "last"] });
+    },
+  });
+}
+
 export function useUpdateAutoSyncConfig() {
   const qc = useQueryClient();
   return useMutation<AutoSyncStatus, Error, { enabled: boolean; poll_interval_seconds: number }>({

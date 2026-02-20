@@ -6,6 +6,7 @@ import {
   useLastSync,
   useAutoSyncStatus,
   useDismissAutoSync,
+  useTriggerAutoSync,
 } from "../api/hooks";
 import CharacterCard from "../components/CharacterCard";
 import SyncStatusModal from "../components/SyncStatusModal";
@@ -113,9 +114,13 @@ function RecommendationBanner({ rec }: { rec: Recommendation }) {
 function AutoSyncStatusLine({
   onDismiss,
   dismissPending,
+  onSyncNow,
+  syncNowPending,
 }: {
   onDismiss: () => void;
   dismissPending: boolean;
+  onSyncNow: () => void;
+  syncNowPending: boolean;
 }) {
   const { data: autosync } = useAutoSyncStatus();
 
@@ -125,43 +130,76 @@ function AutoSyncStatusLine({
 
   if (!state || state.status === "idle") {
     return (
-      <p className="text-amber-800 text-xs mt-3">Auto-sync: monitoring</p>
+      <p className="text-amber-800 text-xs mt-3 text-center">Auto-sync: monitoring</p>
     );
   }
 
   if (state.status === "pending") {
+    const source = state.direction === "pc_to_deck" ? "PC" : "Steam Deck";
     const dest = state.direction === "pc_to_deck" ? "Steam Deck" : "PC";
+    const count = state.staged_file_count;
+    const hasStaged = !!state.staged_path;
+
     return (
-      <div className="mt-3 flex items-center gap-3 text-xs text-amber-600">
-        <span>
-          Auto-sync: pending {state.direction?.replace("_to_", " → ")}, waiting for{" "}
-          {dest} to come online
-        </span>
-        <button
-          onClick={onDismiss}
-          disabled={dismissPending}
-          className="text-amber-400 underline hover:text-amber-300 disabled:opacity-50"
-        >
-          Dismiss
-        </button>
+      <div className="mt-4 bg-amber-950/30 border border-amber-700/50 rounded-lg p-4 text-left">
+        <div className="flex items-start gap-3 mb-3">
+          <span className="text-amber-400 text-lg leading-none mt-0.5">⏳</span>
+          <div>
+            <p className="text-amber-300 font-semibold text-sm">Auto-sync pending</p>
+            {hasStaged ? (
+              <p className="text-amber-500 text-xs mt-1">
+                {count} save{count === 1 ? "" : "s"} captured from {source} and held locally —
+                push to {dest} automatically when it comes online, or sync now.
+              </p>
+            ) : (
+              <p className="text-amber-500 text-xs mt-1">
+                Waiting for {dest} to come online to sync {source} → {dest}.
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onDismiss}
+            disabled={dismissPending || syncNowPending}
+            className="px-3 py-1.5 text-xs text-amber-700 border border-amber-800/50 rounded hover:border-amber-700 hover:text-amber-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Discard
+          </button>
+          <button
+            onClick={onSyncNow}
+            disabled={syncNowPending || dismissPending}
+            className="px-3 py-1.5 text-xs bg-amber-700/40 text-amber-300 border border-amber-600/50 rounded hover:bg-amber-700/60 hover:text-amber-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {syncNowPending ? "Starting…" : "Sync now"}
+          </button>
+        </div>
       </div>
     );
   }
 
   if (state.status === "conflict") {
     return (
-      <div className="mt-3 flex items-center gap-3 text-xs text-red-400">
-        <span>
-          ⚠️ Auto-sync paused: both machines have unseen progress — choose a direction
-          manually
-        </span>
-        <button
-          onClick={onDismiss}
-          disabled={dismissPending}
-          className="text-amber-400 underline hover:text-amber-300 disabled:opacity-50"
-        >
-          Dismiss
-        </button>
+      <div className="mt-4 bg-red-950/30 border border-red-800/50 rounded-lg p-4 text-left">
+        <div className="flex items-start gap-3 mb-3">
+          <span className="text-red-400 text-lg leading-none mt-0.5">⚠️</span>
+          <div>
+            <p className="text-red-300 font-semibold text-sm">Auto-sync conflict</p>
+            <p className="text-red-400/80 text-xs mt-1">
+              Both machines have played since the last sync. Choose a direction manually
+              using the buttons above, then dismiss this notice.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <button
+            onClick={onDismiss}
+            disabled={dismissPending}
+            className="px-3 py-1.5 text-xs text-amber-700 border border-amber-800/50 rounded hover:border-amber-700 hover:text-amber-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Dismiss
+          </button>
+        </div>
       </div>
     );
   }
@@ -177,6 +215,7 @@ export default function Dashboard() {
   const { data: lastSync } = useLastSync();
   const startSync = useStartSync();
   const dismissAutoSync = useDismissAutoSync();
+  const triggerAutoSync = useTriggerAutoSync();
   const [activeSyncId, setActiveSyncId] = useState<number | null>(null);
 
   const { unified, newerMap } = allChars
@@ -244,11 +283,15 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Auto-sync status line */}
-      <div className="text-center mb-6">
+      {/* Auto-sync status */}
+      <div className="mb-6">
         <AutoSyncStatusLine
           onDismiss={() => dismissAutoSync.mutate()}
           dismissPending={dismissAutoSync.isPending}
+          onSyncNow={() =>
+            triggerAutoSync.mutateAsync().then((r) => setActiveSyncId(r.operation_id))
+          }
+          syncNowPending={triggerAutoSync.isPending}
         />
       </div>
 

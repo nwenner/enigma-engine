@@ -13,7 +13,9 @@ Endpoints:
 """
 import asyncio
 import logging
+import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
@@ -80,6 +82,10 @@ async def _build_sync_kwargs(session: AsyncSession, direction: str) -> dict:
 
 async def do_sync(operation_id: int, sync_kwargs: dict) -> None:
     """Background task: acquire lock then run sync with its own DB session."""
+    staged_path_str = sync_kwargs.get("staged_path")
+    if staged_path_str:
+        sync_kwargs = {**sync_kwargs, "staged_path": Path(staged_path_str)}
+
     async with sync_lock:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
@@ -94,6 +100,9 @@ async def do_sync(operation_id: int, sync_kwargs: dict) -> None:
                 await run_sync(session=session, operation=operation, **sync_kwargs)
             except Exception:
                 pass  # Status already set to failed in run_sync
+            finally:
+                if staged_path_str:
+                    shutil.rmtree(Path(staged_path_str), ignore_errors=True)
 
 
 @router.get("/sync/last", response_model=Optional[SyncStatusResponse])
