@@ -234,6 +234,21 @@ async def run_sync(
         await session.commit()
         print(f"[sync] op_id={operation.id} success: {len(upload_results)} files synced", flush=True)
 
+        # --- 8b. Update character DB from synced files ---
+        from backend.routers.characters import upsert_characters
+
+        char_list = [
+            {
+                **snap,
+                "modified_at": next(
+                    (it["modified_at"] for it in upload_results if it["filename"] == fname),
+                    0.0,
+                ),
+            }
+            for fname, snap in char_snapshots.items()
+        ]
+        await upsert_characters(session, char_list)
+
         # --- 9. Prune old backups ---
         await _prune_backups(session, dest_machine, cfg)
 

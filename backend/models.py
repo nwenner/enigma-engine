@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, BigInteger
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, BigInteger, Float
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -44,6 +44,22 @@ class BackupSnapshot(Base):
     characters = Column(JSON, nullable=True)  # list of D2SCharacter dicts at snapshot time
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     sync_operation_id = Column(Integer, nullable=True)
+
+
+class Character(Base):
+    __tablename__ = "characters"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    filename = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    class_id = Column(Integer, nullable=False)
+    class_name = Column(String, nullable=False)
+    level = Column(Integer, nullable=False)
+    hardcore = Column(Boolean, default=False)
+    ever_died = Column(Boolean, default=False)
+    expansion = Column(Boolean, default=True)
+    modified_at = Column(Float, nullable=False)
+    last_updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class Settings(Base):

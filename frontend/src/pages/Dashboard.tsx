@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NavLink } from "react-router-dom";
 import {
   useCharacters,
   useStartSync,
@@ -7,106 +8,48 @@ import {
   useAutoSyncStatus,
   useDismissAutoSync,
   useTriggerAutoSync,
+  useBackups,
 } from "../api/hooks";
 import CharacterCard from "../components/CharacterCard";
 import SyncStatusModal from "../components/SyncStatusModal";
-import type { CharacterInfo, SyncStatusResponse } from "../api/types";
+import type { CharacterInfo, SnapshotResponse, SyncStatusResponse } from "../api/types";
 
-// ─── Recommendation logic ─────────────────────────────────────────────────────
+// ─── Stale check ──────────────────────────────────────────────────────────────
 
 const SYNC_THRESHOLD_SECONDS = 60;
 
-type Direction = "pc_to_deck" | "deck_to_pc";
-type Recommendation = Direction | "in_sync" | null;
-
-function computeRecommendation(
-  chars: CharacterInfo[],
-  lastSync: SyncStatusResponse | null
-): Recommendation {
-  if (!lastSync?.completed_at) return null;
-  const d2s = chars.filter((c) => c.filename.endsWith(".d2s"));
-  const hasPc = d2s.some((c) => c.source === "pc");
-  const hasDeck = d2s.some((c) => c.source === "deck");
-  if (!hasPc || !hasDeck) return null;
+function isStale(chars: CharacterInfo[], lastSync: SyncStatusResponse | null): boolean {
+  if (!lastSync?.completed_at) return false;
   const syncTime = new Date(lastSync.completed_at).getTime() / 1000;
-  const pcNewer = d2s.some(
-    (c) => c.source === "pc" && c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS
-  );
-  const deckNewer = d2s.some(
-    (c) => c.source === "deck" && c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS
-  );
-  if (deckNewer && !pcNewer) return "deck_to_pc";
-  if (pcNewer && !deckNewer) return "pc_to_deck";
-  if (deckNewer && pcNewer) return null;
-  return "in_sync";
-}
-
-// ─── Deduplication ────────────────────────────────────────────────────────────
-
-function deduplicateChars(chars: CharacterInfo[]): {
-  unified: CharacterInfo[];
-  newerMap: Map<string, "pc" | "deck" | null>;
-} {
-  const byName = new Map<string, { pc?: CharacterInfo; deck?: CharacterInfo }>();
-
-  for (const c of chars) {
-    const entry = byName.get(c.name) ?? {};
-    entry[c.source] = c;
-    byName.set(c.name, entry);
-  }
-
-  const unified: CharacterInfo[] = [];
-  const newerMap = new Map<string, "pc" | "deck" | null>();
-
-  for (const [name, entries] of byName) {
-    if (entries.pc && entries.deck) {
-      const winner =
-        entries.pc.modified_at >= entries.deck.modified_at ? entries.pc : entries.deck;
-      unified.push(winner);
-      if (entries.pc.modified_at === entries.deck.modified_at) {
-        newerMap.set(name, null);
-      } else {
-        newerMap.set(name, entries.pc.modified_at > entries.deck.modified_at ? "pc" : "deck");
-      }
-    } else {
-      const only = (entries.pc ?? entries.deck)!;
-      unified.push(only);
-      newerMap.set(name, null);
-    }
-  }
-
-  unified.sort((a, b) => b.modified_at - a.modified_at);
-  return { unified, newerMap };
+  return chars.some((c) => c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS);
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function RecommendationBanner({ rec }: { rec: Recommendation }) {
-  if (rec === "in_sync") {
-    return (
-      <div className="bg-green-950/25 border border-green-800/40 px-4 py-3 text-green-400 text-sm mb-6 flex items-center gap-2">
-        <span>✓</span>
-        <span>Save files are in sync</span>
-      </div>
-    );
-  }
-  if (rec === "deck_to_pc") {
-    return (
-      <div className="bg-d2gold/8 border border-d2gold/30 px-4 py-3 text-d2gold text-sm mb-6 flex items-center gap-2">
-        <span>🎮</span>
-        <span>Steam Deck has newer saves — sync Deck → PC</span>
-      </div>
-    );
-  }
-  if (rec === "pc_to_deck") {
+function RecommendationBanner({
+  chars,
+  lastSync,
+}: {
+  chars: CharacterInfo[];
+  lastSync: SyncStatusResponse | null;
+}) {
+  if (!lastSync?.completed_at) return null;
+
+  if (isStale(chars, lastSync)) {
     return (
       <div className="bg-d2gold/8 border border-d2gold/30 px-4 py-3 text-d2gold text-sm mb-6 flex items-center gap-2">
-        <span>🖥️</span>
-        <span>PC has newer saves — sync PC → Steam Deck</span>
+        <span>⚠️</span>
+        <span>Saves modified since last sync — choose a direction above</span>
       </div>
     );
   }
-  return null;
+
+  return (
+    <div className="bg-green-950/25 border border-green-800/40 px-4 py-3 text-green-400 text-sm mb-6 flex items-center gap-2">
+      <span>✓</span>
+      <span>Save files are in sync</span>
+    </div>
+  );
 }
 
 function AutoSyncStatusLine({
@@ -207,29 +150,122 @@ function AutoSyncStatusLine({
   return null;
 }
 
+// ─── Latest Backup ────────────────────────────────────────────────────────────
+
+const CLASS_ICONS: Record<number, string> = {
+  0: "🏹", 1: "🔥", 2: "💀", 3: "🛡️", 4: "⚔️", 5: "🌿", 6: "🗡️", 7: "🔮",
+};
+
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso.endsWith("Z") ? iso : iso + "Z").getTime();
+  const s = ms / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(iso.endsWith("Z") ? iso : iso + "Z").toLocaleDateString();
+}
+
+function LatestBackup({ snapshot }: { snapshot: SnapshotResponse }) {
+  // snapshot.characters stores D2SCharacter.to_dict() shape (no modified_at/last_updated_at)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chars: any[] = snapshot.characters ?? [];
+  const isPrerespec = snapshot.snapshot_path.includes("_prerespec");
+
+  return (
+    <div className="card-d2">
+      <div className="px-4 py-3 border-b border-d2bg-border flex items-center justify-between">
+        <h2 className="font-diablo text-d2gold text-sm tracking-widest">Latest Backup</h2>
+        <NavLink
+          to="/backups"
+          className="text-slate-500 text-xs hover:text-d2gold transition-colors tracking-wide"
+        >
+          View all →
+        </NavLink>
+      </div>
+
+      <div className="px-4 py-3">
+        {/* Metadata row */}
+        <div className="flex items-center gap-2.5 flex-wrap mb-3">
+          <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${
+            snapshot.source_machine === "pc"
+              ? "bg-violet-950/40 text-violet-400 border-violet-900/60"
+              : "bg-cyan-950/40 text-cyan-400 border-cyan-900/60"
+          }`}>
+            {snapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
+          </span>
+          <span className="text-slate-300 text-sm">{relativeTime(snapshot.created_at)}</span>
+          <span className="text-slate-600 text-xs">·</span>
+          <span className="text-slate-500 text-xs">
+            {snapshot.file_count} file{snapshot.file_count !== 1 ? "s" : ""}
+          </span>
+          {isPrerespec && (
+            <>
+              <span className="text-slate-600 text-xs">·</span>
+              <span className="text-[10px] bg-d2gold/8 text-d2gold/70 border border-d2gold/20 px-1.5 py-0.5 tracking-wide">
+                pre-respec
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Character list */}
+        {chars.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {chars.map((c, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-2 bg-d2bg-elevated border border-d2bg-border px-2.5 py-1.5"
+              >
+                <span className="text-sm leading-none opacity-80">
+                  {CLASS_ICONS[c.class_id] ?? "🎮"}
+                </span>
+                <span className="text-slate-100 text-xs font-medium truncate">{c.name}</span>
+                <span className="text-slate-500 text-xs ml-auto shrink-0">
+                  {c.class_name} · {c.level}
+                </span>
+                {c.hardcore && (
+                  <span className="text-[9px] bg-red-950/60 text-red-400 px-1 border border-red-900/80 shrink-0">
+                    HC
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-slate-600 text-xs">No character data in this snapshot.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+type Direction = "pc_to_deck" | "deck_to_pc";
+
 export default function Dashboard() {
-  const { data: allChars, isLoading, error } = useCharacters("all");
+  const { data: chars, isLoading, error } = useCharacters();
   const { data: preflight } = usePreflight();
   const { data: lastSync } = useLastSync();
+  const { data: backups } = useBackups();
   const startSync = useStartSync();
   const dismissAutoSync = useDismissAutoSync();
   const triggerAutoSync = useTriggerAutoSync();
   const [activeSyncId, setActiveSyncId] = useState<number | null>(null);
 
-  const { unified, newerMap } = allChars
-    ? deduplicateChars(allChars)
-    : { unified: [], newerMap: new Map<string, "pc" | "deck" | null>() };
+  const sortedChars = [...(chars ?? [])].sort((a, b) => b.modified_at - a.modified_at);
 
-  const rec = allChars ? computeRecommendation(allChars, lastSync ?? null) : null;
+  const latestSnapshot = backups && backups.length > 0
+    ? [...backups].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )[0]
+    : null;
 
   const handleSync = async (direction: Direction) => {
     const result = await startSync.mutateAsync(direction);
     setActiveSyncId(result.id);
   };
-
-  const isRecommended = (direction: Direction) => rec === direction;
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fadeIn">
@@ -240,24 +276,22 @@ export default function Dashboard() {
       </div>
 
       {/* Recommendation banner */}
-      <RecommendationBanner rec={rec} />
+      <RecommendationBanner chars={chars ?? []} lastSync={lastSync ?? null} />
 
       {/* Sync buttons */}
       <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
         <button
           onClick={() => handleSync("pc_to_deck")}
           disabled={startSync.isPending}
-          className={`${isRecommended("pc_to_deck") ? "btn-d2-filled" : "btn-d2"} w-full sm:w-auto`}
+          className="btn-d2 w-full sm:w-auto"
         >
-          {isRecommended("pc_to_deck") && <span>★</span>}
           PC → Steam Deck
         </button>
         <button
           onClick={() => handleSync("deck_to_pc")}
           disabled={startSync.isPending}
-          className={`${isRecommended("deck_to_pc") ? "btn-d2-filled" : "btn-d2"} w-full sm:w-auto`}
+          className="btn-d2 w-full sm:w-auto"
         >
-          {isRecommended("deck_to_pc") && <span>★</span>}
           Steam Deck → PC
         </button>
       </div>
@@ -287,11 +321,11 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Unified character list */}
+      {/* Character list */}
       <div className="card-d2">
         <div className="px-4 py-3 border-b border-d2bg-border flex items-center gap-2">
           <h2 className="font-diablo text-d2gold text-sm tracking-widest">Characters</h2>
-          <span className="text-slate-600 text-xs font-normal">({unified.length})</span>
+          <span className="text-slate-600 text-xs font-normal">({sortedChars.length})</span>
         </div>
 
         <div className="p-4">
@@ -303,21 +337,24 @@ export default function Dashboard() {
             <div className="text-slate-500 text-sm py-8 text-center">Could not load characters</div>
           )}
 
-          {!isLoading && unified.length === 0 && !error && (
+          {!isLoading && sortedChars.length === 0 && !error && (
             <div className="text-slate-500 text-sm py-8 text-center">No characters found</div>
           )}
 
           <div className="space-y-2">
-            {unified.map((c) => (
-              <CharacterCard
-                key={c.name}
-                character={c}
-                newerOn={newerMap.get(c.name) ?? null}
-              />
+            {sortedChars.map((c) => (
+              <CharacterCard key={c.filename} character={c} />
             ))}
           </div>
         </div>
       </div>
+
+      {/* Latest Backup */}
+      {latestSnapshot && (
+        <div className="mt-4">
+          <LatestBackup snapshot={latestSnapshot} />
+        </div>
+      )}
 
       {activeSyncId !== null && (
         <SyncStatusModal

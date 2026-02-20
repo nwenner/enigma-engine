@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "./client";
 import type {
   CharacterInfo,
+  RespecResponse,
   SyncStatusResponse,
   PreflightResponse,
   SnapshotResponse,
@@ -15,10 +16,29 @@ import type {
 
 // ─── Characters ─────────────────────────────────────────────────────────────
 
-export function useCharacters(source: "pc" | "deck" | "all" = "all") {
+export function useCharacters() {
   return useQuery<CharacterInfo[]>({
-    queryKey: ["characters", source],
-    queryFn: () => api.get(`/characters?source=${source}`).then((r) => r.data),
+    queryKey: ["characters"],
+    queryFn: () => api.get("/characters").then((r) => r.data),
+  });
+}
+
+export function useRefreshCharacters() {
+  const qc = useQueryClient();
+  return useMutation<CharacterInfo[], Error, void>({
+    mutationFn: () => api.post("/characters/refresh").then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters"] }),
+  });
+}
+
+export function useRespecCharacter() {
+  const qc = useQueryClient();
+  return useMutation<RespecResponse, Error, { filename: string; target: "pc" | "deck" }>({
+    mutationFn: ({ filename, target }) =>
+      api
+        .post(`/characters/${encodeURIComponent(filename)}/respec`, { target })
+        .then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters"] }),
   });
 }
 

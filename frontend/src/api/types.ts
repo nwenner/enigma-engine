@@ -1,15 +1,19 @@
 export interface CharacterInfo {
+  filename: string;
   name: string;
-  class_name: string;
   class_id: number;
+  class_name: string;
   level: number;
   hardcore: boolean;
   ever_died: boolean;
   expansion: boolean;
-  filename: string;
-  source: "pc" | "deck";
-  modified_at: number; // epoch seconds
-  size: number;
+  modified_at: number;      // epoch seconds
+  last_updated_at: string;  // ISO datetime
+}
+
+export interface RespecResponse {
+  success: boolean;
+  message: string;
 }
 
 export interface SyncStatusResponse {
