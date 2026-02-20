@@ -90,6 +90,14 @@ export interface TestConnectionResponse {
   message: string;
 }
 
+export interface NotificationConfig {
+  type: "none" | "ses";
+  aws_profile: string;
+  aws_region: string;
+  ses_from: string;
+  ses_to: string;
+}
+
 export interface AutoSyncState {
   status: "idle" | "pending" | "conflict";
   direction: "pc_to_deck" | "deck_to_pc" | null;

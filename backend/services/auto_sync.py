@@ -32,6 +32,7 @@ from sqlalchemy import select
 
 from backend.config import get_settings
 from backend.database import AsyncSessionLocal
+from backend.services.notify import notify_conflict
 from backend.models import Settings, SyncOperation
 from backend.routers.settings import _get_conn_kwargs, _get_setting
 from backend.services.ssh_client import (
@@ -344,6 +345,7 @@ async def run_auto_sync_watcher() -> None:
                                 "expires_at": None,
                                 "reason": f"Both PC and Deck have unseen saves since last sync",
                             })
+                            asyncio.create_task(notify_conflict())
                         elif dest_has_new is None:
                             # Dest offline — stage files then record pending
                             log.info("auto_sync: dest %s offline, staging files from %s", dest, machine)
@@ -367,6 +369,7 @@ async def run_auto_sync_watcher() -> None:
                                     "staged_path": cur_state["staged_path"],  # preserve for dismiss cleanup
                                     "reason": "Both machines played since last sync. Staged saves waiting. Choose manually.",
                                 })
+                                asyncio.create_task(notify_conflict())
                             else:
                                 try:
                                     staged_path, count = await _stage_files(machine, is_windows)

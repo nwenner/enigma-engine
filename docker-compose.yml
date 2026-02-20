@@ -5,6 +5,7 @@ services:
       - "8080:8080"
     volumes:
       - ./data:/app/data
+      - ~/.aws:/root/.aws:ro
     env_file:
       - .env
     restart: unless-stopped

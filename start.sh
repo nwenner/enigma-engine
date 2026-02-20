@@ -11,23 +11,11 @@ if [ ! -f .env ]; then
   echo "Created .env with a random SECRET_KEY"
 fi
 
-# Create data directories
-mkdir -p data/backups/pc data/backups/deck data/keys data/tmp
-
-# Create virtualenv if it doesn't exist
-if [ ! -d .venv ]; then
-  echo "Creating virtual environment..."
-  python3 -m venv .venv
-fi
-
-# Activate and install dependencies
-source .venv/bin/activate
-pip install -q -r backend/requirements.txt
+# Create host-side data directories
+mkdir -p data/backups/pc data/backups/deck data/keys data/tmp data/staging
 
 echo ""
 echo "Starting Enigma Engine → http://localhost:8080"
 echo ""
 
-DATA_DIR="$(pwd)/data" \
-  DATABASE_URL="sqlite+aiosqlite:///$(pwd)/data/db.sqlite" \
-  uvicorn backend.main:app --host 0.0.0.0 --port 8080
+docker compose up --build "$@"

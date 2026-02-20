@@ -6,8 +6,11 @@ import {
   useUploadKey,
   useAutoSyncStatus,
   useUpdateAutoSyncConfig,
+  useNotificationConfig,
+  useUpdateNotificationConfig,
+  useTestNotification,
 } from "../api/hooks";
-import type { MachineSettings } from "../api/types";
+import type { MachineSettings, NotificationConfig } from "../api/types";
 
 type Machine = "pc" | "deck";
 
@@ -115,6 +118,9 @@ export default function Settings() {
           uploadKey={uploadKey}
         />
 
+        {/* Notifications */}
+        <NotificationsForm />
+
         {/* Auto-Sync */}
         <div className="card-d2 p-5">
           <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-1 flex items-center gap-2">
@@ -193,6 +199,165 @@ export default function Settings() {
     </div>
   );
 }
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+const EMPTY_CONFIG: NotificationConfig = {
+  type: "none",
+  aws_profile: "",
+  aws_region: "us-east-1",
+  ses_from: "",
+  ses_to: "",
+};
+
+function NotificationsForm() {
+  const { data: saved } = useNotificationConfig();
+  const updateConfig = useUpdateNotificationConfig();
+  const testNotification = useTestNotification();
+  const [form, setForm] = useState<NotificationConfig | null>(null);
+  const [toast, setToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  const showToast = (type: "success" | "error", msg: string) => {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const current: NotificationConfig = form ?? saved ?? EMPTY_CONFIG;
+  const isDirty = form !== null;
+
+  const handleSave = async () => {
+    try {
+      await updateConfig.mutateAsync(current);
+      setForm(null);
+      showToast("success", "Notification settings saved");
+    } catch {
+      showToast("error", "Failed to save notification settings");
+    }
+  };
+
+  const handleTest = async () => {
+    // Save first if dirty so the test uses the latest values
+    if (isDirty) {
+      try { await updateConfig.mutateAsync(current); setForm(null); } catch { /* fall through to test anyway */ }
+    }
+    const result = await testNotification.mutateAsync();
+    showToast(result.success ? "success" : "error", result.message);
+  };
+
+  return (
+    <div className="card-d2 p-5">
+      <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-1 flex items-center gap-2">
+        <span>🔔</span> Notifications
+      </h2>
+      <p className="text-slate-500 text-xs mb-5 leading-relaxed">
+        Receive a notification when an auto-sync conflict is detected.
+      </p>
+
+      {toast && (
+        <div
+          className={`mb-4 p-3 border text-sm animate-fadeIn ${
+            toast.type === "success"
+              ? "bg-green-950/30 border-green-800/50 text-green-400"
+              : "bg-red-950/30 border-red-800/50 text-red-400"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {/* Type selector */}
+        <div>
+          <label className="block text-xs text-slate-500 mb-1.5 uppercase tracking-wider">Type</label>
+          <select
+            value={current.type}
+            onChange={(e) => setForm({ ...current, type: e.target.value as NotificationConfig["type"] })}
+            className="bg-d2bg border border-d2bg-border px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-d2gold/50 transition-colors"
+          >
+            <option value="none">None</option>
+            <option value="ses">Amazon SES (Email)</option>
+          </select>
+        </div>
+
+        {current.type === "ses" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1.5 uppercase tracking-wider">AWS Profile</label>
+              <input
+                type="text"
+                placeholder="default"
+                value={current.aws_profile}
+                onChange={(e) => setForm({ ...current, aws_profile: e.target.value })}
+                className="input-d2"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1.5 uppercase tracking-wider">AWS Region</label>
+              <input
+                type="text"
+                placeholder="us-east-1"
+                value={current.aws_region}
+                onChange={(e) => setForm({ ...current, aws_region: e.target.value })}
+                className="input-d2"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1.5 uppercase tracking-wider">From Address</label>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={current.ses_from}
+                onChange={(e) => setForm({ ...current, ses_from: e.target.value })}
+                className="input-d2"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1.5 uppercase tracking-wider">To Address</label>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={current.ses_to}
+                onChange={(e) => setForm({ ...current, ses_to: e.target.value })}
+                className="input-d2"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-5 flex gap-2 justify-end">
+        {isDirty && (
+          <button
+            onClick={() => setForm(null)}
+            className="btn-d2-ghost text-xs px-3 py-1.5"
+          >
+            Discard
+          </button>
+        )}
+        {isDirty && (
+          <button
+            onClick={handleSave}
+            disabled={updateConfig.isPending}
+            className="btn-d2-filled text-xs px-3 py-1.5"
+          >
+            {updateConfig.isPending ? "Saving..." : "Save"}
+          </button>
+        )}
+        {current.type !== "none" && (
+          <button
+            onClick={handleTest}
+            disabled={testNotification.isPending || updateConfig.isPending}
+            className="btn-d2 text-xs px-3 py-1.5"
+          >
+            {testNotification.isPending ? "Sending..." : "Send Test"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Machine Form ─────────────────────────────────────────────────────────────
 
 interface FormProps {
   machine: Machine;

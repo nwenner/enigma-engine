@@ -10,6 +10,7 @@ import type {
   TestConnectionResponse,
   MachineSettings,
   AutoSyncStatus,
+  NotificationConfig,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
@@ -175,6 +176,29 @@ export function useTriggerAutoSync() {
       qc.invalidateQueries({ queryKey: ["autosync"] });
       qc.invalidateQueries({ queryKey: ["sync", "last"] });
     },
+  });
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+export function useNotificationConfig() {
+  return useQuery<NotificationConfig>({
+    queryKey: ["notifications", "config"],
+    queryFn: () => api.get("/notifications/config").then((r) => r.data),
+  });
+}
+
+export function useUpdateNotificationConfig() {
+  const qc = useQueryClient();
+  return useMutation<NotificationConfig, Error, NotificationConfig>({
+    mutationFn: (body) => api.put("/notifications/config", body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+}
+
+export function useTestNotification() {
+  return useMutation<{ success: boolean; message: string }, Error, void>({
+    mutationFn: () => api.post("/notifications/test").then((r) => r.data),
   });
 }
 
