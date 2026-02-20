@@ -40,35 +40,34 @@ export default function Characters() {
     sortKey === k ? (sortAsc ? " ↑" : " ↓") : "";
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-d2gold">Characters</h1>
-        <button
-          onClick={() => refetch()}
-          className="text-sm text-amber-500 hover:text-amber-300 underline"
-        >
+    <div className="p-6 max-w-5xl mx-auto animate-fadeIn">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Characters</h1>
+        </div>
+        <button onClick={() => refetch()} className="btn-d2-ghost text-xs px-3 py-1.5">
           Refresh
         </button>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 mb-4 flex-wrap">
+      <div className="flex gap-3 mb-5 flex-wrap">
         <input
           type="text"
           placeholder="Search name or class..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="bg-d2bg-elevated border border-d2bg-border rounded px-3 py-1.5 text-sm text-amber-100 placeholder-amber-700 focus:outline-none focus:border-d2gold w-56"
+          className="input-d2 w-56"
         />
         <div className="flex gap-1">
           {(["all", "pc", "deck"] as const).map((s) => (
             <button
               key={s}
               onClick={() => setSource(s)}
-              className={`px-3 py-1.5 text-sm rounded transition-colors ${
+              className={`px-3 py-1.5 text-sm transition-all duration-150 border ${
                 source === s
-                  ? "bg-d2gold text-d2bg font-bold"
-                  : "bg-d2bg-elevated text-amber-400 border border-d2bg-border hover:border-d2gold/50"
+                  ? "bg-d2gold/15 text-d2gold border-d2gold/50"
+                  : "bg-d2bg-elevated text-slate-400 border-d2bg-border hover:border-slate-600 hover:text-slate-200"
               }`}
             >
               {s === "all" ? "All" : s === "pc" ? "PC" : "Steam Deck"}
@@ -78,59 +77,46 @@ export default function Characters() {
       </div>
 
       {error && (
-        <div className="bg-red-950/50 border border-red-800 rounded p-3 text-red-300 text-sm mb-4">
+        <div className="bg-red-950/30 border border-red-800/50 p-3 text-red-400 text-sm mb-4">
           Error loading characters
         </div>
       )}
 
-      <div className="bg-d2bg-surface border border-d2bg-border rounded-lg overflow-hidden">
+      <div className="card-d2 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-d2bg-border text-amber-600">
-              <th
-                className="text-left px-4 py-2.5 cursor-pointer hover:text-d2gold select-none"
-                onClick={() => toggleSort("name")}
-              >
-                Name<SortIcon k="name" />
-              </th>
-              <th
-                className="text-left px-4 py-2.5 cursor-pointer hover:text-d2gold select-none"
-                onClick={() => toggleSort("class_name")}
-              >
-                Class<SortIcon k="class_name" />
-              </th>
-              <th
-                className="text-right px-4 py-2.5 cursor-pointer hover:text-d2gold select-none"
-                onClick={() => toggleSort("level")}
-              >
-                Level<SortIcon k="level" />
-              </th>
-              <th className="text-center px-4 py-2.5">Flags</th>
-              <th
-                className="text-left px-4 py-2.5 cursor-pointer hover:text-d2gold select-none"
-                onClick={() => toggleSort("source")}
-              >
-                Machine<SortIcon k="source" />
-              </th>
-              <th
-                className="text-left px-4 py-2.5 cursor-pointer hover:text-d2gold select-none"
-                onClick={() => toggleSort("modified_at")}
-              >
-                Last Modified<SortIcon k="modified_at" />
-              </th>
+            <tr className="border-b border-d2bg-border">
+              {[
+                { key: "name" as SortKey, label: "Name", align: "left" },
+                { key: "class_name" as SortKey, label: "Class", align: "left" },
+                { key: "level" as SortKey, label: "Level", align: "right" },
+                { key: null, label: "Flags", align: "center" },
+                { key: "source" as SortKey, label: "Machine", align: "left" },
+                { key: "modified_at" as SortKey, label: "Last Modified", align: "left" },
+              ].map(({ key, label, align }) => (
+                <th
+                  key={label}
+                  className={`text-${align} px-4 py-3 text-slate-500 font-medium text-xs tracking-wider uppercase ${
+                    key ? "cursor-pointer hover:text-d2gold select-none transition-colors" : ""
+                  }`}
+                  onClick={() => key && toggleSort(key)}
+                >
+                  {label}{key ? <SortIcon k={key} /> : ""}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={6} className="text-center py-8 text-amber-700">
+                <td colSpan={6} className="text-center py-10 text-slate-500">
                   Loading characters...
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-8 text-amber-700">
+                <td colSpan={6} className="text-center py-10 text-slate-500">
                   No characters found
                 </td>
               </tr>
@@ -147,37 +133,37 @@ export default function Characters() {
 
 function CharacterRow({ char }: { char: CharacterInfo }) {
   return (
-    <tr className="border-b border-d2bg-border/50 hover:bg-d2bg-elevated/50 transition-colors">
-      <td className="px-4 py-2.5 font-medium text-amber-100">{char.name}</td>
-      <td className="px-4 py-2.5 text-amber-300">
+    <tr className="border-b border-d2bg-border/50 hover:bg-d2bg-elevated/40 transition-colors">
+      <td className="px-4 py-3 font-medium text-slate-100">{char.name}</td>
+      <td className="px-4 py-3 text-slate-300">
         <span className="mr-1.5">{CLASS_ICONS[char.class_id] ?? "🎮"}</span>
         {char.class_name}
       </td>
-      <td className="px-4 py-2.5 text-right text-amber-300 font-mono">{char.level}</td>
-      <td className="px-4 py-2.5 text-center">
+      <td className="px-4 py-3 text-right text-slate-300 font-mono tabular-nums">{char.level}</td>
+      <td className="px-4 py-3 text-center">
         <span className="flex gap-1 justify-center">
           {char.hardcore && (
-            <span className="text-xs bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded border border-red-800">
+            <span className="text-[10px] bg-red-950/60 text-red-400 px-1.5 py-0.5 border border-red-900/80">
               HC
             </span>
           )}
           {char.expansion && (
-            <span className="text-xs bg-blue-900/40 text-blue-300 px-1.5 py-0.5 rounded border border-blue-800">
+            <span className="text-[10px] bg-blue-950/50 text-blue-400 px-1.5 py-0.5 border border-blue-900/70">
               LOD
             </span>
           )}
         </span>
       </td>
-      <td className="px-4 py-2.5">
-        <span className={`text-xs px-2 py-0.5 rounded border ${
+      <td className="px-4 py-3">
+        <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${
           char.source === "pc"
-            ? "bg-violet-900/40 text-violet-300 border-violet-800"
-            : "bg-cyan-900/40 text-cyan-300 border-cyan-800"
+            ? "bg-violet-950/40 text-violet-400 border-violet-900/60"
+            : "bg-cyan-950/40 text-cyan-400 border-cyan-900/60"
         }`}>
           {char.source === "pc" ? "PC" : "Deck"}
         </span>
       </td>
-      <td className="px-4 py-2.5 text-amber-600 text-xs">
+      <td className="px-4 py-3 text-slate-500 text-xs tabular-nums">
         {new Date(char.modified_at * 1000).toLocaleString()}
       </td>
     </tr>

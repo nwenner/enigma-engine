@@ -41,28 +41,23 @@ export default function Backups() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6 max-w-4xl mx-auto animate-fadeIn">
+      <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-d2gold">Backups</h1>
-          <p className="text-amber-700 text-sm mt-0.5">
-            Automatic snapshots taken before each sync
-          </p>
+          <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Backups</h1>
+          <p className="text-slate-500 text-sm mt-1">Automatic snapshots taken before each sync</p>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="text-sm text-amber-500 hover:text-amber-300 underline"
-        >
+        <button onClick={() => refetch()} className="btn-d2-ghost text-xs px-3 py-1.5">
           Refresh
         </button>
       </div>
 
       {toast && (
         <div
-          className={`mb-4 p-3 rounded border text-sm ${
+          className={`mb-5 p-3 border text-sm animate-fadeIn ${
             toast.type === "success"
-              ? "bg-green-950/50 border-green-800 text-green-300"
-              : "bg-red-950/50 border-red-800 text-red-300"
+              ? "bg-green-950/30 border-green-800/50 text-green-400"
+              : "bg-red-950/30 border-red-800/50 text-red-400"
           }`}
         >
           {toast.msg}
@@ -70,17 +65,17 @@ export default function Backups() {
       )}
 
       {error && (
-        <div className="bg-red-950/50 border border-red-800 rounded p-3 text-red-300 text-sm mb-4">
+        <div className="bg-red-950/30 border border-red-800/50 p-3 text-red-400 text-sm mb-5">
           Error loading backups
         </div>
       )}
 
       {isLoading && (
-        <div className="text-amber-700 text-center py-8">Loading backups...</div>
+        <div className="text-slate-500 text-center py-10">Loading backups...</div>
       )}
 
       {!isLoading && (backups ?? []).length === 0 && (
-        <div className="text-amber-700 text-center py-8">
+        <div className="text-slate-500 text-center py-10 text-sm">
           No backups yet — backups are created automatically before each sync
         </div>
       )}
@@ -131,63 +126,57 @@ function SnapshotRow({ snapshot, onDelete, onRestore }: RowProps) {
   const chars = snapshot.characters ?? [];
 
   return (
-    <div className="bg-d2bg-surface border border-d2bg-border rounded-lg overflow-hidden">
+    <div className="card-d2 overflow-hidden transition-all duration-200">
       <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-d2bg-elevated/30 transition-colors"
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-d2bg-elevated/40 transition-colors"
         onClick={() => setExpanded((v) => !v)}
       >
-        <span className="text-amber-600 text-xs w-4">{expanded ? "▼" : "▶"}</span>
+        <span className="text-slate-600 text-xs w-4 transition-transform duration-200" style={{ display: "inline-block", transform: expanded ? "rotate(90deg)" : "none" }}>
+          ▶
+        </span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={`text-xs px-2 py-0.5 rounded border ${
-                snapshot.source_machine === "pc"
-                  ? "bg-violet-900/40 text-violet-300 border-violet-800"
-                  : "bg-cyan-900/40 text-cyan-300 border-cyan-800"
-              }`}
-            >
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${
+              snapshot.source_machine === "pc"
+                ? "bg-violet-950/40 text-violet-400 border-violet-900/60"
+                : "bg-cyan-950/40 text-cyan-400 border-cyan-900/60"
+            }`}>
               {snapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
             </span>
-            <span className="text-amber-300 text-sm font-medium">
+            <span className="text-slate-200 text-sm font-medium">
               {fmtUtc(snapshot.created_at)}
             </span>
-            <span className="text-amber-700 text-xs">
+            <span className="text-slate-500 text-xs">
               {snapshot.file_count} file{snapshot.file_count !== 1 ? "s" : ""}
             </span>
             {chars.length > 0 && (
-              <span className="text-amber-700 text-xs">
+              <span className="text-slate-500 text-xs">
                 · {chars.length} character{chars.length !== 1 ? "s" : ""}
               </span>
             )}
           </div>
         </div>
         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={onRestore}
-            className="text-xs px-3 py-1.5 bg-d2gold/10 hover:bg-d2gold/20 text-d2gold border border-d2gold/30 rounded transition-colors"
-          >
+          <button onClick={onRestore} className="btn-d2 text-xs px-3 py-1.5">
             Restore
           </button>
-          <button
-            onClick={onDelete}
-            className="text-xs px-3 py-1.5 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-800/50 rounded transition-colors"
-          >
+          <button onClick={onDelete} className="btn-d2-danger text-xs px-3 py-1.5">
             Delete
           </button>
         </div>
       </div>
 
       {expanded && chars.length > 0 && (
-        <div className="border-t border-d2bg-border px-4 py-3 bg-d2bg/30">
-          <p className="text-amber-700 text-xs mb-2">Characters in this snapshot:</p>
+        <div className="border-t border-d2bg-border px-4 py-3 bg-d2bg/40">
+          <p className="text-slate-600 text-xs mb-2 uppercase tracking-wider">Characters in snapshot</p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {chars.map((c, i) => (
               <div
                 key={i}
-                className="bg-d2bg-elevated border border-d2bg-border rounded px-2 py-1.5 text-xs"
+                className="bg-d2bg-elevated border border-d2bg-border px-2.5 py-1.5 text-xs"
               >
-                <span className="text-amber-100 font-medium">{c.name}</span>
-                <span className="text-amber-600 ml-1.5">
+                <span className="text-slate-100 font-medium">{c.name}</span>
+                <span className="text-slate-500 ml-1.5">
                   {c.class_name} {c.level}
                 </span>
               </div>

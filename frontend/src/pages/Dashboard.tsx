@@ -25,7 +25,6 @@ function computeRecommendation(
 ): Recommendation {
   if (!lastSync?.completed_at) return null;
   const d2s = chars.filter((c) => c.filename.endsWith(".d2s"));
-  // Can't determine sync status if we don't have data from both machines
   const hasPc = d2s.some((c) => c.source === "pc");
   const hasDeck = d2s.some((c) => c.source === "deck");
   if (!hasPc || !hasDeck) return null;
@@ -38,7 +37,7 @@ function computeRecommendation(
   );
   if (deckNewer && !pcNewer) return "deck_to_pc";
   if (pcNewer && !deckNewer) return "pc_to_deck";
-  if (deckNewer && pcNewer) return null; // conflict — let user decide
+  if (deckNewer && pcNewer) return null;
   return "in_sync";
 }
 
@@ -48,7 +47,6 @@ function deduplicateChars(chars: CharacterInfo[]): {
   unified: CharacterInfo[];
   newerMap: Map<string, "pc" | "deck" | null>;
 } {
-  // For each character name, pick the entry with the newer mtime
   const byName = new Map<string, { pc?: CharacterInfo; deck?: CharacterInfo }>();
 
   for (const c of chars) {
@@ -62,7 +60,6 @@ function deduplicateChars(chars: CharacterInfo[]): {
 
   for (const [name, entries] of byName) {
     if (entries.pc && entries.deck) {
-      // Both machines have this character
       const winner =
         entries.pc.modified_at >= entries.deck.modified_at ? entries.pc : entries.deck;
       unified.push(winner);
@@ -78,9 +75,7 @@ function deduplicateChars(chars: CharacterInfo[]): {
     }
   }
 
-  // Sort: newer first
   unified.sort((a, b) => b.modified_at - a.modified_at);
-
   return { unified, newerMap };
 }
 
@@ -89,22 +84,25 @@ function deduplicateChars(chars: CharacterInfo[]): {
 function RecommendationBanner({ rec }: { rec: Recommendation }) {
   if (rec === "in_sync") {
     return (
-      <div className="bg-green-950/30 border border-green-800/50 rounded-lg px-4 py-3 text-green-300 text-sm mb-6">
-        ✓ Save files are in sync
+      <div className="bg-green-950/25 border border-green-800/40 px-4 py-3 text-green-400 text-sm mb-6 flex items-center gap-2">
+        <span>✓</span>
+        <span>Save files are in sync</span>
       </div>
     );
   }
   if (rec === "deck_to_pc") {
     return (
-      <div className="bg-d2gold/10 border border-d2gold/40 rounded-lg px-4 py-3 text-d2gold text-sm mb-6">
-        🎮 Steam Deck has newer saves — sync Deck → PC
+      <div className="bg-d2gold/8 border border-d2gold/30 px-4 py-3 text-d2gold text-sm mb-6 flex items-center gap-2">
+        <span>🎮</span>
+        <span>Steam Deck has newer saves — sync Deck → PC</span>
       </div>
     );
   }
   if (rec === "pc_to_deck") {
     return (
-      <div className="bg-d2gold/10 border border-d2gold/40 rounded-lg px-4 py-3 text-d2gold text-sm mb-6">
-        🖥️ PC has newer saves — sync PC → Steam Deck
+      <div className="bg-d2gold/8 border border-d2gold/30 px-4 py-3 text-d2gold text-sm mb-6 flex items-center gap-2">
+        <span>🖥️</span>
+        <span>PC has newer saves — sync PC → Steam Deck</span>
       </div>
     );
   }
@@ -130,7 +128,9 @@ function AutoSyncStatusLine({
 
   if (!state || state.status === "idle") {
     return (
-      <p className="text-amber-800 text-xs mt-3 text-center">Auto-sync: monitoring</p>
+      <p className="text-slate-600 text-xs mt-3 text-center tracking-wide">
+        Auto-sync: monitoring
+      </p>
     );
   }
 
@@ -141,18 +141,18 @@ function AutoSyncStatusLine({
     const hasStaged = !!state.staged_path;
 
     return (
-      <div className="mt-4 bg-amber-950/30 border border-amber-700/50 rounded-lg p-4 text-left">
-        <div className="flex items-start gap-3 mb-3">
-          <span className="text-amber-400 text-lg leading-none mt-0.5">⏳</span>
+      <div className="mt-4 bg-d2bg-elevated border border-d2gold/25 p-4 animate-fadeIn">
+        <div className="flex items-start gap-3 mb-4">
+          <span className="text-d2gold text-lg leading-none mt-0.5">⏳</span>
           <div>
-            <p className="text-amber-300 font-semibold text-sm">Auto-sync pending</p>
+            <p className="text-d2gold font-semibold text-sm tracking-wide">Auto-sync pending</p>
             {hasStaged ? (
-              <p className="text-amber-500 text-xs mt-1">
+              <p className="text-slate-400 text-xs mt-1 leading-relaxed">
                 {count} save{count === 1 ? "" : "s"} captured from {source} and held locally —
-                push to {dest} automatically when it comes online, or sync now.
+                will push to {dest} automatically when it comes online.
               </p>
             ) : (
-              <p className="text-amber-500 text-xs mt-1">
+              <p className="text-slate-400 text-xs mt-1 leading-relaxed">
                 Waiting for {dest} to come online to sync {source} → {dest}.
               </p>
             )}
@@ -162,14 +162,14 @@ function AutoSyncStatusLine({
           <button
             onClick={onDismiss}
             disabled={dismissPending || syncNowPending}
-            className="px-3 py-1.5 text-xs text-amber-700 border border-amber-800/50 rounded hover:border-amber-700 hover:text-amber-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-d2-ghost text-xs px-3 py-1.5"
           >
             Discard
           </button>
           <button
             onClick={onSyncNow}
             disabled={syncNowPending || dismissPending}
-            className="px-3 py-1.5 text-xs bg-amber-700/40 text-amber-300 border border-amber-600/50 rounded hover:bg-amber-700/60 hover:text-amber-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-d2 text-xs px-3 py-1.5"
           >
             {syncNowPending ? "Starting…" : "Sync now"}
           </button>
@@ -180,12 +180,12 @@ function AutoSyncStatusLine({
 
   if (state.status === "conflict") {
     return (
-      <div className="mt-4 bg-red-950/30 border border-red-800/50 rounded-lg p-4 text-left">
-        <div className="flex items-start gap-3 mb-3">
+      <div className="mt-4 bg-red-950/20 border border-red-800/40 p-4 animate-fadeIn">
+        <div className="flex items-start gap-3 mb-4">
           <span className="text-red-400 text-lg leading-none mt-0.5">⚠️</span>
           <div>
-            <p className="text-red-300 font-semibold text-sm">Auto-sync conflict</p>
-            <p className="text-red-400/80 text-xs mt-1">
+            <p className="text-red-400 font-semibold text-sm tracking-wide">Auto-sync conflict</p>
+            <p className="text-slate-400 text-xs mt-1 leading-relaxed">
               Both machines have played since the last sync. Choose a direction manually
               using the buttons above, then dismiss this notice.
             </p>
@@ -195,7 +195,7 @@ function AutoSyncStatusLine({
           <button
             onClick={onDismiss}
             disabled={dismissPending}
-            className="px-3 py-1.5 text-xs text-amber-700 border border-amber-800/50 rounded hover:border-amber-700 hover:text-amber-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-d2-ghost text-xs px-3 py-1.5"
           >
             Dismiss
           </button>
@@ -229,24 +229,14 @@ export default function Dashboard() {
     setActiveSyncId(result.id);
   };
 
-  const isRecommended = (direction: Direction) =>
-    rec === direction;
-
-  const buttonClass = (direction: Direction) =>
-    isRecommended(direction)
-      ? "flex items-center gap-2 px-5 py-2.5 bg-d2gold hover:bg-d2gold-light text-d2bg font-bold rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      : "flex items-center gap-2 px-5 py-2.5 border border-d2bg-border text-amber-400 hover:border-d2gold/50 hover:text-amber-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-
-  const buttonLabel = (direction: Direction, base: string) =>
-    isRecommended(direction) ? `★ ${base}` : base;
+  const isRecommended = (direction: Direction) => rec === direction;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-d2gold">Dashboard</h1>
-        <p className="text-amber-700 text-sm mt-0.5">
-          Sync save files between your PC and Steam Deck
-        </p>
+    <div className="p-6 max-w-4xl mx-auto animate-fadeIn">
+      {/* Header */}
+      <div className="mb-7">
+        <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Dashboard</h1>
+        <p className="text-slate-500 text-sm mt-1">Sync save files between your PC and Steam Deck</p>
       </div>
 
       {/* Recommendation banner */}
@@ -257,28 +247,30 @@ export default function Dashboard() {
         <button
           onClick={() => handleSync("pc_to_deck")}
           disabled={startSync.isPending}
-          className={buttonClass("pc_to_deck")}
+          className={isRecommended("pc_to_deck") ? "btn-d2-filled" : "btn-d2"}
         >
-          {buttonLabel("pc_to_deck", "PC → Steam Deck")}
+          {isRecommended("pc_to_deck") && <span>★</span>}
+          PC → Steam Deck
         </button>
         <button
           onClick={() => handleSync("deck_to_pc")}
           disabled={startSync.isPending}
-          className={buttonClass("deck_to_pc")}
+          className={isRecommended("deck_to_pc") ? "btn-d2-filled" : "btn-d2"}
         >
-          {buttonLabel("deck_to_pc", "Steam Deck → PC")}
+          {isRecommended("deck_to_pc") && <span>★</span>}
+          Steam Deck → PC
         </button>
       </div>
 
       {/* D2R running warning */}
       {preflight && !preflight.safe_to_sync && (preflight.pc_running || preflight.deck_running) && (
-        <div className="bg-red-950/50 border border-red-800 rounded px-3 py-2 text-red-300 text-sm mb-4 text-center">
+        <div className="bg-red-950/30 border border-red-800/50 px-4 py-3 text-red-400 text-sm mb-4 text-center">
           ⚠️ D2R is running — close the game before syncing
         </div>
       )}
 
       {startSync.error && (
-        <div className="bg-red-950/50 border border-red-800 rounded p-3 text-red-300 text-sm mb-4">
+        <div className="bg-red-950/30 border border-red-800/50 p-3 text-red-400 text-sm mb-4">
           {startSync.error.message}
         </div>
       )}
@@ -296,40 +288,34 @@ export default function Dashboard() {
       </div>
 
       {/* Unified character list */}
-      <div className="bg-d2bg-surface border border-d2bg-border rounded-lg p-4">
-        <h2 className="text-d2gold font-semibold text-base mb-3 flex items-center gap-2">
-          Characters
-          <span className="ml-1 text-amber-700 font-normal text-sm">
-            ({unified.length})
-          </span>
-        </h2>
+      <div className="card-d2">
+        <div className="px-4 py-3 border-b border-d2bg-border flex items-center gap-2">
+          <h2 className="font-diablo text-d2gold text-sm tracking-widest">Characters</h2>
+          <span className="text-slate-600 text-xs font-normal">({unified.length})</span>
+        </div>
 
-        {isLoading && (
-          <div className="text-amber-600 text-sm py-6 text-center">
-            Loading characters...
+        <div className="p-4">
+          {isLoading && (
+            <div className="text-slate-500 text-sm py-8 text-center">Loading characters...</div>
+          )}
+
+          {error && !isLoading && (
+            <div className="text-slate-500 text-sm py-8 text-center">Could not load characters</div>
+          )}
+
+          {!isLoading && unified.length === 0 && !error && (
+            <div className="text-slate-500 text-sm py-8 text-center">No characters found</div>
+          )}
+
+          <div className="space-y-2">
+            {unified.map((c) => (
+              <CharacterCard
+                key={c.name}
+                character={c}
+                newerOn={newerMap.get(c.name) ?? null}
+              />
+            ))}
           </div>
-        )}
-
-        {error && !isLoading && (
-          <div className="text-amber-700 text-sm py-6 text-center">
-            Could not load characters
-          </div>
-        )}
-
-        {!isLoading && unified.length === 0 && !error && (
-          <div className="text-amber-700 text-sm py-6 text-center">
-            No characters found
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {unified.map((c) => (
-            <CharacterCard
-              key={c.name}
-              character={c}
-              newerOn={newerMap.get(c.name) ?? null}
-            />
-          ))}
         </div>
       </div>
 

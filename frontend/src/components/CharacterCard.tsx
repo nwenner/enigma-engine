@@ -22,36 +22,36 @@ export default function CharacterCard({ character, newerOn }: Props) {
 
   return (
     <div
-      className={`bg-d2bg-elevated border rounded p-3 flex items-start gap-3 transition-colors ${
+      className={`p-3 flex items-start gap-3 transition-all duration-200 ${
         isNewer
-          ? "border-d2gold shadow-md shadow-d2gold/10"
-          : "border-d2bg-border"
+          ? "bg-d2bg-elevated border border-d2gold/40 shadow-md shadow-d2gold/8"
+          : "bg-d2bg-elevated border border-d2bg-border hover:border-slate-600"
       }`}
     >
-      <span className="text-2xl leading-none mt-0.5">{icon}</span>
+      <span className="text-2xl leading-none mt-0.5 opacity-90">{icon}</span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-amber-100 truncate">{character.name}</span>
+          <span className="font-semibold text-slate-100 truncate">{character.name}</span>
           {character.hardcore && (
-            <span className="text-xs bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded border border-red-800">
+            <span className="text-[10px] bg-red-950/60 text-red-400 px-1.5 py-0.5 border border-red-900/80 tracking-wide">
               HC
             </span>
           )}
           {character.hardcore && character.ever_died && (
-            <span className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded border border-gray-700 line-through">
+            <span className="text-[10px] bg-slate-800/60 text-slate-500 px-1.5 py-0.5 border border-slate-700 line-through">
               RIP
             </span>
           )}
           {isNewer && (
-            <span className="text-xs bg-d2gold/20 text-d2gold px-1.5 py-0.5 rounded border border-d2gold/40">
+            <span className="text-[10px] bg-d2gold/10 text-d2gold px-1.5 py-0.5 border border-d2gold/30 tracking-wide">
               newer
             </span>
           )}
         </div>
-        <div className="text-sm text-amber-400 mt-0.5">
+        <div className="text-sm text-slate-400 mt-0.5">
           {character.class_name} · Lvl {character.level}
         </div>
-        <div className="text-xs text-amber-700 mt-0.5">
+        <div className="text-xs text-slate-600 mt-0.5">
           {new Date(character.modified_at * 1000).toLocaleString()}
         </div>
       </div>

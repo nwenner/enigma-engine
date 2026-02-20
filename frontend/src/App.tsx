@@ -14,30 +14,35 @@ const NAV_ITEMS = [
   { to: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
+function StatusDot({ online }: { online: boolean | null }) {
+  if (online === null) {
+    return <span className="w-1.5 h-1.5 rounded-full bg-slate-600 inline-block shrink-0" />;
+  }
+  return online ? (
+    <span className="relative inline-flex shrink-0">
+      <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+      <span className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-green-400 animate-ping opacity-60" />
+    </span>
+  ) : (
+    <span className="w-1.5 h-1.5 rounded-full bg-red-600 inline-block shrink-0" />
+  );
+}
+
 function ConnectionStatus() {
   const { data, isLoading } = usePreflight();
-
-  const StatusDot = ({ online }: { online: boolean | null }) => {
-    if (isLoading || online === null) {
-      return <span className="w-2 h-2 rounded-full bg-amber-900 inline-block shrink-0" />;
-    }
-    return online
-      ? <span className="w-2 h-2 rounded-full bg-green-500 inline-block shrink-0" title="Online" />
-      : <span className="w-2 h-2 rounded-full bg-red-600 inline-block shrink-0" title="Offline" />;
-  };
-
   const pcOnline = data ? data.pc_error === null : null;
   const deckOnline = data ? data.deck_error === null : null;
 
   return (
-    <div className="px-4 py-2.5 border-t border-d2bg-border space-y-1.5">
+    <div className="px-4 py-3 border-t border-d2bg-border space-y-2">
+      <p className="text-slate-600 text-[10px] uppercase tracking-widest mb-1">Devices</p>
       <div className="flex items-center gap-2">
-        <StatusDot online={pcOnline} />
-        <span className="text-xs text-amber-700">Windows PC</span>
+        <StatusDot online={isLoading ? null : pcOnline} />
+        <span className="text-xs text-slate-500">Windows PC</span>
       </div>
       <div className="flex items-center gap-2">
-        <StatusDot online={deckOnline} />
-        <span className="text-xs text-amber-700">Steam Deck</span>
+        <StatusDot online={isLoading ? null : deckOnline} />
+        <span className="text-xs text-slate-500">Steam Deck</span>
       </div>
     </div>
   );
@@ -47,38 +52,72 @@ export default function App() {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <nav className="w-52 shrink-0 bg-d2bg-surface border-r border-d2bg-border flex flex-col">
-        <div className="px-4 py-5 border-b border-d2bg-border">
-          <h1 className="text-d2gold font-bold text-xl tracking-wide">Enigma Engine</h1>
-          <p className="text-amber-700 text-xs mt-0.5">D2R Save Sync</p>
+      <nav
+        className="w-52 shrink-0 flex flex-col border-r border-d2bg-border"
+        style={{ background: "linear-gradient(180deg, #0d0f14 0%, #0b0d11 100%)" }}
+      >
+        {/* Branding */}
+        <div className="px-5 py-6 border-b border-d2bg-border">
+          <h1 className="font-diablo text-d2gold text-base tracking-widest leading-tight">
+            Enigma Engine
+          </h1>
+          <p className="text-slate-600 text-[10px] tracking-widest uppercase mt-1">
+            D2R Save Sync
+          </p>
         </div>
-        <div className="flex flex-col gap-1 p-3 flex-1">
+
+        {/* Nav */}
+        <div className="flex flex-col gap-0.5 p-3 flex-1">
           {NAV_ITEMS.map(({ to, label, icon }) => (
             <NavLink
               key={to}
               to={to}
               end={to === "/"}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-3 py-2 rounded text-sm transition-colors ${
+                `group flex items-center gap-3 px-3 py-2.5 text-sm transition-all duration-150 ${
                   isActive
-                    ? "bg-d2bg-elevated text-d2gold border border-d2bg-border"
-                    : "text-amber-300 hover:bg-d2bg-elevated hover:text-amber-100"
+                    ? "bg-d2bg-elevated text-d2gold border-l-2 border-d2gold pl-[10px]"
+                    : "text-slate-500 hover:text-slate-200 hover:bg-d2bg-elevated/60 border-l-2 border-transparent pl-[10px]"
                 }`
               }
             >
-              <span>{icon}</span>
-              <span>{label}</span>
+              {({ isActive }) => (
+                <>
+                  <span className={`text-base transition-all duration-150 ${isActive ? "" : "opacity-60 group-hover:opacity-100"}`}>
+                    {icon}
+                  </span>
+                  <span className="tracking-wide">{label}</span>
+                </>
+              )}
             </NavLink>
           ))}
         </div>
+
         <ConnectionStatus />
+
+        {/* Version */}
         <div className="p-3 border-t border-d2bg-border">
-          <p className="text-amber-800 text-xs text-center">v1.0.0</p>
+          <p className="text-slate-700 text-[10px] text-center tracking-widest">v1.0.0</p>
         </div>
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main
+        className="flex-1 overflow-auto"
+        style={{
+          backgroundColor: "#0c0e12",
+          backgroundImage: [
+            // Circular vignette — listed first so it renders on top of the grid
+            "radial-gradient(ellipse 58% 80% at 50% 44%, transparent 0%, rgba(12,14,18,0.72) 50%, rgba(12,14,18,0.99) 82%)",
+            // Vertical lines (0°)
+            "repeating-linear-gradient(0deg,  rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 40px)",
+            // Horizontal lines (90°)
+            "repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 40px)",
+          ].join(", "),
+          // Inset shadow pins an additional vignette to the viewport edges as content scrolls
+          boxShadow: "inset 0 0 200px rgba(12,14,18,0.98)",
+        }}
+      >
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/characters" element={<Characters />} />

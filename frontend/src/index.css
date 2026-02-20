@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,24 +9,131 @@
 }
 
 body {
-  @apply bg-d2bg text-amber-100 min-h-screen;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  @apply bg-d2bg text-slate-200 min-h-screen;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-d2bg; }
+::-webkit-scrollbar-thumb { @apply bg-d2bg-border rounded; }
+::-webkit-scrollbar-thumb:hover { @apply bg-d2gold-dark; }
 
-::-webkit-scrollbar-track {
-  @apply bg-d2bg;
-}
+@layer components {
+  /* ── D2 Primary Button — dark gradient, gold border ── */
+  .btn-d2 {
+    @apply relative inline-flex items-center justify-center gap-2
+           px-5 py-2.5 text-sm font-semibold tracking-wide
+           text-d2gold border border-d2gold/60
+           transition-all duration-200 select-none
+           disabled:opacity-40 disabled:cursor-not-allowed;
+    background: linear-gradient(180deg, #1c1500 0%, #090700 100%);
+    box-shadow: inset 0 1px 0 rgba(200,168,75,0.1), 0 2px 8px rgba(0,0,0,0.7);
+    text-shadow: 0 0 10px rgba(200,168,75,0.2);
+  }
+  .btn-d2:hover:not(:disabled) {
+    @apply border-d2gold text-d2gold-light;
+    background: linear-gradient(180deg, #271d00 0%, #0f0b00 100%);
+    box-shadow: 0 0 16px rgba(200,168,75,0.22), inset 0 1px 0 rgba(200,168,75,0.15), 0 2px 8px rgba(0,0,0,0.7);
+    text-shadow: 0 0 14px rgba(200,168,75,0.4);
+  }
+  .btn-d2:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 0 6px rgba(200,168,75,0.12), inset 0 2px 6px rgba(0,0,0,0.5);
+  }
 
-::-webkit-scrollbar-thumb {
-  @apply bg-d2bg-border rounded;
-}
+  /* ── D2 Filled Button — solid gold gradient (recommended/primary action) ── */
+  .btn-d2-filled {
+    @apply relative inline-flex items-center justify-center gap-2
+           px-5 py-2.5 text-sm font-bold tracking-wide
+           text-d2bg transition-all duration-200 select-none
+           disabled:opacity-40 disabled:cursor-not-allowed;
+    background: linear-gradient(180deg, #e6c96a 0%, #c8a84b 55%, #9a7a2e 100%);
+    box-shadow: 0 2px 12px rgba(200,168,75,0.3), inset 0 1px 0 rgba(255,255,255,0.18);
+  }
+  .btn-d2-filled:hover:not(:disabled) {
+    background: linear-gradient(180deg, #f0d470 0%, #d4b050 55%, #a88030 100%);
+    box-shadow: 0 4px 20px rgba(200,168,75,0.45), inset 0 1px 0 rgba(255,255,255,0.22);
+  }
+  .btn-d2-filled:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 1px 6px rgba(200,168,75,0.2);
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-d2gold-dark;
+  /* ── D2 Ghost Button — muted secondary action ── */
+  .btn-d2-ghost {
+    @apply relative inline-flex items-center justify-center gap-2
+           px-4 py-2 text-sm text-slate-400 border border-slate-700
+           transition-all duration-200 select-none
+           disabled:opacity-40 disabled:cursor-not-allowed;
+    background: rgba(26, 30, 42, 0.6);
+  }
+  .btn-d2-ghost:hover:not(:disabled) {
+    @apply text-slate-200 border-d2gold/35;
+    background: rgba(26, 30, 42, 1);
+  }
+  .btn-d2-ghost:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  /* ── D2 Danger Button ── */
+  .btn-d2-danger {
+    @apply relative inline-flex items-center justify-center gap-2
+           px-4 py-2 text-sm text-red-400 border border-red-900/70
+           transition-all duration-200 select-none
+           disabled:opacity-40 disabled:cursor-not-allowed;
+    background: rgba(30, 8, 8, 0.7);
+  }
+  .btn-d2-danger:hover:not(:disabled) {
+    @apply text-red-300 border-red-700;
+    background: rgba(45, 10, 10, 1);
+    box-shadow: 0 0 10px rgba(220, 38, 38, 0.15);
+  }
+  .btn-d2-danger:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  /* ── Shared input style ── */
+  .input-d2 {
+    @apply w-full bg-d2bg border border-d2bg-border px-3 py-1.5 text-sm
+           text-slate-200 placeholder-slate-600
+           focus:outline-none focus:border-d2gold/50 focus:ring-1 focus:ring-d2gold/15
+           transition-colors;
+  }
+
+  /* ── Card — gothic corner marks via ::before ── */
+  .card-d2 {
+    @apply relative bg-d2bg-surface border border-d2bg-border;
+    box-shadow:
+      0 4px 16px rgba(0,0,0,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .card-d2::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    /* Eight segments: horizontal + vertical line at each of the four corners */
+    background-image:
+      linear-gradient(rgba(200,168,75,0.45), rgba(200,168,75,0.45)),
+      linear-gradient(rgba(200,168,75,0.45), rgba(200,168,75,0.45)),
+      linear-gradient(rgba(200,168,75,0.45), rgba(200,168,75,0.45)),
+      linear-gradient(rgba(200,168,75,0.45), rgba(200,168,75,0.45)),
+      linear-gradient(rgba(200,168,75,0.45), rgba(200,168,75,0.45)),
+      linear-gradient(rgba(200,168,75,0.45), rgba(200,168,75,0.45)),
+      linear-gradient(rgba(200,168,75,0.45), rgba(200,168,75,0.45)),
+      linear-gradient(rgba(200,168,75,0.45), rgba(200,168,75,0.45));
+    background-size:
+      14px 1px, 1px 14px,   /* top-left     H, V */
+      14px 1px, 1px 14px,   /* top-right    H, V */
+      14px 1px, 1px 14px,   /* bottom-left  H, V */
+      14px 1px, 1px 14px;   /* bottom-right H, V */
+    background-position:
+      top left,    top left,
+      top right,   top right,
+      bottom left, bottom left,
+      bottom right,bottom right;
+    background-repeat: no-repeat;
+    z-index: 0;
+  }
 }
