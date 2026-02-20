@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useCharacters, useRefreshCharacters } from "../api/hooks";
+import { useCharacters, useRefreshCharacters, usePreflight, useAutoSyncStatus } from "../api/hooks";
 import RespecModal from "../components/RespecModal";
 import type { CharacterInfo } from "../api/types";
 
@@ -17,6 +17,11 @@ export default function Characters() {
 
   const { data: chars, isLoading, error } = useCharacters();
   const refresh = useRefreshCharacters();
+  const { data: preflight } = usePreflight();
+  const { data: autosync } = useAutoSyncStatus();
+
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
+  const hasPendingSync = autosync?.state?.status === "pending";
 
   const filtered = (chars ?? [])
     .filter(
@@ -100,6 +105,7 @@ export default function Characters() {
           <CharacterMobileCard
             key={c.filename}
             char={c}
+            d2rRunning={d2rRunning}
             onRespec={() => setRespecFilename(c.filename)}
           />
         ))}
@@ -150,6 +156,7 @@ export default function Characters() {
               <CharacterRow
                 key={c.filename}
                 char={c}
+                d2rRunning={d2rRunning}
                 onRespec={() => setRespecFilename(c.filename)}
               />
             ))}
@@ -161,6 +168,7 @@ export default function Characters() {
         <RespecModal
           filename={respecChar.filename}
           characterName={respecChar.name}
+          hasPendingSync={hasPendingSync}
           onClose={() => setRespecFilename(null)}
         />
       )}
@@ -170,9 +178,11 @@ export default function Characters() {
 
 function CharacterMobileCard({
   char,
+  d2rRunning,
   onRespec,
 }: {
   char: CharacterInfo;
+  d2rRunning: boolean;
   onRespec: () => void;
 }) {
   return (
@@ -195,12 +205,20 @@ function CharacterMobileCard({
         <div className="text-xs text-slate-500 tabular-nums">
           {new Date(char.modified_at * 1000).toLocaleDateString()}
         </div>
-        <button
-          onClick={onRespec}
-          className="btn-d2-ghost text-[10px] px-2 py-0.5"
-        >
-          Respec
-        </button>
+        {d2rRunning ? (
+          <div className="relative group inline-block">
+            <button disabled className="btn-d2-ghost text-[10px] px-2 py-0.5 opacity-40 cursor-not-allowed">
+              Respec
+            </button>
+            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-44 bg-neutral-900 border border-amber-800/40 text-amber-300/80 text-[10px] rounded px-2 py-1 text-center opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-normal">
+              Close D2R before respecting
+            </div>
+          </div>
+        ) : (
+          <button onClick={onRespec} className="btn-d2-ghost text-[10px] px-2 py-0.5">
+            Respec
+          </button>
+        )}
       </div>
     </div>
   );
@@ -208,9 +226,11 @@ function CharacterMobileCard({
 
 function CharacterRow({
   char,
+  d2rRunning,
   onRespec,
 }: {
   char: CharacterInfo;
+  d2rRunning: boolean;
   onRespec: () => void;
 }) {
   return (
@@ -241,12 +261,20 @@ function CharacterRow({
         {new Date(char.modified_at * 1000).toLocaleString()}
       </td>
       <td className="px-4 py-3 text-right">
-        <button
-          onClick={onRespec}
-          className="btn-d2-ghost text-xs px-2 py-1"
-        >
-          Respec
-        </button>
+        {d2rRunning ? (
+          <div className="relative group inline-block">
+            <button disabled className="btn-d2-ghost text-xs px-2 py-1 opacity-40 cursor-not-allowed">
+              Respec
+            </button>
+            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-44 bg-neutral-900 border border-amber-800/40 text-amber-300/80 text-[10px] rounded px-2 py-1 text-center opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-normal">
+              Close D2R before respecting
+            </div>
+          </div>
+        ) : (
+          <button onClick={onRespec} className="btn-d2-ghost text-xs px-2 py-1">
+            Respec
+          </button>
+        )}
       </td>
     </tr>
   );

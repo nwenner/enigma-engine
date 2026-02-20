@@ -9,7 +9,9 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import shutil as _shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,10 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import get_settings
 from backend.database import get_session
 from backend.models import BackupSnapshot, Character, SyncFileRecord
-from backend.routers.settings import _get_conn_kwargs, _get_setting
+from backend.routers.autosync import IDLE_STATE
+from backend.routers.settings import _get_conn_kwargs, _get_setting, _set_setting
 from backend.services.d2s_parser import D2SParseError, parse_d2s
 from backend.services.ssh_client import (
     SSHConnectionError,
+    check_d2r_running,
     get_sftp,
     list_all_files,
     list_d2s_files,
@@ -251,6 +255,21 @@ async def respec_character_endpoint(
     if not save_path:
         raise HTTPException(422, f"{target.upper()} save path is not configured")
 
+    # Auto-dismiss any pending autosync — its staged files are pre-respec and
+    # would undo the respec if the sync fired afterward.
+    state_raw = await _get_setting(session, "autosync_state")
+    if state_raw:
+        try:
+            state = json.loads(state_raw)
+            if state.get("status") == "pending":
+                staged = state.get("staged_path")
+                if staged:
+                    _shutil.rmtree(staged, ignore_errors=True)
+                await _set_setting(session, "autosync_state", json.dumps(IDLE_STATE))
+                await session.commit()
+        except Exception:
+            pass  # non-fatal, proceed with respec
+
     cfg = get_settings()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     backup_subdir = cfg.backups_dir / target / f"{timestamp}_prerespec"
@@ -260,6 +279,10 @@ async def respec_character_endpoint(
         from backend.services.d2s_respec import respec_character as _respec
 
         with get_sftp(**conn_kwargs) as (_ssh, sftp):
+            is_windows = target == "pc"
+            if check_d2r_running(_ssh, is_windows):
+                raise RuntimeError("D2R.exe is currently running — close the game before respecting.")
+
             all_files = list_all_files(sftp, save_path)
 
             # Backup entire save directory first

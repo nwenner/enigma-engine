@@ -4,10 +4,11 @@ import { useRespecCharacter } from "../api/hooks";
 interface Props {
   filename: string;
   characterName: string;
+  hasPendingSync?: boolean;
   onClose: () => void;
 }
 
-export default function RespecModal({ filename, characterName, onClose }: Props) {
+export default function RespecModal({ filename, characterName, hasPendingSync, onClose }: Props) {
   const [target, setTarget] = useState<"pc" | "deck" | null>(null);
   const [done, setDone] = useState(false);
   const respec = useRespecCharacter();
@@ -66,6 +67,12 @@ export default function RespecModal({ filename, characterName, onClose }: Props)
                   </button>
                 ))}
               </div>
+
+              {hasPendingSync && (
+                <div className="bg-amber-950/40 border border-amber-700/50 text-amber-300 text-xs px-3 py-2 rounded mb-3">
+                  ⚠ A pending sync will be discarded when you apply this respec. Re-sync manually afterward.
+                </div>
+              )}
 
               {respec.error && (
                 <div className="bg-red-950/30 border border-red-800/50 p-2 text-red-400 text-xs mb-4">
