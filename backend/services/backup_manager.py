@@ -156,7 +156,9 @@ async def run_sync(
                 continue
             try:
                 char = parse_d2s(item["local_part"])
-                char_snapshots[item["filename"]] = char.to_dict()
+                snap = char.to_dict()
+                snap["filename"] = item["filename"]
+                char_snapshots[item["filename"]] = snap
             except D2SParseError as e:
                 raise RuntimeError(f"Validation failed for {item['filename']}: {e}") from e
 

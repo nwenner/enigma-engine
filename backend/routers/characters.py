@@ -96,10 +96,11 @@ async def _backfill_from_sync_records(session: AsyncSession) -> None:
     for rec in records:
         if not rec.char_snapshot:
             continue
-        fname = rec.char_snapshot.get("filename") or rec.filename
+        fname = rec.filename
         if fname and fname not in seen:
             seen.add(fname)
             d = dict(rec.char_snapshot)
+            d["filename"] = fname  # override any corrupted filename stored in char_snapshot
             d["modified_at"] = rec.synced_at.timestamp()
             chars.append(d)
 
@@ -199,6 +200,7 @@ async def refresh_characters(session: AsyncSession = Depends(get_session)):
                         sftp.get(normalize_path(f["path"]), str(tmp_path))
                         char = parse_d2s(tmp_path)
                         d = char.to_dict()
+                        d["filename"] = f["filename"]
                         d["modified_at"] = f["modified_at"]
                         results.append(d)
                     except D2SParseError as e:

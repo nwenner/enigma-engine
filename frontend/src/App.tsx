@@ -61,7 +61,7 @@ export default function App() {
   }, [location.pathname]);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
@@ -89,7 +89,7 @@ export default function App() {
         </div>
 
         {/* Nav */}
-        <div className="flex flex-col gap-0.5 p-3 flex-1">
+        <div className="flex flex-col gap-0.5 p-3 flex-1 overflow-y-auto">
           {NAV_ITEMS.map(({ to, label, icon }) => (
             <NavLink
               key={to}

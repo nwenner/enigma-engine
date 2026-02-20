@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useHistory } from "../api/hooks";
+import Collapsible from "../components/Collapsible";
 import type { SyncOperationResponse } from "../api/types";
 
 const fmtUtc = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z").toLocaleString();
@@ -112,7 +113,7 @@ function OperationRow({ operation }: { operation: SyncOperationResponse }) {
         </span>
       </div>
 
-      {expanded && (
+      <Collapsible open={expanded}>
         <div className="border-t border-d2bg-border px-4 py-3 bg-d2bg/40 space-y-2">
           {operation.error_message && (
             <div className="bg-red-950/30 border border-red-800/50 p-2.5 text-red-400 text-xs">
@@ -143,7 +144,7 @@ function OperationRow({ operation }: { operation: SyncOperationResponse }) {
             </div>
           ))}
         </div>
-      )}
+      </Collapsible>
     </div>
   );
 }

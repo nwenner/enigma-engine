@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useBackups, useDeleteBackup, useRestoreBackup } from "../api/hooks";
+import Collapsible from "../components/Collapsible";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { SnapshotResponse } from "../api/types";
 
@@ -166,7 +167,7 @@ function SnapshotRow({ snapshot, onDelete, onRestore }: RowProps) {
         </div>
       </div>
 
-      {expanded && chars.length > 0 && (
+      <Collapsible open={expanded && chars.length > 0}>
         <div className="border-t border-d2bg-border px-4 py-3 bg-d2bg/40">
           <p className="text-slate-600 text-xs mb-2 uppercase tracking-wider">Characters in snapshot</p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -183,7 +184,7 @@ function SnapshotRow({ snapshot, onDelete, onRestore }: RowProps) {
             ))}
           </div>
         </div>
-      )}
+      </Collapsible>
     </div>
   );
 }

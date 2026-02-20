@@ -10,6 +10,7 @@ import {
   useUpdateNotificationConfig,
   useTestNotification,
 } from "../api/hooks";
+import InfoModal from "../components/InfoModal";
 import type { MachineSettings, NotificationConfig } from "../api/types";
 
 type Machine = "pc" | "deck";
@@ -26,8 +27,6 @@ export default function Settings() {
   const updateSettings = useUpdateSettings();
   const testConn = useTestConnection();
   const uploadKey = useUploadKey();
-  const { data: autoSync } = useAutoSyncStatus();
-  const updateAutoSync = useUpdateAutoSyncConfig();
 
   const [pcForm, setPcForm] = useState<Partial<MachineSettings> | null>(null);
   const [deckForm, setDeckForm] = useState<Partial<MachineSettings> | null>(null);
@@ -122,61 +121,7 @@ export default function Settings() {
         <NotificationsForm />
 
         {/* Auto-Sync */}
-        <div className="card-d2 p-5">
-          <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-1 flex items-center gap-2">
-            <span>🔄</span> Auto-Sync
-          </h2>
-          <p className="text-slate-500 text-xs mb-5 leading-relaxed">
-            When enabled, automatically syncs saves when D2R closes. Both machines must be reachable.
-          </p>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-300">Enable auto-sync</span>
-              <button
-                onClick={() =>
-                  updateAutoSync.mutate({
-                    enabled: !(autoSync?.enabled ?? false),
-                    poll_interval_seconds: autoSync?.poll_interval ?? 30,
-                  })
-                }
-                disabled={updateAutoSync.isPending}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
-                  autoSync?.enabled
-                    ? "bg-d2gold"
-                    : "bg-d2bg-elevated border border-d2bg-border"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 shadow-sm ${
-                    autoSync?.enabled ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-500 mb-1.5 uppercase tracking-wider">Poll interval</label>
-              <select
-                value={autoSync?.poll_interval ?? 30}
-                onChange={(e) =>
-                  updateAutoSync.mutate({
-                    enabled: autoSync?.enabled ?? false,
-                    poll_interval_seconds: Number(e.target.value),
-                  })
-                }
-                disabled={updateAutoSync.isPending}
-                className="bg-d2bg border border-d2bg-border px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-d2gold/50 disabled:opacity-50 transition-colors"
-              >
-                {POLL_INTERVAL_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
+        <AutoSyncSection />
       </div>
 
       {isDirty && (
@@ -244,14 +189,56 @@ function NotificationsForm() {
     showToast(result.success ? "success" : "error", result.message);
   };
 
+  const [showInfo, setShowInfo] = useState(false);
+
   return (
     <div className="card-d2 p-5">
       <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-1 flex items-center gap-2">
         <span>🔔</span> Notifications
+        <button
+          onClick={() => setShowInfo(true)}
+          className="ml-auto text-[10px] text-slate-600 hover:text-slate-300 border border-slate-700 hover:border-slate-500 w-5 h-5 flex items-center justify-center transition-colors shrink-0"
+          title="Help"
+        >
+          ?
+        </button>
       </h2>
       <p className="text-slate-500 text-xs mb-5 leading-relaxed">
         Receive a notification when an auto-sync conflict is detected.
       </p>
+
+      {showInfo && (
+        <InfoModal title="Notifications — Amazon SES" onClose={() => setShowInfo(false)}>
+          <p>
+            Enigma Engine can send you an email when an auto-sync conflict is detected —
+            meaning both machines have new saves and the app can't automatically decide
+            which to keep.
+          </p>
+          <p className="text-slate-500 text-xs mt-1">
+            This requires an AWS account with Amazon Simple Email Service (SES) configured.
+          </p>
+          <div className="space-y-2.5 mt-1">
+            <HelpRow term="AWS Profile">
+              The profile name in your AWS credentials file
+              (<code className="text-d2gold/80 bg-d2bg px-1">~/.aws/credentials</code>).
+              Usually <strong className="text-slate-200">default</strong>. The credentials
+              file must be mounted into the Docker container — see the project README.
+            </HelpRow>
+            <HelpRow term="AWS Region">
+              The region where your SES is set up, e.g.{" "}
+              <strong className="text-slate-200">us-east-1</strong> or{" "}
+              <strong className="text-slate-200">eu-west-1</strong>. Find it in the AWS
+              Console under SES.
+            </HelpRow>
+            <HelpRow term="From / To Address">
+              The email addresses for sending and receiving notifications. If your SES
+              account is still in <em>sandbox mode</em>, both addresses must be individually
+              verified in the AWS Console (SES → Verified identities) before emails will
+              be delivered.
+            </HelpRow>
+          </div>
+        </InfoModal>
+      )}
 
       {toast && (
         <div
@@ -395,11 +382,65 @@ function MachineForm({ machine, label, icon, getValue, setForm, onTest, testLoad
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const [showInfo, setShowInfo] = useState(false);
+
   return (
     <div className="card-d2 p-5">
       <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-5 flex items-center gap-2">
         <span>{icon}</span> {label}
+        <button
+          onClick={() => setShowInfo(true)}
+          className="ml-auto text-[10px] text-slate-600 hover:text-slate-300 border border-slate-700 hover:border-slate-500 w-5 h-5 flex items-center justify-center transition-colors shrink-0"
+          title="Help"
+        >
+          ?
+        </button>
       </h2>
+
+      {showInfo && (
+        <InfoModal title={`${label} — SSH Connection`} onClose={() => setShowInfo(false)}>
+          <p>
+            Enigma Engine connects to your <strong className="text-slate-200">{label}</strong> over
+            SSH (Secure Shell) to read and write Diablo II Resurrected save files remotely.
+            Both machines must be on the same local network.
+          </p>
+          <div className="space-y-2.5 mt-1">
+            <HelpRow term="Hostname / IP">
+              The local network address of your {label}.{" "}
+              {machine === "pc" ? (
+                <>Open <em>Command Prompt</em> and type <code className="text-d2gold/80 bg-d2bg px-1">ipconfig</code> — look for "IPv4 Address" under your Wi-Fi or Ethernet adapter.</>
+              ) : (
+                <>Go to <em>Settings → Internet</em>, tap your Wi-Fi network, and look for "IP address".</>
+              )}
+            </HelpRow>
+            <HelpRow term="Port">
+              The SSH port — leave this as <strong className="text-slate-200">22</strong> unless
+              you have specifically changed it on that machine.
+            </HelpRow>
+            <HelpRow term="SSH Username">
+              {machine === "pc" ? (
+                <>Your Windows account name. Find it in <em>Settings → Accounts</em>.</>
+              ) : (
+                <>Always <strong className="text-slate-200">deck</strong> on Steam Deck.</>
+              )}
+            </HelpRow>
+            <HelpRow term="Save File Path">
+              {machine === "pc" ? (
+                <>Typically <code className="text-d2gold/80 bg-d2bg px-1 text-[11px]">C:/Users/YourName/Saved Games/Diablo II Resurrected</code>. Replace "YourName" with your Windows username.</>
+              ) : (
+                <>Typically <code className="text-d2gold/80 bg-d2bg px-1 text-[11px]">/home/deck/.steam/steam/userdata/[SteamID]/219700/remote</code>. Replace [SteamID] with your numeric Steam ID (the folder inside userdata).</>
+              )}
+            </HelpRow>
+            <HelpRow term="Authentication">
+              <strong className="text-slate-200">Password</strong> — enter the machine's login
+              password. Simple but the password is stored encrypted in the app database.{" "}
+              <strong className="text-slate-200">SSH Key</strong> — more secure. Generate a key
+              pair, place the public key in <code className="text-d2gold/80 bg-d2bg px-1">~/.ssh/authorized_keys</code> on
+              the target machine, then upload the private key (.pem / id_rsa) here.
+            </HelpRow>
+          </div>
+        </InfoModal>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {field("host", "Hostname / IP", "text", "192.168.1.100")}
@@ -478,6 +519,123 @@ function MachineForm({ machine, label, icon, getValue, setForm, onTest, testLoad
           {testLoading ? "Testing..." : "Test Connection"}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Auto-Sync Section ────────────────────────────────────────────────────────
+
+function AutoSyncSection() {
+  const { data: autoSync } = useAutoSyncStatus();
+  const updateAutoSync = useUpdateAutoSyncConfig();
+  const [showInfo, setShowInfo] = useState(false);
+
+  return (
+    <div className="card-d2 p-5">
+      <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-1 flex items-center gap-2">
+        <span>🔄</span> Auto-Sync
+        <button
+          onClick={() => setShowInfo(true)}
+          className="ml-auto text-[10px] text-slate-600 hover:text-slate-300 border border-slate-700 hover:border-slate-500 w-5 h-5 flex items-center justify-center transition-colors shrink-0"
+          title="Help"
+        >
+          ?
+        </button>
+      </h2>
+      <p className="text-slate-500 text-xs mb-5 leading-relaxed">
+        When enabled, automatically syncs saves when D2R closes. Both machines must be reachable.
+      </p>
+
+      {showInfo && (
+        <InfoModal title="Auto-Sync" onClose={() => setShowInfo(false)}>
+          <p>
+            When enabled, Enigma Engine monitors both machines and automatically syncs your
+            save files shortly after you close Diablo II Resurrected — no manual button
+            press needed.
+          </p>
+          <div className="space-y-2.5 mt-1">
+            <HelpRow term="How it works">
+              The app polls both machines at the configured interval to check whether D2R
+              is running. When it detects D2R has closed on one machine, it waits briefly
+              and then syncs that machine's saves to the other.
+            </HelpRow>
+            <HelpRow term="Conflicts">
+              If both machines have new saves since the last sync (e.g. you played on both
+              before syncing), the app won't overwrite either — it flags a conflict on the
+              Dashboard for you to resolve manually.
+            </HelpRow>
+            <HelpRow term="Offline machine">
+              If the destination machine is offline when D2R closes, the saves are captured
+              locally and pushed automatically when the destination comes back online.
+            </HelpRow>
+            <HelpRow term="Poll Interval">
+              How often to check whether D2R is still running. Shorter intervals mean
+              faster detection but slightly more network traffic. 30 seconds is a good
+              default for most home networks.
+            </HelpRow>
+          </div>
+        </InfoModal>
+      )}
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-slate-300">Enable auto-sync</span>
+          <button
+            onClick={() =>
+              updateAutoSync.mutate({
+                enabled: !(autoSync?.enabled ?? false),
+                poll_interval_seconds: autoSync?.poll_interval ?? 30,
+              })
+            }
+            disabled={updateAutoSync.isPending}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
+              autoSync?.enabled
+                ? "bg-d2gold"
+                : "bg-d2bg-elevated border border-d2bg-border"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 shadow-sm ${
+                autoSync?.enabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+
+        <div>
+          <label className="block text-xs text-slate-500 mb-1.5 uppercase tracking-wider">
+            Poll interval
+          </label>
+          <select
+            value={autoSync?.poll_interval ?? 30}
+            onChange={(e) =>
+              updateAutoSync.mutate({
+                enabled: autoSync?.enabled ?? false,
+                poll_interval_seconds: Number(e.target.value),
+              })
+            }
+            disabled={updateAutoSync.isPending}
+            className="bg-d2bg border border-d2bg-border px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-d2gold/50 disabled:opacity-50 transition-colors"
+          >
+            {POLL_INTERVAL_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+function HelpRow({ term, children }: { term: string; children: React.ReactNode }) {
+  return (
+    <div className="border-l-2 border-d2bg-border pl-3">
+      <p className="text-slate-300 text-xs font-medium mb-0.5">{term}</p>
+      <p className="text-slate-500 text-xs leading-relaxed">{children}</p>
     </div>
   );
 }
