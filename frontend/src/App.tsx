@@ -5,13 +5,15 @@ import Characters from "./pages/Characters";
 import Backups from "./pages/Backups";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
-import { usePreflight } from "./api/hooks";
+import Grail from "./pages/Grail";
+import { usePreflight, useAutoSyncStatus } from "./api/hooks";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "⚔️" },
   { to: "/characters", label: "Characters", icon: "🧙" },
   { to: "/backups", label: "Backups", icon: "💾" },
   { to: "/history", label: "History", icon: "📜" },
+  { to: "/grail", label: "Holy Grail", icon: "🏆" },
   { to: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
@@ -30,7 +32,9 @@ function StatusDot({ online }: { online: boolean | null }) {
 }
 
 function ConnectionStatus() {
-  const { data, isLoading } = usePreflight();
+  const { data: autoSyncStatus } = useAutoSyncStatus();
+  const refetchMs = autoSyncStatus?.poll_interval ? autoSyncStatus.poll_interval * 1000 : undefined;
+  const { data, isLoading } = usePreflight(refetchMs);
   const pcOnline = data ? data.pc_error === null : null;
   const deckOnline = data ? data.deck_error === null : null;
 
@@ -163,6 +167,7 @@ export default function App() {
             <Route path="/backups" element={<Backups />} />
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/grail" element={<Grail />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

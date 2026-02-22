@@ -170,7 +170,6 @@ function LatestBackup({ snapshot }: { snapshot: SnapshotResponse }) {
   // snapshot.characters stores D2SCharacter.to_dict() shape (no modified_at/last_updated_at)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chars: any[] = snapshot.characters ?? [];
-  const isPrerespec = snapshot.snapshot_path.includes("_prerespec");
 
   return (
     <div className="card-d2">
@@ -199,14 +198,6 @@ function LatestBackup({ snapshot }: { snapshot: SnapshotResponse }) {
           <span className="text-slate-500 text-xs">
             {snapshot.file_count} file{snapshot.file_count !== 1 ? "s" : ""}
           </span>
-          {isPrerespec && (
-            <>
-              <span className="text-slate-600 text-xs">·</span>
-              <span className="text-[10px] bg-d2gold/8 text-d2gold/70 border border-d2gold/20 px-1.5 py-0.5 tracking-wide">
-                pre-respec
-              </span>
-            </>
-          )}
         </div>
 
         {/* Character list */}
@@ -245,10 +236,13 @@ function LatestBackup({ snapshot }: { snapshot: SnapshotResponse }) {
 type Direction = "pc_to_deck" | "deck_to_pc";
 
 export default function Dashboard() {
-  const { data: chars, isLoading, error } = useCharacters();
-  const { data: preflight } = usePreflight();
-  const { data: lastSync } = useLastSync();
-  const { data: backups } = useBackups();
+  const { data: autoSyncStatus } = useAutoSyncStatus();
+  const refetchMs = autoSyncStatus?.poll_interval ? autoSyncStatus.poll_interval * 1000 : undefined;
+
+  const { data: chars, isLoading, error } = useCharacters(refetchMs);
+  const { data: preflight } = usePreflight(refetchMs);
+  const { data: lastSync } = useLastSync(refetchMs);
+  const { data: backups } = useBackups(refetchMs);
   const startSync = useStartSync();
   const dismissAutoSync = useDismissAutoSync();
   const triggerAutoSync = useTriggerAutoSync();

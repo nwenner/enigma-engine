@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "./client";
 import type {
   CharacterInfo,
-  RespecResponse,
   SyncStatusResponse,
   PreflightResponse,
   SnapshotResponse,
@@ -12,14 +11,16 @@ import type {
   MachineSettings,
   AutoSyncStatus,
   NotificationConfig,
+  GrailProgress,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
 
-export function useCharacters() {
+export function useCharacters(refetchInterval?: number) {
   return useQuery<CharacterInfo[]>({
     queryKey: ["characters"],
     queryFn: () => api.get("/characters").then((r) => r.data),
+    refetchInterval,
   });
 }
 
@@ -31,25 +32,14 @@ export function useRefreshCharacters() {
   });
 }
 
-export function useRespecCharacter() {
-  const qc = useQueryClient();
-  return useMutation<RespecResponse, Error, { filename: string; target: "pc" | "deck" }>({
-    mutationFn: ({ filename, target }) =>
-      api
-        .post(`/characters/${encodeURIComponent(filename)}/respec`, { target })
-        .then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters"] }),
-  });
-}
-
 // ─── Sync ────────────────────────────────────────────────────────────────────
 
-export function usePreflight() {
+export function usePreflight(refetchInterval?: number) {
   return useQuery<PreflightResponse>({
     queryKey: ["preflight"],
     queryFn: () => api.get("/sync/preflight").then((r) => r.data),
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: refetchInterval ?? 60_000,
   });
 }
 
@@ -66,11 +56,12 @@ export function useSyncStatus(id: number | null, enabled: boolean) {
   });
 }
 
-export function useLastSync() {
+export function useLastSync(refetchInterval?: number) {
   return useQuery<SyncStatusResponse | null>({
     queryKey: ["sync", "last"],
     queryFn: () => api.get("/sync/last").then((r) => r.data),
     staleTime: 30_000,
+    refetchInterval,
   });
 }
 
@@ -89,10 +80,11 @@ export function useStartSync() {
 
 // ─── Backups ─────────────────────────────────────────────────────────────────
 
-export function useBackups() {
+export function useBackups(refetchInterval?: number) {
   return useQuery<SnapshotResponse[]>({
     queryKey: ["backups"],
     queryFn: () => api.get("/backups").then((r) => r.data),
+    refetchInterval,
   });
 }
 
@@ -227,5 +219,85 @@ export function useUpdateAutoSyncConfig() {
   return useMutation<AutoSyncStatus, Error, { enabled: boolean; poll_interval_seconds: number }>({
     mutationFn: (body) => api.put("/autosync/config", body).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["autosync"] }),
+  });
+}
+
+// ─── Holy Grail ───────────────────────────────────────────────────────────────
+
+export function useGrailProgress(mode: "sc" | "hc") {
+  return useQuery<GrailProgress>({
+    queryKey: ["grail", mode],
+    queryFn: () => api.get(`/grail/${mode}`).then((r) => r.data),
+  });
+}
+
+export function useSeedCatalog() {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; count: number }, Error, File>({
+    mutationFn: (file) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api
+        .post("/grail/catalog/seed", form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        })
+        .then((r) => r.data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["grail"] });
+    },
+  });
+}
+
+export function useRetrieveGrailItem() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; message: string },
+    Error,
+    { mode: "sc" | "hc"; catalogId: number; machine: "pc" | "deck" }
+  >({
+    mutationFn: ({ mode, catalogId, machine }) =>
+      api
+        .post(`/grail/${mode}/${catalogId}/retrieve`, { machine })
+        .then((r) => r.data),
+    onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["grail", mode] });
+    },
+  });
+}
+
+export function useDepositTab5() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; registered: string[]; skipped: string[]; errors: string[] },
+    Error,
+    { machine: "pc" | "deck" }
+  >({
+    mutationFn: ({ machine }) =>
+      api.post("/grail/deposit", { machine }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["grail"] });
+    },
+  });
+}
+
+export function useUnmarkGrailEntry() {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean }, Error, { mode: "sc" | "hc"; catalogId: number }>({
+    mutationFn: ({ mode, catalogId }) =>
+      api.delete(`/grail/${mode}/${catalogId}`).then((r) => r.data),
+    onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["grail", mode] });
+    },
+  });
+}
+
+export function useResetGrail() {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; deleted: number }, Error, void>({
+    mutationFn: () => api.post("/grail/reset").then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["grail"] });
+    },
   });
 }

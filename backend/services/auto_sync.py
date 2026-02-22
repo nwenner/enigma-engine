@@ -210,6 +210,24 @@ async def _stage_files(machine: str, is_windows: bool) -> tuple[Path, int]:
         return len(files_to_stage)
 
     count = await asyncio.to_thread(_do)
+
+    # Run grail hook against staged files — dest is offline so source-only upload
+    try:
+        from backend.services.grail_service import process_portal_tab_hook
+        staged_files = [f for f in staged_path.iterdir() if f.is_file()]
+        log.warning("Grail: staging hook running, staged files: %s", [f.name for f in staged_files])
+        downloaded = [{"filename": f.name, "local_part": f} for f in staged_files]
+        async with AsyncSessionLocal() as grail_session:
+            await process_portal_tab_hook(
+                session=grail_session,
+                downloaded=downloaded,
+                source_conn=kwargs,
+                source_dir=save_dir,
+            )
+        log.warning("Grail: staging hook completed")
+    except Exception as _grail_err:
+        log.warning("Grail hook failed during staging (staging unaffected): %s", _grail_err)
+
     return staged_path, count
 
 

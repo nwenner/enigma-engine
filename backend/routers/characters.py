@@ -4,35 +4,27 @@ Characters router.
 Endpoints:
   GET  /api/characters                    — instant DB read, sorted by modified_at desc
   POST /api/characters/refresh            — SFTP scan of both machines, upserts DB
-  POST /api/characters/{filename}/respec  — apply respec on target machine (body: {target})
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import shutil as _shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config import get_settings
 from backend.database import get_session
-from backend.models import BackupSnapshot, Character, SyncFileRecord
-from backend.routers.autosync import IDLE_STATE
-from backend.routers.settings import _get_conn_kwargs, _get_setting, _set_setting
+from backend.models import Character, SyncFileRecord
+from backend.routers.settings import _get_conn_kwargs, _get_setting
 from backend.services.d2s_parser import D2SParseError, parse_d2s
 from backend.services.ssh_client import (
     SSHConnectionError,
-    check_d2r_running,
     get_sftp,
-    list_all_files,
     list_d2s_files,
     normalize_path,
 )
@@ -54,15 +46,6 @@ class CharacterInfo(BaseModel):
     expansion: bool
     modified_at: float
     last_updated_at: datetime
-
-
-class RespecRequest(BaseModel):
-    target: Literal["pc", "deck"]
-
-
-class RespecResponse(BaseModel):
-    success: bool
-    message: str
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -229,107 +212,3 @@ async def refresh_characters(session: AsyncSession = Depends(get_session)):
     return [_char_to_info(c) for c in result.scalars().all()]
 
 
-@router.post("/characters/{filename}/respec", response_model=RespecResponse)
-async def respec_character_endpoint(
-    filename: str,
-    body: RespecRequest,
-    session: AsyncSession = Depends(get_session),
-):
-    """Apply a respec to one character on the target machine."""
-    result = await session.execute(
-        select(Character).where(Character.filename == filename)
-    )
-    char = result.scalar_one_or_none()
-    if not char:
-        raise HTTPException(404, f"Character '{filename}' not found in database")
-
-    target = body.target
-    try:
-        conn_kwargs = await _get_conn_kwargs(session, target)
-        save_path = await _get_setting(session, f"{target}_save_path") or ""
-    except Exception as e:
-        raise HTTPException(502, f"Config error for {target.upper()}: {e}")
-
-    if not conn_kwargs.get("host"):
-        raise HTTPException(422, f"{target.upper()} host is not configured")
-    if not save_path:
-        raise HTTPException(422, f"{target.upper()} save path is not configured")
-
-    # Auto-dismiss any pending autosync — its staged files are pre-respec and
-    # would undo the respec if the sync fired afterward.
-    state_raw = await _get_setting(session, "autosync_state")
-    if state_raw:
-        try:
-            state = json.loads(state_raw)
-            if state.get("status") == "pending":
-                staged = state.get("staged_path")
-                if staged:
-                    _shutil.rmtree(staged, ignore_errors=True)
-                await _set_setting(session, "autosync_state", json.dumps(IDLE_STATE))
-                await session.commit()
-        except Exception:
-            pass  # non-fatal, proceed with respec
-
-    cfg = get_settings()
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_subdir = cfg.backups_dir / target / f"{timestamp}_prerespec"
-    class_id = char.class_id
-
-    def _do_respec() -> int:
-        from backend.services.d2s_respec import respec_character as _respec
-
-        with get_sftp(**conn_kwargs) as (_ssh, sftp):
-            is_windows = target == "pc"
-            if check_d2r_running(_ssh, is_windows):
-                raise RuntimeError("D2R.exe is currently running — close the game before respecting.")
-
-            all_files = list_all_files(sftp, save_path)
-
-            # Backup entire save directory first
-            backup_subdir.mkdir(parents=True, exist_ok=True)
-            for f in all_files:
-                sftp.get(normalize_path(f["path"]), str(backup_subdir / f["filename"]))
-
-            # Find the target .d2s
-            target_file = next(
-                (f for f in all_files if f["filename"] == filename), None
-            )
-            if not target_file:
-                raise FileNotFoundError(f"{filename} not found on {target.upper()}")
-
-            # Download, modify, re-upload
-            with tempfile.NamedTemporaryFile(suffix=".d2s", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
-            try:
-                sftp.get(normalize_path(target_file["path"]), str(tmp_path))
-                _respec(tmp_path, class_id)
-                sftp.put(str(tmp_path), normalize_path(target_file["path"]))
-            finally:
-                tmp_path.unlink(missing_ok=True)
-
-        return len(all_files)
-
-    try:
-        file_count = await asyncio.to_thread(_do_respec)
-    except SSHConnectionError as e:
-        raise HTTPException(502, f"SSH error connecting to {target.upper()}: {e}")
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
-    except Exception as e:
-        log.error("Respec failed for %s on %s: %s", filename, target, e)
-        raise HTTPException(500, f"Respec failed: {e}")
-
-    # Record pre-respec backup snapshot
-    snapshot = BackupSnapshot(
-        source_machine=target,
-        snapshot_path=str(backup_subdir.relative_to(cfg.data_dir)),
-        file_count=file_count,
-        characters=None,
-        sync_operation_id=None,
-    )
-    session.add(snapshot)
-
-    char.last_updated_at = datetime.utcnow()
-    await session.commit()
-
-    return RespecResponse(success=True, message="Respec applied. Backup saved.")

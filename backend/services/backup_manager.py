@@ -251,6 +251,16 @@ async def run_sync(
         ]
         await upsert_characters(session, char_list)
 
+        # --- 8c. Process Holy Grail portal tab ---
+        try:
+            from backend.services.grail_service import process_portal_tab_hook
+            await process_portal_tab_hook(
+                session=session,
+                downloaded=downloaded,
+            )
+        except Exception as _grail_err:
+            log.warning("Grail hook failed (sync unaffected): %s", _grail_err)
+
         # --- 9. Prune old backups ---
         await _prune_backups(session, dest_machine, cfg)
 

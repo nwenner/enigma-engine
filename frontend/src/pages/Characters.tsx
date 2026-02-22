@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useCharacters, useRefreshCharacters, usePreflight, useAutoSyncStatus } from "../api/hooks";
-import RespecModal from "../components/RespecModal";
+import { useCharacters, useRefreshCharacters } from "../api/hooks";
 import type { CharacterInfo } from "../api/types";
 
 const CLASS_ICONS: Record<number, string> = {
@@ -13,15 +12,9 @@ export default function Characters() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("modified_at");
   const [sortAsc, setSortAsc] = useState(false);
-  const [respecFilename, setRespecFilename] = useState<string | null>(null);
 
   const { data: chars, isLoading, error } = useCharacters();
   const refresh = useRefreshCharacters();
-  const { data: preflight } = usePreflight();
-  const { data: autosync } = useAutoSyncStatus();
-
-  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
-  const hasPendingSync = autosync?.state?.status === "pending";
 
   const filtered = (chars ?? [])
     .filter(
@@ -50,10 +43,6 @@ export default function Characters() {
 
   const SortIcon = ({ k }: { k: SortKey }) =>
     sortKey === k ? (sortAsc ? " ↑" : " ↓") : "";
-
-  const respecChar = respecFilename
-    ? chars?.find((c) => c.filename === respecFilename) ?? null
-    : null;
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto animate-fadeIn">
@@ -105,8 +94,6 @@ export default function Characters() {
           <CharacterMobileCard
             key={c.filename}
             char={c}
-            d2rRunning={d2rRunning}
-            onRespec={() => setRespecFilename(c.filename)}
           />
         ))}
       </div>
@@ -122,7 +109,6 @@ export default function Characters() {
                 { key: "level" as SortKey, label: "Level", align: "right" },
                 { key: null, label: "Flags", align: "center" },
                 { key: "modified_at" as SortKey, label: "Last Modified", align: "left" },
-                { key: null, label: "", align: "right" },
               ].map(({ key, label, align }) => (
                 <th
                   key={label}
@@ -140,14 +126,14 @@ export default function Characters() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={6} className="text-center py-10 text-slate-500">
+                <td colSpan={5} className="text-center py-10 text-slate-500">
                   Loading characters...
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-10 text-slate-500">
+                <td colSpan={5} className="text-center py-10 text-slate-500">
                   No characters found
                 </td>
               </tr>
@@ -156,34 +142,19 @@ export default function Characters() {
               <CharacterRow
                 key={c.filename}
                 char={c}
-                d2rRunning={d2rRunning}
-                onRespec={() => setRespecFilename(c.filename)}
               />
             ))}
           </tbody>
         </table>
       </div>
-
-      {respecChar && (
-        <RespecModal
-          filename={respecChar.filename}
-          characterName={respecChar.name}
-          hasPendingSync={hasPendingSync}
-          onClose={() => setRespecFilename(null)}
-        />
-      )}
     </div>
   );
 }
 
 function CharacterMobileCard({
   char,
-  d2rRunning,
-  onRespec,
 }: {
   char: CharacterInfo;
-  d2rRunning: boolean;
-  onRespec: () => void;
 }) {
   return (
     <div className="card-d2 p-3 flex items-center gap-3">
@@ -201,24 +172,8 @@ function CharacterMobileCard({
           {char.class_name} · Lvl {char.level}
         </div>
       </div>
-      <div className="flex flex-col items-end gap-1 shrink-0">
-        <div className="text-xs text-slate-500 tabular-nums">
-          {new Date(char.modified_at * 1000).toLocaleDateString()}
-        </div>
-        {d2rRunning ? (
-          <div className="relative group inline-block">
-            <button disabled className="btn-d2-ghost text-[10px] px-2 py-0.5 opacity-40 cursor-not-allowed">
-              Respec
-            </button>
-            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-44 bg-neutral-900 border border-amber-800/40 text-amber-300/80 text-[10px] rounded px-2 py-1 text-center opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-normal">
-              Close D2R before respecting
-            </div>
-          </div>
-        ) : (
-          <button onClick={onRespec} className="btn-d2-ghost text-[10px] px-2 py-0.5">
-            Respec
-          </button>
-        )}
+      <div className="text-xs text-slate-500 tabular-nums shrink-0">
+        {new Date(char.modified_at * 1000).toLocaleDateString()}
       </div>
     </div>
   );
@@ -226,12 +181,8 @@ function CharacterMobileCard({
 
 function CharacterRow({
   char,
-  d2rRunning,
-  onRespec,
 }: {
   char: CharacterInfo;
-  d2rRunning: boolean;
-  onRespec: () => void;
 }) {
   return (
     <tr className="border-b border-d2bg-border/50 hover:bg-d2bg-elevated/40 transition-colors">
@@ -259,22 +210,6 @@ function CharacterRow({
       </td>
       <td className="px-4 py-3 text-slate-500 text-xs tabular-nums">
         {new Date(char.modified_at * 1000).toLocaleString()}
-      </td>
-      <td className="px-4 py-3 text-right">
-        {d2rRunning ? (
-          <div className="relative group inline-block">
-            <button disabled className="btn-d2-ghost text-xs px-2 py-1 opacity-40 cursor-not-allowed">
-              Respec
-            </button>
-            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-44 bg-neutral-900 border border-amber-800/40 text-amber-300/80 text-[10px] rounded px-2 py-1 text-center opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-normal">
-              Close D2R before respecting
-            </div>
-          </div>
-        ) : (
-          <button onClick={onRespec} className="btn-d2-ghost text-xs px-2 py-1">
-            Respec
-          </button>
-        )}
       </td>
     </tr>
   );

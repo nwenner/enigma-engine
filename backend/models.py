@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, BigInteger, Float
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, BigInteger, Float, ForeignKey, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -69,3 +69,33 @@ class Settings(Base):
     key = Column(String, unique=True, nullable=False)
     value = Column(String, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class GrailCatalog(Base):
+    __tablename__ = "grail_catalog"
+
+    id = Column(Integer, primary_key=True)
+    item_code = Column(String(4), nullable=False, index=True)  # 4-char D2R type code
+    name = Column(String, nullable=False)                       # "Windforce"
+    base_item = Column(String, nullable=False)                  # "Hydra Bow"
+    quality = Column(String, nullable=False)                    # "unique" | "set"
+    set_name = Column(String, nullable=True)                    # set family name or null
+    unique_id = Column(Integer, nullable=True, index=True)      # 12-bit quality_data (unique items)
+    set_id = Column(Integer, nullable=True, index=True)         # 12-bit quality_data (set items)
+    sort_order = Column(Integer, default=0)
+
+
+class GrailEntry(Base):
+    __tablename__ = "grail_entries"
+
+    id = Column(Integer, primary_key=True)
+    catalog_id = Column(Integer, ForeignKey("grail_catalog.id"), nullable=False, index=True)
+    hardcore = Column(Boolean, nullable=False, default=False)
+    found_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    find_count = Column(Integer, default=1, nullable=False)
+    last_found_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    raw_item_bytes = Column(LargeBinary, nullable=True)   # full item bytes for retrieval
+    raw_item_bit_len = Column(Integer, nullable=True)     # exact bit length of item
+    is_deposited = Column(Boolean, nullable=False, default=False)  # True if tab 5 was cleared
+
+    __table_args__ = (UniqueConstraint("catalog_id", "hardcore", name="uq_grail_entry"),)

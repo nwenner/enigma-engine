@@ -11,11 +11,6 @@ export interface CharacterInfo {
   last_updated_at: string;  // ISO datetime
 }
 
-export interface RespecResponse {
-  success: boolean;
-  message: string;
-}
-
 export interface SyncStatusResponse {
   id: number;
   direction: "pc_to_deck" | "deck_to_pc";
@@ -116,4 +111,28 @@ export interface AutoSyncStatus {
   enabled: boolean;
   poll_interval: number;
   state: AutoSyncState | null;
+}
+
+export interface GrailItem {
+  catalog_id: number;
+  item_code: string;
+  name: string;
+  base_item: string;
+  quality: "unique" | "set";
+  set_name: string | null;
+  sort_order: number;
+  found: boolean;
+  find_count: number;
+  found_at: string | null;
+  last_found_at: string | null;
+  is_deposited: boolean;
+}
+
+export interface GrailProgress {
+  hardcore: boolean;
+  unique_total: number;
+  unique_found: number;
+  set_total: number;
+  set_found: number;
+  items: GrailItem[];
 }
