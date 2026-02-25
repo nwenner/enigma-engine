@@ -82,6 +82,7 @@ async def _build_sync_kwargs(session: AsyncSession, direction: str) -> dict:
 
 async def do_sync(operation_id: int, sync_kwargs: dict) -> None:
     """Background task: acquire lock then run sync with its own DB session."""
+    from backend.config import get_settings
     staged_path_str = sync_kwargs.get("staged_path")
     if staged_path_str:
         sync_kwargs = {**sync_kwargs, "staged_path": Path(staged_path_str)}
@@ -101,8 +102,13 @@ async def do_sync(operation_id: int, sync_kwargs: dict) -> None:
             except Exception:
                 pass  # Status already set to failed in run_sync
             finally:
+                # Only clean up if staged_path is inside staging_dir (legacy staging).
+                # Snapshot dirs (under backups_dir) are managed by the prune system.
                 if staged_path_str:
-                    shutil.rmtree(Path(staged_path_str), ignore_errors=True)
+                    staged = Path(staged_path_str)
+                    cfg = get_settings()
+                    if staged.is_relative_to(cfg.staging_dir):
+                        shutil.rmtree(staged, ignore_errors=True)
 
 
 @router.get("/sync/last", response_model=Optional[SyncStatusResponse])

@@ -1,15 +1,34 @@
 import { useState } from "react";
-import { useBackups, useDeleteBackup, useRestoreBackup } from "../api/hooks";
+import { useBackups, useDeleteBackup, useRestoreBackup, useCreateSnapshot, usePreflight } from "../api/hooks";
 import Collapsible from "../components/Collapsible";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { SnapshotResponse } from "../api/types";
 
 const fmtUtc = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z").toLocaleString();
 
+function LabelBadge({ label }: { label: string }) {
+  const map: Record<string, { text: string; cls: string }> = {
+    game_close: { text: "Auto", cls: "bg-blue-950/40 text-blue-400 border-blue-900/60" },
+    manual:     { text: "Manual", cls: "bg-emerald-950/40 text-emerald-400 border-emerald-900/60" },
+    pre_sync:   { text: "Safety", cls: "bg-slate-800/60 text-slate-400 border-slate-700/60" },
+  };
+  const entry = map[label] ?? { text: "Grail", cls: "bg-yellow-950/40 text-yellow-400 border-yellow-900/60" };
+  return (
+    <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${entry.cls}`}>
+      {entry.text}
+    </span>
+  );
+}
+
 export default function Backups() {
   const { data: backups, isLoading, error, refetch } = useBackups();
   const deleteBackup = useDeleteBackup();
   const restoreBackup = useRestoreBackup();
+  const createSnapshot = useCreateSnapshot();
+  const { data: preflight } = usePreflight();
+
+  const pcOnline = preflight?.pc_error === null;
+  const deckOnline = preflight?.deck_error === null;
 
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<number | null>(null);
@@ -41,6 +60,21 @@ export default function Backups() {
     }
   };
 
+  const handleSnapshot = async (machine: "pc" | "deck") => {
+    try {
+      await createSnapshot.mutateAsync(machine);
+      showToast("success", `${machine.toUpperCase()} snapshot created`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Snapshot failed";
+      showToast("error", msg);
+    }
+  };
+
+  const snapshotPending = createSnapshot.isPending;
+  const snapshotMachine = snapshotPending
+    ? (createSnapshot.variables as "pc" | "deck" | undefined)
+    : undefined;
+
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fadeIn">
       <div className="flex items-center justify-between mb-7">
@@ -48,9 +82,27 @@ export default function Backups() {
           <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Backups</h1>
           <p className="text-slate-500 text-sm mt-1">Automatic snapshots taken before each sync</p>
         </div>
-        <button onClick={() => refetch()} className="btn-d2-ghost text-xs px-3 py-1.5">
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleSnapshot("pc")}
+            disabled={snapshotPending || !pcOnline}
+            title={!pcOnline ? "PC is offline" : undefined}
+            className="btn-d2-ghost text-xs px-3 py-1.5"
+          >
+            {snapshotMachine === "pc" ? "Snapshotting…" : "Snapshot PC"}
+          </button>
+          <button
+            onClick={() => handleSnapshot("deck")}
+            disabled={snapshotPending || !deckOnline}
+            title={!deckOnline ? "Steam Deck is offline" : undefined}
+            className="btn-d2-ghost text-xs px-3 py-1.5"
+          >
+            {snapshotMachine === "deck" ? "Snapshotting…" : "Snapshot Deck"}
+          </button>
+          <button onClick={() => refetch()} className="btn-d2-ghost text-xs px-3 py-1.5">
+            Refresh
+          </button>
+        </div>
       </div>
 
       {toast && (
@@ -144,6 +196,7 @@ function SnapshotRow({ snapshot, onDelete, onRestore }: RowProps) {
             }`}>
               {snapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
             </span>
+            <LabelBadge label={snapshot.label} />
             <span className="text-slate-200 text-sm font-medium">
               {fmtUtc(snapshot.created_at)}
             </span>

@@ -1,5 +1,6 @@
 from pathlib import Path
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy import text
 from backend.models import Base
 
 DATA_DIR = Path("/app/data")
@@ -17,6 +18,11 @@ async def init_db() -> None:
     """Create all tables if they don't exist."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Runtime migration: add label column if not present (for existing installs)
+        try:
+            await conn.execute(text("ALTER TABLE backup_snapshots ADD COLUMN label TEXT DEFAULT 'pre_sync'"))
+        except Exception:
+            pass  # column already exists
 
 
 async def get_session() -> AsyncSession:

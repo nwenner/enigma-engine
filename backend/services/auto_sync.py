@@ -39,7 +39,6 @@ from backend.services.ssh_client import (
     get_sftp,
     check_d2r_running,
     list_d2s_files,
-    list_all_files,
     SSHConnectionError,
 )
 
@@ -173,50 +172,32 @@ async def _trigger_sync(direction: str) -> None:
     log.info("auto_sync: triggered %s (op_id=%d)", direction, op_id)
 
 
-async def _stage_files(machine: str, is_windows: bool) -> tuple[Path, int]:
+async def _snapshot_source(machine: str, is_windows: bool) -> tuple[Path, int]:
     """
-    SFTP source machine and copy all save files (excluding Settings.json) to
-    data/staging/{machine}/. Returns (staged_path, file_count). Raises on any failure.
+    Create a game_close BackupSnapshot by downloading all save files from machine.
+    Returns (snapshot_dir, file_count). Raises on any failure.
     """
-    cfg = get_settings()
+    from backend.services.backup_manager import create_snapshot
 
     async with AsyncSessionLocal() as session:
         kwargs = await _get_conn_kwargs(session, machine)
         save_dir = await _get_setting(session, f"{machine}_save_path") or ""
+        snapshot = await create_snapshot(
+            session=session,
+            machine=machine,
+            conn_kwargs=kwargs,
+            save_dir=save_dir,
+            label="game_close",
+        )
 
-    staged_path = cfg.staging_dir / machine
-    EXCLUDED_FILES = {"Settings.json"}
+    snapshot_dir = get_settings().data_dir / snapshot.snapshot_path
 
-    def _do() -> int:
-        with get_sftp(**kwargs) as (_ssh, sftp):
-            all_files = list_all_files(sftp, save_dir)
-
-            d2s_files = [f for f in all_files if f["filename"].endswith(".d2s")]
-            if not d2s_files:
-                raise RuntimeError(f"No .d2s files found in {save_dir} on {machine.upper()}")
-
-            files_to_stage = [f for f in all_files if f["filename"] not in EXCLUDED_FILES]
-
-            # Clear prior staged content for this machine
-            if staged_path.exists():
-                shutil.rmtree(str(staged_path))
-            staged_path.mkdir(parents=True, exist_ok=True)
-
-            for file_info in files_to_stage:
-                remote = file_info["path"].replace("\\", "/")
-                local = staged_path / file_info["filename"]
-                sftp.get(remote, str(local))
-
-        return len(files_to_stage)
-
-    count = await asyncio.to_thread(_do)
-
-    # Run grail hook against staged files — dest is offline so source-only upload
+    # Run grail hook against snapshot files — dest may be offline so source-only detection
     try:
         from backend.services.grail_service import process_portal_tab_hook
-        staged_files = [f for f in staged_path.iterdir() if f.is_file()]
-        log.warning("Grail: staging hook running, staged files: %s", [f.name for f in staged_files])
-        downloaded = [{"filename": f.name, "local_part": f} for f in staged_files]
+        snapshot_files = [f for f in snapshot_dir.iterdir() if f.is_file()]
+        log.warning("Grail: snapshot hook running, files: %s", [f.name for f in snapshot_files])
+        downloaded = [{"filename": f.name, "local_part": f} for f in snapshot_files]
         async with AsyncSessionLocal() as grail_session:
             await process_portal_tab_hook(
                 session=grail_session,
@@ -224,18 +205,25 @@ async def _stage_files(machine: str, is_windows: bool) -> tuple[Path, int]:
                 source_conn=kwargs,
                 source_dir=save_dir,
             )
-        log.warning("Grail: staging hook completed")
+        log.warning("Grail: snapshot hook completed")
     except Exception as _grail_err:
-        log.warning("Grail hook failed during staging (staging unaffected): %s", _grail_err)
+        log.warning("Grail hook failed during snapshot (snapshot unaffected): %s", _grail_err)
 
-    return staged_path, count
+    return snapshot_dir, snapshot.file_count
 
 
 async def _cleanup_staged(staged_path_str: str | None) -> None:
-    """Remove a staged directory if it exists. No-op if path is None."""
+    """
+    Remove a staged directory if it exists. No-op if path is None.
+    Snapshot dirs (under backups_dir) are managed by the prune system — they are not deleted here.
+    """
     if not staged_path_str:
         return
     path = Path(staged_path_str)
+    cfg = get_settings()
+    # Don't delete snapshot dirs — the prune system owns their lifecycle
+    if path.is_relative_to(cfg.backups_dir):
+        return
 
     def _do() -> None:
         shutil.rmtree(str(path), ignore_errors=True)
@@ -384,7 +372,7 @@ async def run_auto_sync_watcher() -> None:
                                     )
                                     await _cleanup_staged(cur_state["staged_path"])
                                     try:
-                                        staged_path, count = await _stage_files(machine, is_windows)
+                                        staged_path, count = await _snapshot_source(machine, is_windows)
                                         log.info("auto_sync: re-staged %d files from %s", count, machine)
                                         await _set_state({
                                             "status": "pending",
@@ -425,7 +413,7 @@ async def run_auto_sync_watcher() -> None:
                                     asyncio.create_task(notify_conflict())
                             else:
                                 try:
-                                    staged_path, count = await _stage_files(machine, is_windows)
+                                    staged_path, count = await _snapshot_source(machine, is_windows)
                                     log.info("auto_sync: staged %d files from %s", count, machine)
                                     await _set_state({
                                         "status": "pending",

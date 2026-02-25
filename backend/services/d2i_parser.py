@@ -392,13 +392,21 @@ def remove_items_from_page(page: D2IPage, indices: list[int]) -> D2IPage:
     new_count = max(0, page.item_count - len(idx_set))
 
     if page.is_modern:
-        # For Modern format, preserve the original byte buffer size.
-        # D2R appears to rely on a consistent file size — shrinking the file causes
-        # a crash-to-desktop on character launch. Zero-padding the unused space is
-        # safe because D2R reads exactly item_count items and ignores what follows.
-        original_size = len(page.raw_bytes)
-        if len(new_raw) < original_size:
-            new_raw += b"\x00" * (original_size - len(new_raw))
+        # Modern format: D2R requires empty pages to have a minimum 56-byte structure.
+        # When all items are removed, create the proper empty page structure.
+        if new_count == 0 and len(new_raw) == 0:
+            # Page became completely empty - create minimal 56-byte structure
+            # Format observed in D2R empty pages:
+            #   magic(4) + version(4) + unknown1(4) + zeros(4) + size_field(4) + zeros(36)
+            import struct
+            new_raw = bytearray(56)
+            struct.pack_into("<I", new_raw, 0, 0xAA55AA55)  # magic
+            struct.pack_into("<I", new_raw, 4, 2)           # version
+            struct.pack_into("<I", new_raw, 8, 105)         # unknown1 (consistent across all stashes)
+            # Offset 12-15: zeros
+            struct.pack_into("<I", new_raw, 16, 0x148)      # size field (328 decimal, seen in empty pages)
+            # Offset 20-55: zeros (already initialized)
+
         new_page = D2IPage(
             flags=0,
             name="",

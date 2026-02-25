@@ -123,9 +123,6 @@ function ItemRow({
   onRetrieve: (item: GrailItem) => void;
   onUnmark: (item: GrailItem) => void;
 }) {
-  // TEMPORARILY DISABLED - Modern stash serialization bug causes corruption
-  const retrieveDisabled = true;
-
   return (
     <div
       className={`flex items-center gap-3 px-3 py-2 border-b border-d2bg-border/50 last:border-0 ${
@@ -150,11 +147,10 @@ function ItemRow({
           {item.is_deposited ? (
             <button
               onClick={() => onRetrieve(item)}
-              disabled={retrieveDisabled}
-              className="text-[11px] text-slate-600 border border-slate-800 px-2 py-0.5 opacity-50 cursor-not-allowed"
-              title="Temporarily disabled - retrieval causes corruption"
+              className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors"
+              title="Retrieve this item to tab 5"
             >
-              Request (Disabled)
+              Request
             </button>
           ) : (
             <span className="text-[11px] text-slate-600 px-2 py-0.5" title="Deposit tab 5 to enable retrieval">
@@ -225,9 +221,6 @@ function DepositPanel({ d2rRunning }: { d2rRunning: boolean }) {
     }
   };
 
-  // TEMPORARILY DISABLED - Modern stash serialization bug causes corruption
-  const isDisabled = true;
-
   return (
     <div className="card-d2 p-4 mb-4">
       <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-1">Deposit Tab 5</h2>
@@ -235,12 +228,6 @@ function DepositPanel({ d2rRunning }: { d2rRunning: boolean }) {
         Register unique and set items from stash tab 5 into your grail, then clear that tab.
         D2R must not be running.
       </p>
-
-      {isDisabled && (
-        <div className="bg-red-950/30 border border-red-800/50 text-red-400 text-xs px-3 py-2 mb-4">
-          🚨 <strong>Temporarily Disabled</strong> - Stash modification causes file corruption. Detection still works (read-only). Fix in progress.
-        </div>
-      )}
 
       <div className="flex gap-2 mb-4">
         {(["pc", "deck"] as const).map((m) => (
@@ -258,7 +245,7 @@ function DepositPanel({ d2rRunning }: { d2rRunning: boolean }) {
         ))}
       </div>
 
-      {d2rRunning && !isDisabled && (
+      {d2rRunning && (
         <div className="text-amber-400 text-xs mb-3 bg-amber-950/30 border border-amber-800/40 px-3 py-2">
           ⚠ Close D2R before depositing items
         </div>
@@ -266,11 +253,10 @@ function DepositPanel({ d2rRunning }: { d2rRunning: boolean }) {
 
       <button
         onClick={handleDeposit}
-        disabled={deposit.isPending || d2rRunning || isDisabled}
-        className="btn-d2 text-xs px-4 py-2 w-full opacity-50 cursor-not-allowed"
-        title={isDisabled ? "Temporarily disabled due to corruption bug" : ""}
+        disabled={deposit.isPending || d2rRunning}
+        className="btn-d2 text-xs px-4 py-2 w-full"
       >
-        {deposit.isPending ? "Depositing…" : "Deposit Items (Disabled)"}
+        {deposit.isPending ? "Depositing…" : "Deposit Items"}
       </button>
 
       {deposit.error && (
@@ -484,20 +470,6 @@ export default function Grail() {
         <p className="text-slate-500 text-sm mt-1">
           Track your Unique and Set item collection — place items in stash tab 5, then use Deposit to register and clear them
         </p>
-      </div>
-
-      {/* CRITICAL: Grail Modification Disabled Warning */}
-      <div className="bg-red-950/40 border border-red-700/60 text-red-300 text-sm px-4 py-3 mb-5">
-        <div className="flex items-start gap-3">
-          <span className="text-xl">🚨</span>
-          <div className="flex-1">
-            <div className="font-medium mb-1">Deposit & Retrieve Temporarily Disabled</div>
-            <div className="text-xs text-red-400/90 leading-relaxed">
-              Modern stash file serialization has a bug that causes game crashes. <strong>Detection still works</strong> (read-only tracking when you close the game).
-              Stash modification disabled until the bug is fixed.
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* D2R Running Warning */}

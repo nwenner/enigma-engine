@@ -37,6 +37,7 @@ export interface SnapshotResponse {
   characters: CharacterInfo[] | null;
   created_at: string;
   sync_operation_id: number | null;
+  label: string;
 }
 
 export interface FileRecordResponse {

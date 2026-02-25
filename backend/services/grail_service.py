@@ -225,42 +225,22 @@ async def deposit_tab5(
     Individual item upsert failures are collected in "errors" but do not abort.
     """
     from backend.services import ssh_client as ssh_mod
-    from backend.services.backup_manager import _sftp_download, _sftp_upload
-    from backend.config import get_settings
-    from backend.models import BackupSnapshot
+    from backend.services.backup_manager import _sftp_download, _sftp_upload, create_snapshot
 
     # --- CRITICAL: Create backup BEFORE any modification ---
-    cfg = get_settings()
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_subdir = cfg.backups_dir / machine / f"{timestamp}_pre_grail_deposit"
-    backup_subdir.mkdir(parents=True, exist_ok=True)
-
-    log.info("BACKUP: Creating pre-grail-deposit backup at %s", backup_subdir)
-
-    def _backup_all_files():
-        with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
-            all_files = ssh_mod.list_all_files(sftp, save_dir)
-            for f in all_files:
-                _sftp_download(sftp, ssh_mod.normalize_path(f["path"]), backup_subdir / f["filename"])
-            return len(all_files)
-
+    log.info("BACKUP: Creating pre-grail-deposit backup for %s", machine)
     try:
-        file_count = await asyncio.to_thread(_backup_all_files)
-        log.info("BACKUP: Successfully backed up %d files to %s", file_count, backup_subdir)
+        await create_snapshot(
+            session=session,
+            machine=machine,
+            conn_kwargs=conn,
+            save_dir=save_dir,
+            label="pre_grail_deposit",
+        )
+        log.info("BACKUP: Pre-grail-deposit backup created successfully")
     except Exception as e:
         log.error("BACKUP FAILED: Cannot proceed with deposit: %s", e)
         raise RuntimeError(f"Pre-deposit backup failed: {e}") from e
-
-    # Record backup in database
-    snapshot = BackupSnapshot(
-        source_machine=machine,
-        snapshot_path=str(backup_subdir.relative_to(cfg.data_dir)),
-        file_count=file_count,
-        characters=None,
-        sync_operation_id=None,
-    )
-    session.add(snapshot)
-    await session.commit()
 
     registered_names: list[str] = []
     skipped_names: list[str] = []
@@ -451,8 +431,7 @@ async def retrieve_item_to_tab5(
       4. Serialize and upload back
     """
     from backend.services import ssh_client as ssh_mod
-    from backend.config import get_settings
-    from backend.models import BackupSnapshot
+    from backend.services.backup_manager import create_snapshot
 
     result = await session.execute(
         select(GrailEntry).where(
@@ -467,38 +446,19 @@ async def retrieve_item_to_tab5(
     item_bytes = entry.raw_item_bytes
 
     # --- CRITICAL: Create backup BEFORE any modification ---
-    cfg = get_settings()
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_subdir = cfg.backups_dir / target_machine / f"{timestamp}_pre_grail_retrieve"
-    backup_subdir.mkdir(parents=True, exist_ok=True)
-
-    log.info("BACKUP: Creating pre-grail-retrieve backup at %s", backup_subdir)
-
-    def _backup_all_files():
-        with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
-            all_files = ssh_mod.list_all_files(sftp, save_dir)
-            for f in all_files:
-                from backend.services.backup_manager import _sftp_download
-                _sftp_download(sftp, ssh_mod.normalize_path(f["path"]), backup_subdir / f["filename"])
-            return len(all_files)
-
+    log.info("BACKUP: Creating pre-grail-retrieve backup for %s", target_machine)
     try:
-        file_count = await asyncio.to_thread(_backup_all_files)
-        log.info("BACKUP: Successfully backed up %d files to %s", file_count, backup_subdir)
+        await create_snapshot(
+            session=session,
+            machine=target_machine,
+            conn_kwargs=conn,
+            save_dir=save_dir,
+            label="pre_grail_retrieve",
+        )
+        log.info("BACKUP: Pre-grail-retrieve backup created successfully")
     except Exception as e:
         log.error("BACKUP FAILED: Cannot proceed with retrieve: %s", e)
         raise RuntimeError(f"Pre-retrieve backup failed: {e}") from e
-
-    # Record backup in database
-    snapshot = BackupSnapshot(
-        source_machine=target_machine,
-        snapshot_path=str(backup_subdir.relative_to(cfg.data_dir)),
-        file_count=file_count,
-        characters=None,
-        sync_operation_id=None,
-    )
-    session.add(snapshot)
-    await session.commit()
 
     # Download current stash
     with tempfile.TemporaryDirectory() as tmp:

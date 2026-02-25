@@ -104,6 +104,15 @@ export function useRestoreBackup() {
   });
 }
 
+export function useCreateSnapshot() {
+  const qc = useQueryClient();
+  return useMutation<SnapshotResponse, Error, "pc" | "deck">({
+    mutationFn: (machine) =>
+      api.post("/backups/snapshot", { machine }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["backups"] }),
+  });
+}
+
 // ─── History ─────────────────────────────────────────────────────────────────
 
 export function useHistory(page: number, pageSize = 20) {

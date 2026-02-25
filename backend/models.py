@@ -44,6 +44,7 @@ class BackupSnapshot(Base):
     characters = Column(JSON, nullable=True)  # list of D2SCharacter dicts at snapshot time
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     sync_operation_id = Column(Integer, nullable=True)
+    label = Column(String, nullable=False, default="pre_sync")  # "pre_sync" | "game_close" | "manual" | "pre_grail_deposit" | "pre_grail_retrieve"
 
 
 class Character(Base):

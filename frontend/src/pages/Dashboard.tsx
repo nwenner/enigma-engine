@@ -12,6 +12,7 @@ import {
 } from "../api/hooks";
 import CharacterCard from "../components/CharacterCard";
 import SyncStatusModal from "../components/SyncStatusModal";
+import ConfirmDialog from "../components/ConfirmDialog";
 import type { CharacterInfo, SnapshotResponse, SyncStatusResponse } from "../api/types";
 
 // ─── Stale check ──────────────────────────────────────────────────────────────
@@ -247,6 +248,7 @@ export default function Dashboard() {
   const dismissAutoSync = useDismissAutoSync();
   const triggerAutoSync = useTriggerAutoSync();
   const [activeSyncId, setActiveSyncId] = useState<number | null>(null);
+  const [pendingDirection, setPendingDirection] = useState<Direction | null>(null);
 
   const sortedChars = [...(chars ?? [])].sort((a, b) => b.modified_at - a.modified_at);
 
@@ -256,7 +258,22 @@ export default function Dashboard() {
       )[0]
     : null;
 
+  const pcOnline = preflight?.pc_error === null;
+  const deckOnline = preflight?.deck_error === null;
+  const bothOnline = pcOnline && deckOnline;
+
+  const offlineMessage = !preflight
+    ? null
+    : !pcOnline && !deckOnline
+    ? "Both devices must be online to sync"
+    : !pcOnline
+    ? "PC is offline"
+    : !deckOnline
+    ? "Steam Deck is offline"
+    : null;
+
   const handleSync = async (direction: Direction) => {
+    setPendingDirection(null);
     const result = await startSync.mutateAsync(direction);
     setActiveSyncId(result.id);
   };
@@ -275,20 +292,27 @@ export default function Dashboard() {
       {/* Sync buttons */}
       <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
         <button
-          onClick={() => handleSync("pc_to_deck")}
-          disabled={startSync.isPending}
+          onClick={() => setPendingDirection("pc_to_deck")}
+          disabled={startSync.isPending || !bothOnline}
           className="btn-d2 w-full sm:w-auto"
         >
           PC → Steam Deck
         </button>
         <button
-          onClick={() => handleSync("deck_to_pc")}
-          disabled={startSync.isPending}
+          onClick={() => setPendingDirection("deck_to_pc")}
+          disabled={startSync.isPending || !bothOnline}
           className="btn-d2 w-full sm:w-auto"
         >
           Steam Deck → PC
         </button>
       </div>
+
+      {/* Offline warning */}
+      {offlineMessage && (
+        <div className="bg-slate-900/60 border border-slate-700/50 px-4 py-2 text-slate-400 text-sm mb-4 text-center">
+          {offlineMessage}
+        </div>
+      )}
 
       {/* D2R running warning */}
       {preflight && !preflight.safe_to_sync && (preflight.pc_running || preflight.deck_running) && (
@@ -348,6 +372,16 @@ export default function Dashboard() {
         <div className="mt-4">
           <LatestBackup snapshot={latestSnapshot} />
         </div>
+      )}
+
+      {pendingDirection !== null && (
+        <ConfirmDialog
+          title={pendingDirection === "pc_to_deck" ? "PC → Steam Deck" : "Steam Deck → PC"}
+          message="A safety backup of the destination will be created before any files are overwritten. If anything goes wrong, you can restore from the Backups page."
+          confirmLabel="Sync"
+          onConfirm={() => handleSync(pendingDirection)}
+          onCancel={() => setPendingDirection(null)}
+        />
       )}
 
       {activeSyncId !== null && (

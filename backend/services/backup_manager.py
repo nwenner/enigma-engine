@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
 
 from backend.config import get_settings
 from backend.models import SyncOperation, SyncFileRecord, BackupSnapshot
@@ -45,6 +45,67 @@ def _sftp_download_if_exists(sftp, remote_path: str, local_path: Path) -> bool:
         return False
     except IOError:
         return False
+
+
+async def create_snapshot(
+    session: AsyncSession,
+    machine: str,
+    conn_kwargs: dict,
+    save_dir: str,
+    label: str = "manual",
+    sync_operation_id: int | None = None,
+) -> BackupSnapshot:
+    """
+    Download all files from save_dir on machine and create a BackupSnapshot record.
+
+    Args:
+        machine: "pc" or "deck" — the machine being snapshotted
+        conn_kwargs: SSH connection dict (host, port, username, password, key_path)
+        save_dir: remote path to the save directory
+        label: snapshot type — "manual", "game_close", "pre_sync", "pre_grail_deposit", "pre_grail_retrieve"
+        sync_operation_id: link to a SyncOperation if applicable
+    """
+    cfg = get_settings()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup_subdir = cfg.backups_dir / machine / f"{timestamp}_{label}"
+    backup_subdir.mkdir(parents=True, exist_ok=True)
+
+    def _download_all() -> list[str]:
+        backed_up = []
+        with ssh_mod.get_sftp(**conn_kwargs) as (_ssh, sftp):
+            all_files = ssh_mod.list_all_files(sftp, save_dir)
+            for file_info in all_files:
+                remote = ssh_mod.normalize_path(file_info["path"])
+                local = backup_subdir / file_info["filename"]
+                _sftp_download(sftp, remote, local)
+                backed_up.append(file_info["filename"])
+        return backed_up
+
+    backed_up_files = await asyncio.to_thread(_download_all)
+
+    backup_chars = []
+    for fname in backed_up_files:
+        if fname.endswith(".d2s"):
+            try:
+                c = parse_d2s(backup_subdir / fname)
+                backup_chars.append(c.to_dict())
+            except D2SParseError:
+                pass
+
+    snapshot = BackupSnapshot(
+        source_machine=machine,
+        snapshot_path=str(backup_subdir.relative_to(cfg.data_dir)),
+        file_count=len(backed_up_files),
+        characters=backup_chars,
+        sync_operation_id=sync_operation_id,
+        label=label,
+    )
+    session.add(snapshot)
+    await session.commit()
+
+    await _prune_backups(session, machine, cfg, label)
+
+    return snapshot
 
 
 async def run_sync(
@@ -162,44 +223,15 @@ async def run_sync(
             except D2SParseError as e:
                 raise RuntimeError(f"Validation failed for {item['filename']}: {e}") from e
 
-        # --- 5. Backup destination files ---
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        backup_subdir = cfg.backups_dir / dest_machine / timestamp
-        backup_subdir.mkdir(parents=True, exist_ok=True)
-
-        def _backup_dest():
-            backed_up = []
-            with ssh_mod.get_sftp(**dest_conn) as (_ssh, sftp):
-                dest_files = ssh_mod.list_all_files(sftp, dest_dir)
-                for file_info in dest_files:
-                    remote = ssh_mod.normalize_path(file_info["path"])
-                    local = backup_subdir / file_info["filename"]
-                    _sftp_download(sftp, remote, local)
-                    backed_up.append(file_info["filename"])
-            return backed_up
-
-        backed_up_files = await asyncio.to_thread(_backup_dest)
-
-        # Parse backed-up characters for snapshot metadata
-        backup_chars = []
-        for fname in backed_up_files:
-            if fname.endswith(".d2s"):
-                try:
-                    c = parse_d2s(backup_subdir / fname)
-                    backup_chars.append(c.to_dict())
-                except D2SParseError:
-                    pass
-
-        # --- 6. Record snapshot ---
-        snapshot = BackupSnapshot(
-            source_machine=dest_machine,
-            snapshot_path=str(backup_subdir.relative_to(cfg.data_dir)),
-            file_count=len(backed_up_files),
-            characters=backup_chars,
+        # --- 5+6. Backup destination files before overwriting ---
+        await create_snapshot(
+            session=session,
+            machine=dest_machine,
+            conn_kwargs=dest_conn,
+            save_dir=dest_dir,
+            label="pre_sync",
             sync_operation_id=operation.id,
         )
-        session.add(snapshot)
-        await session.commit()
 
         # --- 7. Upload source files to dest ---
         def _upload_dest():
@@ -261,9 +293,6 @@ async def run_sync(
         except Exception as _grail_err:
             log.warning("Grail hook failed (sync unaffected): %s", _grail_err)
 
-        # --- 9. Prune old backups ---
-        await _prune_backups(session, dest_machine, cfg)
-
     except Exception as e:
         log.error("Sync operation %d failed: %s", operation.id, e)
         operation.status = "failed"
@@ -278,21 +307,48 @@ async def run_sync(
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-async def _prune_backups(session: AsyncSession, machine: str, cfg) -> None:
-    """Delete oldest backup snapshots beyond retention count."""
-    result = await session.execute(
-        select(BackupSnapshot)
-        .where(BackupSnapshot.source_machine == machine)
-        .order_by(BackupSnapshot.created_at.desc())
-    )
-    snapshots = result.scalars().all()
+async def _prune_backups(session: AsyncSession, machine: str, cfg, label: str = "pre_sync") -> None:
+    """
+    Delete oldest backup snapshots beyond retention limits for the given label group.
 
-    if len(snapshots) <= cfg.backup_retention_count:
+    Retention rules:
+      - "pre_sync": keep 3 per platform
+      - "game_close" / "manual" (source-of-truth, combined): keep 1 per platform
+      - "pre_grail_*": never pruned
+    """
+    # Grail backups are precious — never auto-prune them
+    if label.startswith("pre_grail"):
         return
 
-    to_delete = snapshots[cfg.backup_retention_count:]
+    if label in ("game_close", "manual"):
+        # Source-of-truth snapshots share a single slot per platform
+        result = await session.execute(
+            select(BackupSnapshot)
+            .where(
+                BackupSnapshot.source_machine == machine,
+                BackupSnapshot.label.in_(["game_close", "manual"]),
+            )
+            .order_by(BackupSnapshot.created_at.desc())
+        )
+        keep = 1
+    else:
+        # pre_sync safety backups: keep 3 per platform
+        result = await session.execute(
+            select(BackupSnapshot)
+            .where(
+                BackupSnapshot.source_machine == machine,
+                BackupSnapshot.label == "pre_sync",
+            )
+            .order_by(BackupSnapshot.created_at.desc())
+        )
+        keep = 3
+
+    snapshots = result.scalars().all()
+    if len(snapshots) <= keep:
+        return
+
+    to_delete = snapshots[keep:]
     for snap in to_delete:
-        # Delete from disk
         snap_path = cfg.data_dir / snap.snapshot_path
         if snap_path.exists():
             shutil.rmtree(snap_path, ignore_errors=True)
