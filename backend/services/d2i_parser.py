@@ -13,8 +13,11 @@ Legacy layout (version != 2):
 
 Modern layout (version == 2):
   [64-byte header: magic(4) + version(4) + unknown(4) + gold(4) + page0_size(4) + zeros(44)]
-  [5 pages, each preceded by 8 zero bytes (header provides them for page 0):]
+  [N pages, page 0 follows the header directly, pages 1+ are each preceded by a 64-byte separator:]
     JM(2) + item_count(2, uint16 LE) + item_bytes...
+  Separator format: magic(4)+version(4)+unk1(4)+gold=0(4)+size_field(4)+zeros(44)
+    size_field = slot size of the FOLLOWING page = 4+raw_len+64 (for non-last pages).
+    Last separator has field at offset 20 = 1 (terminal marker); its size_field is not a slot size.
   Items have NO JM prefix. Each item starts with first_byte=0x10 (identified flag at bit 4).
   Quality is at bit 111 from item start; unique_id/set_id at bit 117.
 """
@@ -81,6 +84,7 @@ class D2IPage:
     item_count: int
     items: list[D2IItem] = field(default_factory=list)
     is_modern: bool = False
+    preceding_separator: bytes = field(default=b"")  # 64-byte separator before this page's JM (empty for page 0)
 
 
 @dataclass
@@ -116,8 +120,8 @@ _BIT_QUALITY_DATA  = 174      # 12 bits
 
 # ─── Modern format constants ───────────────────────────────────────────────────
 
-MODERN_HEADER_SIZE = 64   # bytes
-MODERN_PAGE_COUNT  = 5    # always 5 tabs in D2R shared stash
+MODERN_HEADER_SIZE = 64   # bytes (also the size of each inter-page separator)
+MODERN_SEP_SIZE    = 64   # separator between pages equals one header-size block
 
 # Bit offsets for Modern format items (from item byte_start, NO JM prefix).
 # Empirically confirmed via binary analysis of real stash files:
@@ -137,21 +141,32 @@ def _is_modern_format(data: bytes) -> bool:
 
 def _find_modern_page_jm_offsets(data: bytes) -> list[int]:
     """
-    Locate page JM markers in a Modern stash file.
-    Each valid page JM is preceded by at least 8 consecutive zero bytes
-    (the 64-byte header ends in zeros, providing the separator for page 0).
-    Returns up to MODERN_PAGE_COUNT offsets.
+    Locate all page JM markers in a Modern stash file using forward navigation.
+
+    Page 0 starts immediately after the 64-byte header. Each subsequent page is found
+    by reading the size_field from the 64-byte separator that precedes it: that field
+    encodes the slot size of the page it introduces (JM+count+items+next_separator).
+    Navigation stops when no JM is found at the expected position or data is exhausted.
     """
-    offsets: list[int] = []
-    i = 8  # need at least 8 bytes before i to check for zeros
-    while i < len(data) - 1 and len(offsets) < MODERN_PAGE_COUNT:
-        if data[i] == 0x4A and data[i + 1] == 0x4D:
-            zero_start = i - 8
-            if zero_start >= 0 and all(data[zero_start + k] == 0 for k in range(8)):
-                offsets.append(i)
-                i += 2
-                continue
-        i += 1
+    if len(data) < MODERN_HEADER_SIZE + 4:
+        return []
+
+    page0_size = struct.unpack_from("<I", data, 16)[0]
+    offsets: list[int] = [MODERN_HEADER_SIZE]  # page 0 always starts right after header
+
+    cur = MODERN_HEADER_SIZE + page0_size  # position of page 1's JM
+    while cur + 1 < len(data):
+        if data[cur : cur + 2] != b"JM":
+            break
+        offsets.append(cur)
+        sep_start = cur - MODERN_SEP_SIZE
+        if sep_start < 0:
+            break
+        slot_size = struct.unpack_from("<I", data, sep_start + 16)[0]
+        if slot_size == 0:
+            break
+        cur += slot_size
+
     return offsets
 
 
@@ -392,21 +407,8 @@ def remove_items_from_page(page: D2IPage, indices: list[int]) -> D2IPage:
     new_count = max(0, page.item_count - len(idx_set))
 
     if page.is_modern:
-        # Modern format: D2R requires empty pages to have a minimum 56-byte structure.
-        # When all items are removed, create the proper empty page structure.
-        if new_count == 0 and len(new_raw) == 0:
-            # Page became completely empty - create minimal 56-byte structure
-            # Format observed in D2R empty pages:
-            #   magic(4) + version(4) + unknown1(4) + zeros(4) + size_field(4) + zeros(36)
-            import struct
-            new_raw = bytearray(56)
-            struct.pack_into("<I", new_raw, 0, 0xAA55AA55)  # magic
-            struct.pack_into("<I", new_raw, 4, 2)           # version
-            struct.pack_into("<I", new_raw, 8, 105)         # unknown1 (consistent across all stashes)
-            # Offset 12-15: zeros
-            struct.pack_into("<I", new_raw, 16, 0x148)      # size field (328 decimal, seen in empty pages)
-            # Offset 20-55: zeros (already initialized)
-
+        # Modern format: empty pages use raw_bytes=bytearray() (truly zero bytes).
+        # The serializer will compute the correct size_field in the preceding separator.
         new_page = D2IPage(
             flags=0,
             name="",
@@ -414,6 +416,7 @@ def remove_items_from_page(page: D2IPage, indices: list[int]) -> D2IPage:
             item_count=new_count,
             items=[],
             is_modern=True,
+            preceding_separator=page.preceding_separator,
         )
         if new_count > 0:
             new_page.items = _parse_page_items_modern(new_raw, new_count)
@@ -443,6 +446,7 @@ def insert_item_into_page(page: D2IPage, item_bytes: bytes) -> D2IPage:
         item_count=new_count,
         items=[],
         is_modern=page.is_modern,
+        preceding_separator=page.preceding_separator,
     )
     if page.is_modern:
         new_page.items = _parse_page_items_modern(new_raw, new_count)
@@ -526,37 +530,41 @@ def _parse_d2i_modern(data: bytes, magic: int, version: int) -> D2IStash:
         raise ValueError(f"Modern stash too short: {len(data)} bytes")
 
     raw_header = bytes(data[:MODERN_HEADER_SIZE])
+    jm_offsets = _find_modern_page_jm_offsets(data)
+    if not jm_offsets:
+        raise ValueError("Modern stash: no pages found")
+
+    num_pages = len(jm_offsets)
     stash = D2IStash(
         magic=magic,
         version=version,
-        num_pages=MODERN_PAGE_COUNT,
+        num_pages=num_pages,
         is_modern=True,
         raw_header=raw_header,
     )
 
-    jm_offsets = _find_modern_page_jm_offsets(data)
-    if len(jm_offsets) < MODERN_PAGE_COUNT:
-        raise ValueError(
-            f"Modern stash: expected {MODERN_PAGE_COUNT} pages, "
-            f"found {len(jm_offsets)} (offsets={jm_offsets})"
-        )
-
-    for page_idx in range(MODERN_PAGE_COUNT):
-        jm_off = jm_offsets[page_idx]
+    for page_idx, jm_off in enumerate(jm_offsets):
         if jm_off + 4 > len(data):
             raise ValueError(f"Truncated at Modern page {page_idx}")
 
         item_count = struct.unpack_from("<H", data, jm_off + 2)[0]
         data_start = jm_off + 4
 
-        # data_end: before the 8-zero separator of the next page, or EOF for last page
-        if page_idx + 1 < MODERN_PAGE_COUNT:
-            data_end = jm_offsets[page_idx + 1] - 8
+        # data_end: exclude the 64-byte separator that precedes the next page (or EOF for last page)
+        if page_idx + 1 < num_pages:
+            data_end = jm_offsets[page_idx + 1] - MODERN_SEP_SIZE
         else:
             data_end = len(data)
 
         raw_bytes = bytearray(data[data_start:data_end])
         items = _parse_page_items_modern(raw_bytes, item_count)
+
+        # Extract the 64-byte separator preceding this page's JM (absent for page 0)
+        if page_idx == 0:
+            preceding_sep = b""
+        else:
+            sep_start = jm_off - MODERN_SEP_SIZE
+            preceding_sep = bytes(data[sep_start : jm_off])
 
         page = D2IPage(
             flags=0,
@@ -565,6 +573,7 @@ def _parse_d2i_modern(data: bytes, magic: int, version: int) -> D2IStash:
             item_count=item_count,
             items=items,
             is_modern=True,
+            preceding_separator=preceding_sep,
         )
         stash.pages.append(page)
 
@@ -596,16 +605,42 @@ def _serialize_d2i_legacy(stash: D2IStash) -> bytes:
 def _serialize_d2i_modern(stash: D2IStash) -> bytes:
     """
     Reconstruct Modern format stash bytes.
-    Layout: 64-byte header + for each page: [8 zero separator (except page 0)] + JM + item_count(2) + raw_bytes.
-    Page 0 gets its separator from the zeros at the end of the 64-byte header.
+
+    Layout:
+      64-byte header
+      Page 0: JM + item_count(2) + raw_bytes  (no preceding separator; header provides leading zeros)
+      Page 1+: [64-byte separator] + JM + item_count(2) + raw_bytes
+
+    Separator structure: magic(4)+version(4)+unk1(4)+gold=0(4)+size_field(4)+zeros(44)
+      size_field = slot size of the page that follows = 4+len(raw_bytes)+64 for non-last pages.
+      Exception: if the stored separator has field-at-offset-20 != 0 (terminal marker),
+      it is preserved byte-for-byte (the last page's separator uses a different encoding).
     """
-    out = bytearray(stash.raw_header)  # 64 bytes, ends in zeros (provides separator for page 0)
+    out = bytearray(stash.raw_header)
+    total_pages = len(stash.pages)
+
     for page_idx, page in enumerate(stash.pages):
         if page_idx > 0:
-            out += b"\x00" * 8  # 8-byte separator before pages 1-4
+            sep = page.preceding_separator
+            # Check for terminal marker (field at offset 20 of separator != 0 → last-page sentinel)
+            terminal = len(sep) >= 24 and struct.unpack_from("<I", sep, 20)[0] != 0
+            if terminal:
+                # Preserve the terminal separator exactly; D2R uses it as a fixed sentinel
+                out += sep
+            else:
+                # Reconstruct separator with a fresh size_field.
+                # Slot size = JM(2) + count(2) + raw_bytes + trailing separator(64).
+                # The trailing separator exists for every page that is NOT the last one.
+                # Since this separator is non-terminal, the page it introduces also has a
+                # trailing separator (the next page's preceding_separator), so +64 applies.
+                slot_size = 4 + len(page.raw_bytes) + MODERN_SEP_SIZE
+                out += struct.pack("<IIIII", 0xAA55AA55, 2, 105, 0, slot_size)
+                out += b"\x00" * 44
+
         out += b"JM"
         out += struct.pack("<H", page.item_count)
         out += page.raw_bytes
+
     return bytes(out)
 
 

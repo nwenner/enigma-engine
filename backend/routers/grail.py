@@ -281,6 +281,8 @@ async def retrieve_grail_item(
         raise HTTPException(404, "Item not yet found in grail")
     if entry.raw_item_bytes is None:
         raise HTTPException(409, "No raw item bytes stored — item was found before retrieval support was added")
+    if not entry.is_deposited:
+        raise HTTPException(409, "Item is not currently in the grail vault — deposit it first")
 
     # Modern stash format only
     stash_filename = "ModernSharedStashHardCoreV2.d2i" if hardcore else "ModernSharedStashSoftCoreV2.d2i"

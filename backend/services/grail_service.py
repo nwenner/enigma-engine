@@ -294,6 +294,7 @@ async def deposit_tab5(
             # This ensures items are never lost if deposit runs before auto-sync
             indices_to_remove: list[int] = []
             items_to_deposit: list[tuple[int, GrailCatalog, bytes]] = []
+            seen_catalog_ids: set[int] = set()  # first occurrence wins; duplicates stay in stash
 
             # First pass: identify and register all unique/set items
             for idx, item in enumerate(portal_page.items):
@@ -305,6 +306,13 @@ async def deposit_tab5(
                 raw_bytes = bytes(portal_page.raw_bytes[item.byte_start:item.byte_end])
 
                 if catalog is not None:
+                    # GUARD: skip duplicates within this tab 5 run (first occurrence wins)
+                    if catalog.id in seen_catalog_ids:
+                        skipped_names.append(f"{catalog.name}: duplicate in tab 5, leaving in stash")
+                        log.info("Deposit: %s already processed this run, skipping duplicate", catalog.name)
+                        continue
+                    seen_catalog_ids.add(catalog.id)
+
                     # GUARD: Check if item exists in DB
                     check_result = await session.execute(
                         select(GrailEntry).where(
@@ -328,13 +336,18 @@ async def deposit_tab5(
                             errors.append(f"{catalog.name}: Failed to register before deposit — {e}")
                             log.error("Deposit: CRITICAL - failed to register %s before deposit: %s", catalog.name, e)
                             continue  # Skip this item - don't remove it from tab 5
+                    elif existing.is_deposited:
+                        # GUARD: already in vault — leave this copy in stash untouched
+                        skipped_names.append(f"{catalog.name}: already deposited, leaving in stash")
+                        log.info("Deposit: %s is already in vault, skipping", catalog.name)
+                        continue
 
                     # Add to deposit list
                     items_to_deposit.append((idx, catalog, raw_bytes))
                     indices_to_remove.append(idx)
                 else:
-                    # Unknown item - still remove from tab 5 but skip registration
-                    indices_to_remove.append(idx)
+                    # Unknown item (not in catalog) — leave in stash, don't touch it
+                    skipped_names.append(f"{filename}[{idx}] quality={item.quality}: not in catalog, leaving in stash")
 
             # Second pass: mark items as deposited (now that all are safely registered)
             for idx, catalog, raw_bytes in items_to_deposit:
@@ -503,3 +516,7 @@ async def retrieve_item_to_tab5(
             await asyncio.to_thread(_upload)
         except Exception as e:
             raise RuntimeError(f"Failed to upload modified stash: {e}") from e
+
+        # Item is no longer in the vault — clear deposited flag so it can't be retrieved again
+        entry.is_deposited = False
+        await session.commit()
