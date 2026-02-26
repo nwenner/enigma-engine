@@ -413,7 +413,7 @@ function ResetPanel() {
 export default function Grail() {
   const [mode, setMode] = useState<Mode>("sc");
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>("all");
-  const [foundFilter, setFoundFilter] = useState<FoundFilter>("all");
+  const [foundFilter, setFoundFilter] = useState<FoundFilter>("found");
   const [search, setSearch] = useState("");
   const [retrieveItem, setRetrieveItem] = useState<GrailItem | null>(null);
   const unmark = useUnmarkGrailEntry();
@@ -507,6 +507,9 @@ export default function Grail() {
           <ProgressBar found={data.set_found} total={data.set_total} label="Set Items" />
         </div>
       )}
+
+      {/* Deposit panel */}
+      <DepositPanel d2rRunning={d2rRunning} />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -622,9 +625,6 @@ export default function Grail() {
           </div>
         </div>
       )}
-
-      {/* Deposit panel */}
-      <DepositPanel d2rRunning={d2rRunning} />
 
       {/* Seed panel */}
       <SeedPanel />

@@ -19,7 +19,9 @@ Modern layout (version == 2):
     size_field = slot size of the FOLLOWING page = 4+raw_len+64 (for non-last pages).
     Last separator has field at offset 20 = 1 (terminal marker); its size_field is not a slot size.
   Items have NO JM prefix. Each item starts with first_byte=0x10 (identified flag at bit 4).
-  Quality is at bit 111 from item start; unique_id/set_id at bit 117.
+  Quality (4 bits) is at a variable bit offset in the range [108, 121] from item start.
+  The exact offset depends on the item type encoding used by D2R, which differs from legacy ASCII.
+  unique_id/set_id (12 bits) follow quality after 2 flag bits (multiple_pictures, class_specific).
 """
 
 import struct
@@ -124,10 +126,18 @@ _BIT_QUALITY_DATA  = 174      # 12 bits
 MODERN_HEADER_SIZE = 64   # bytes (also the size of each inter-page separator)
 MODERN_SEP_SIZE    = 64   # separator between pages equals one header-size block
 
-# Bit offsets for Modern format items (from item byte_start, NO JM prefix).
-# Empirically confirmed via binary analysis of real stash files:
-#   quality at bit 111, quality_data at bit 117 (after 2 flag bits).
-_MOD_BIT_QUALITY = 111
+# Scan range for Modern format quality field (from item byte_start, NO JM prefix).
+# D2R uses a variable-length item type encoding (not the 4-char ASCII of legacy D2),
+# so the quality field offset varies per item in the range [108, 121].
+# Empirically confirmed on 8 items: offsets observed are 110–115.
+# Candidates are filtered by:
+#   - ilvl (7 bits before quality) in [1, 99]
+#   - uid <= _MOD_MAX_UNIQUE_ID for unique items
+#   - sid <= _MOD_MAX_SET_ID for set items
+_MOD_QUALITY_SCAN_START = 108
+_MOD_QUALITY_SCAN_END   = 122   # exclusive
+_MOD_MAX_UNIQUE_ID      = 512   # generous upper bound above D2R catalog max (~437)
+_MOD_MAX_SET_ID         = 160   # upper bound above catalog max (~139); false positives seen at 200+
 
 
 # ─── Modern format helpers ────────────────────────────────────────────────────
@@ -195,26 +205,61 @@ def _parse_single_item_modern(
 ) -> D2IItem:
     """
     Extract quality and quality_data from a Modern format item.
-    Quality is at bit 111 from item start; quality_data at bit 117
-    (after 2 flag bits: multiple_pictures + class_specific).
+
+    D2R uses a variable-length item type encoding so the quality field is not at a
+    fixed bit offset.  We scan _MOD_QUALITY_SCAN_START..._MOD_QUALITY_SCAN_END and
+    accept the first candidate that satisfies:
+      - quality is 5 (set) or 7 (unique)
+      - ilvl (7 bits before quality) is in [1, 99]
+      - uid/sid is within the expected catalog range
+
+    Only quality=5/7 (set/unique) is detected; other quality levels return 0
+    because their uid/sid ranges overlap with false-positive regions in the scan window.
     """
-    reader = BitReader(raw, byte_start * 8 + _MOD_BIT_QUALITY)
-    quality = reader.read(4)
+    base = byte_start * 8
 
-    # Two flag bits before quality_data
-    mult_pics = reader.read(1)
-    if mult_pics:
-        reader.read(3)  # picture_id
-    class_specific = reader.read(1)
-    if class_specific:
-        reader.read(11)  # class info
-
+    quality    = 0
     unique_id: int | None = None
-    set_id: int | None = None
-    if quality == 5:    # set
-        set_id = reader.read(12)
-    elif quality == 7:  # unique
-        unique_id = reader.read(12)
+    set_id:    int | None = None
+    item_level = 0
+
+    reader = BitReader(raw, base)
+
+    for q_bit in range(_MOD_QUALITY_SCAN_START, _MOD_QUALITY_SCAN_END):
+        reader.seek(base + q_bit)
+        q = reader.read(4)
+        if q not in (5, 7):
+            continue
+
+        # Validate ilvl (7 bits immediately before quality)
+        ilvl = BitReader(raw, base + q_bit - 7).read(7)
+        if not (1 <= ilvl <= 99):
+            continue
+
+        # Read quality data: skip mult_pics flag (+ 3-bit picture_id if set)
+        # and class_specific flag (+ 11-bit class info if set)
+        mult_pics = reader.read(1)
+        if mult_pics:
+            reader.read(3)
+        class_specific = reader.read(1)
+        if class_specific:
+            reader.read(11)
+
+        qdata = reader.read(12)
+
+        if q == 7 and qdata > _MOD_MAX_UNIQUE_ID:
+            continue
+        if q == 5 and qdata > _MOD_MAX_SET_ID:
+            continue
+
+        # First valid candidate wins
+        quality    = q
+        item_level = ilvl
+        if q == 7:
+            unique_id = qdata
+        else:
+            set_id = qdata
+        break
 
     return D2IItem(
         byte_start=byte_start,
@@ -223,7 +268,7 @@ def _parse_single_item_modern(
         quality=quality,
         unique_id=unique_id,
         set_id=set_id,
-        item_level=0,
+        item_level=item_level,
         is_ethereal=False,
         socket_count=0,
         is_simple=False,
