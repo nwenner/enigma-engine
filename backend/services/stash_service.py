@@ -1,0 +1,506 @@
+from __future__ import annotations
+
+"""
+Stash service: live stash viewing, gold vault operations, and item storage/retrieval.
+
+All stash-modifying operations follow the safety protocol:
+  1. Create a full backup snapshot before any modification
+  2. Download stash file
+  3. Modify in memory
+  4. Serialize and upload
+"""
+
+import asyncio
+import logging
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from backend.models import GrailCatalog, VaultItem, GoldVault
+from backend.services.d2i_parser import (
+    parse_d2i,
+    serialize_d2i,
+    remove_items_from_page,
+    insert_item_into_page,
+    validate_page_items,
+)
+
+log = logging.getLogger(__name__)
+
+QUALITY_NAMES: dict[int, str] = {
+    0: "normal",
+    1: "inferior",
+    2: "superior",
+    3: "magic",
+    4: "rare",
+    5: "set",
+    6: "crafted",
+    7: "unique",
+    8: "tempered",
+}
+
+MAX_STASH_GOLD = 12_500_000
+PORTAL_TAB_INDEX = 4  # tab 5 = page index 4
+VISIBLE_TAB_COUNT = 5  # pages 0-4 are real tabs; page 5 is the terminal marker
+
+
+def _mode_hardcore(mode: str) -> bool:
+    return mode == "hc"
+
+
+def _stash_filename(hardcore: bool) -> str:
+    return "ModernSharedStashHardCoreV2.d2i" if hardcore else "ModernSharedStashSoftCoreV2.d2i"
+
+
+async def _build_catalog_lookup(
+    session: AsyncSession,
+    all_page_items: list[list],
+) -> dict[tuple, GrailCatalog]:
+    """Batch-fetch GrailCatalog entries for all unique/set items across all pages."""
+    unique_ids: set[int] = set()
+    set_ids: set[int] = set()
+
+    for page_items in all_page_items:
+        for item in page_items:
+            if item.quality == 7 and item.unique_id is not None:
+                unique_ids.add(item.unique_id)
+            elif item.quality == 5 and item.set_id is not None:
+                set_ids.add(item.set_id)
+
+    lookup: dict[tuple, GrailCatalog] = {}
+
+    if unique_ids:
+        result = await session.execute(
+            select(GrailCatalog).where(
+                GrailCatalog.quality == "unique",
+                GrailCatalog.unique_id.in_(unique_ids),
+            )
+        )
+        for cat in result.scalars().all():
+            lookup[("unique", cat.unique_id)] = cat
+
+    if set_ids:
+        result = await session.execute(
+            select(GrailCatalog).where(
+                GrailCatalog.quality == "set",
+                GrailCatalog.set_id.in_(set_ids),
+            )
+        )
+        for cat in result.scalars().all():
+            lookup[("set", cat.set_id)] = cat
+
+    return lookup
+
+
+async def fetch_stash(
+    session: AsyncSession,
+    machine: str,
+    mode: str,
+    conn: dict,
+    save_dir: str,
+) -> dict:
+    """
+    Download and parse the stash file for a machine+mode, returning structured data.
+    This is a read-only operation (no backup needed).
+    """
+    from backend.services import ssh_client as ssh_mod
+    from backend.services.backup_manager import _sftp_download
+
+    hardcore = _mode_hardcore(mode)
+    filename = _stash_filename(hardcore)
+    remote_path = ssh_mod.normalize_path(f"{save_dir}/{filename}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp) / filename
+
+        def _download():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_download(sftp, remote_path, tmp_path)
+
+        await asyncio.to_thread(_download)
+
+        stash = parse_d2i(tmp_path)
+
+    # Vault gold for this mode
+    vault_result = await session.execute(
+        select(GoldVault).where(GoldVault.hardcore == hardcore)
+    )
+    vault = vault_result.scalar_one_or_none()
+    vault_gold = vault.amount if vault else 0
+
+    # Build catalog name lookup
+    visible_pages = stash.pages[:VISIBLE_TAB_COUNT]
+    catalog_lookup = await _build_catalog_lookup(session, [p.items for p in visible_pages])
+
+    tabs = []
+    for page_idx, page in enumerate(visible_pages):
+        items_out = []
+        for item_idx, item in enumerate(page.items):
+            cat: Optional[GrailCatalog] = None
+            if item.quality == 7 and item.unique_id is not None:
+                cat = catalog_lookup.get(("unique", item.unique_id))
+            elif item.quality == 5 and item.set_id is not None:
+                cat = catalog_lookup.get(("set", item.set_id))
+
+            items_out.append({
+                "page_item_index": item_idx,
+                "name": cat.name if cat else None,
+                "base_item": cat.base_item if cat else None,
+                "quality": item.quality,
+                "quality_name": QUALITY_NAMES.get(item.quality, "unknown"),
+                "unique_id": item.unique_id,
+                "set_id": item.set_id,
+                "is_ear": item.is_ear,
+                "is_simple": item.is_simple,
+            })
+
+        tabs.append({
+            "index": page_idx,
+            "item_count": page.item_count,
+            "items": items_out,
+        })
+
+    return {
+        "machine": machine,
+        "hardcore": hardcore,
+        "gold": stash.gold,
+        "vault_gold": vault_gold,
+        "tabs": tabs,
+    }
+
+
+async def deposit_gold(
+    session: AsyncSession,
+    machine: str,
+    mode: str,
+    amount: int,
+    conn: dict,
+    save_dir: str,
+) -> dict:
+    """
+    Move `amount` gold from the stash into the GoldVault.
+
+    SAFETY: Creates backup before any stash modification.
+    """
+    from backend.services import ssh_client as ssh_mod
+    from backend.services.backup_manager import _sftp_download, _sftp_upload, create_snapshot
+
+    if amount <= 0:
+        raise ValueError("Amount must be positive")
+
+    hardcore = _mode_hardcore(mode)
+    filename = _stash_filename(hardcore)
+    remote_path = ssh_mod.normalize_path(f"{save_dir}/{filename}")
+
+    await create_snapshot(
+        session=session,
+        machine=machine,
+        conn_kwargs=conn,
+        save_dir=save_dir,
+        label="pre_vault_gold",
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp) / filename
+
+        def _download():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_download(sftp, remote_path, tmp_path)
+
+        await asyncio.to_thread(_download)
+        stash = parse_d2i(tmp_path)
+
+        if stash.gold < amount:
+            raise ValueError(f"Stash only has {stash.gold:,} gold; cannot deposit {amount:,}")
+
+        stash.gold -= amount
+
+        vault_result = await session.execute(
+            select(GoldVault).where(GoldVault.hardcore == hardcore)
+        )
+        vault = vault_result.scalar_one_or_none()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if vault is None:
+            vault = GoldVault(hardcore=hardcore, amount=amount, last_updated=now)
+            session.add(vault)
+        else:
+            vault.amount += amount
+            vault.last_updated = now
+
+        new_bytes = serialize_d2i(stash)
+        upload_path = Path(tmp) / f"{filename}.out"
+        upload_path.write_bytes(new_bytes)
+
+        def _upload():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_upload(sftp, upload_path, remote_path)
+
+        await asyncio.to_thread(_upload)
+        await session.commit()
+
+    log.info("Vault: deposited %d gold from %s (%s)", amount, machine, mode)
+    return {"stash_gold": stash.gold, "vault_gold": vault.amount}
+
+
+async def withdraw_gold(
+    session: AsyncSession,
+    machine: str,
+    mode: str,
+    amount: int,
+    conn: dict,
+    save_dir: str,
+) -> dict:
+    """
+    Move `amount` gold from the GoldVault into the stash.
+
+    SAFETY: Creates backup before any stash modification.
+    """
+    from backend.services import ssh_client as ssh_mod
+    from backend.services.backup_manager import _sftp_download, _sftp_upload, create_snapshot
+
+    if amount <= 0:
+        raise ValueError("Amount must be positive")
+
+    hardcore = _mode_hardcore(mode)
+    filename = _stash_filename(hardcore)
+    remote_path = ssh_mod.normalize_path(f"{save_dir}/{filename}")
+
+    vault_result = await session.execute(
+        select(GoldVault).where(GoldVault.hardcore == hardcore)
+    )
+    vault = vault_result.scalar_one_or_none()
+    vault_amount = vault.amount if vault else 0
+    if vault_amount < amount:
+        raise ValueError(f"Vault only has {vault_amount:,} gold; cannot withdraw {amount:,}")
+
+    await create_snapshot(
+        session=session,
+        machine=machine,
+        conn_kwargs=conn,
+        save_dir=save_dir,
+        label="pre_vault_gold",
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp) / filename
+
+        def _download():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_download(sftp, remote_path, tmp_path)
+
+        await asyncio.to_thread(_download)
+        stash = parse_d2i(tmp_path)
+
+        if stash.gold + amount > MAX_STASH_GOLD:
+            max_withdraw = MAX_STASH_GOLD - stash.gold
+            raise ValueError(
+                f"Stash gold cap is {MAX_STASH_GOLD:,}. "
+                f"Stash already has {stash.gold:,}; max additional is {max_withdraw:,}."
+            )
+
+        stash.gold += amount
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        vault.amount -= amount
+        vault.last_updated = now
+
+        new_bytes = serialize_d2i(stash)
+        upload_path = Path(tmp) / f"{filename}.out"
+        upload_path.write_bytes(new_bytes)
+
+        def _upload():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_upload(sftp, upload_path, remote_path)
+
+        await asyncio.to_thread(_upload)
+        await session.commit()
+
+    log.info("Vault: withdrew %d gold to %s (%s)", amount, machine, mode)
+    return {"stash_gold": stash.gold, "vault_gold": vault.amount}
+
+
+async def store_item(
+    session: AsyncSession,
+    machine: str,
+    mode: str,
+    tab: int,
+    item_index: int,
+    conn: dict,
+    save_dir: str,
+) -> dict:
+    """
+    Remove item at (tab, item_index) from the stash and save it as a VaultItem.
+
+    SAFETY: Creates backup before any stash modification.
+    """
+    from backend.services import ssh_client as ssh_mod
+    from backend.services.backup_manager import _sftp_download, _sftp_upload, create_snapshot
+
+    hardcore = _mode_hardcore(mode)
+    filename = _stash_filename(hardcore)
+    remote_path = ssh_mod.normalize_path(f"{save_dir}/{filename}")
+
+    await create_snapshot(
+        session=session,
+        machine=machine,
+        conn_kwargs=conn,
+        save_dir=save_dir,
+        label="pre_vault_store",
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp) / filename
+
+        def _download():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_download(sftp, remote_path, tmp_path)
+
+        await asyncio.to_thread(_download)
+        stash = parse_d2i(tmp_path)
+
+        if tab >= len(stash.pages):
+            raise ValueError(f"Tab {tab} does not exist (stash has {len(stash.pages)} pages)")
+
+        page = stash.pages[tab]
+
+        if not validate_page_items(page):
+            raise RuntimeError(f"Tab {tab} failed item validation — aborting to protect stash")
+
+        if item_index >= len(page.items):
+            raise ValueError(
+                f"Tab {tab} has {len(page.items)} items; index {item_index} out of range"
+            )
+
+        item = page.items[item_index]
+        item_bytes = bytes(page.raw_bytes[item.byte_start:item.byte_end])
+
+        # Look up catalog for name/base_item
+        cat: Optional[GrailCatalog] = None
+        if item.quality == 7 and item.unique_id is not None:
+            result = await session.execute(
+                select(GrailCatalog).where(
+                    GrailCatalog.quality == "unique",
+                    GrailCatalog.unique_id == item.unique_id,
+                )
+            )
+            cat = result.scalar_one_or_none()
+        elif item.quality == 5 and item.set_id is not None:
+            result = await session.execute(
+                select(GrailCatalog).where(
+                    GrailCatalog.quality == "set",
+                    GrailCatalog.set_id == item.set_id,
+                )
+            )
+            cat = result.scalar_one_or_none()
+
+        modified_page = remove_items_from_page(page, [item_index])
+        stash.pages[tab] = modified_page
+
+        new_bytes = serialize_d2i(stash)
+        upload_path = Path(tmp) / f"{filename}.out"
+        upload_path.write_bytes(new_bytes)
+
+        def _upload():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_upload(sftp, upload_path, remote_path)
+
+        await asyncio.to_thread(_upload)
+
+        vault_item = VaultItem(
+            item_code=item.item_type,
+            name=cat.name if cat else None,
+            base_item=cat.base_item if cat else None,
+            quality=item.quality,
+            tab=tab,
+            hardcore=hardcore,
+            raw_item_bytes=item_bytes,
+            stored_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            catalog_id=cat.id if cat else None,
+        )
+        session.add(vault_item)
+        await session.commit()
+
+    quality_name = QUALITY_NAMES.get(item.quality, "unknown")
+    display_name = cat.name if cat else f"{quality_name} item"
+    log.info("Vault: stored %s from tab %d on %s (%s)", display_name, tab, machine, mode)
+    return {
+        "name": cat.name if cat else None,
+        "quality": item.quality,
+        "quality_name": quality_name,
+    }
+
+
+async def retrieve_vault_item(
+    session: AsyncSession,
+    vault_item_id: int,
+    machine: str,
+    conn: dict,
+    save_dir: str,
+    stash_filename: str,
+) -> str:
+    """
+    Write the stored item to tab 5 of the target machine's stash, then delete the VaultItem.
+
+    SAFETY: Creates backup before any stash modification.
+    Returns the item's display name.
+    """
+    from backend.services import ssh_client as ssh_mod
+    from backend.services.backup_manager import _sftp_download, _sftp_upload, create_snapshot
+
+    result = await session.execute(
+        select(VaultItem).where(VaultItem.id == vault_item_id)
+    )
+    vault_item = result.scalar_one_or_none()
+    if vault_item is None:
+        raise ValueError(f"VaultItem {vault_item_id} not found")
+
+    item_bytes = vault_item.raw_item_bytes
+    display_name = vault_item.name or f"quality={vault_item.quality} item"
+
+    await create_snapshot(
+        session=session,
+        machine=machine,
+        conn_kwargs=conn,
+        save_dir=save_dir,
+        label="pre_vault_retrieve",
+    )
+
+    remote_path = ssh_mod.normalize_path(f"{save_dir}/{stash_filename}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp) / stash_filename
+
+        def _download():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_download(sftp, remote_path, tmp_path)
+
+        await asyncio.to_thread(_download)
+
+        stash = parse_d2i(tmp_path)
+
+        if len(stash.pages) <= PORTAL_TAB_INDEX:
+            raise RuntimeError(
+                f"{stash_filename} has fewer than {PORTAL_TAB_INDEX + 1} pages"
+            )
+
+        modified_page = insert_item_into_page(stash.pages[PORTAL_TAB_INDEX], item_bytes)
+        stash.pages[PORTAL_TAB_INDEX] = modified_page
+
+        new_bytes = serialize_d2i(stash)
+        upload_path = Path(tmp) / f"{stash_filename}.out"
+        upload_path.write_bytes(new_bytes)
+
+        def _upload():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_upload(sftp, upload_path, remote_path)
+
+        await asyncio.to_thread(_upload)
+
+    await session.delete(vault_item)
+    await session.commit()
+
+    log.info("Vault: retrieved %s to tab 5 on %s", display_name, machine)
+    return display_name

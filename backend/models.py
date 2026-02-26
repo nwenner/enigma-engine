@@ -86,6 +86,33 @@ class GrailCatalog(Base):
     sort_order = Column(Integer, default=0)
 
 
+class VaultItem(Base):
+    """An item stored in the virtual item vault (removed from stash, preserved for retrieval)."""
+    __tablename__ = "vault_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    item_code = Column(String(4), nullable=False, default="")   # 4-char type code (empty for Modern items)
+    name = Column(String, nullable=True)                         # from GrailCatalog, or None
+    base_item = Column(String, nullable=True)                    # from GrailCatalog, or None
+    quality = Column(Integer, nullable=False)                    # raw quality value (7=unique, 5=set, etc.)
+    tab = Column(Integer, nullable=False)                        # original page index (0-based)
+    hardcore = Column(Boolean, nullable=False, default=False)
+    raw_item_bytes = Column(LargeBinary, nullable=False)
+    stored_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    notes = Column(String, nullable=True)
+    catalog_id = Column(Integer, ForeignKey("grail_catalog.id"), nullable=True)
+
+
+class GoldVault(Base):
+    """Gold deposited from stash into the app (bypasses 12.5M stash cap)."""
+    __tablename__ = "gold_vault"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    hardcore = Column(Boolean, nullable=False, unique=True)
+    amount = Column(BigInteger, nullable=False, default=0)
+    last_updated = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class GrailEntry(Base):
     __tablename__ = "grail_entries"
 

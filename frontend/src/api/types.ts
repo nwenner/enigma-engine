@@ -129,6 +129,49 @@ export interface GrailItem {
   is_deposited: boolean;
 }
 
+export interface StashItem {
+  page_item_index: number;
+  name: string | null;
+  base_item: string | null;
+  quality: number;
+  quality_name: string;
+  unique_id: number | null;
+  set_id: number | null;
+  is_ear: boolean;
+  is_simple: boolean;
+}
+
+export interface StashTab {
+  index: number;
+  item_count: number;
+  items: StashItem[];
+}
+
+export interface StashResponse {
+  machine: string;
+  hardcore: boolean;
+  gold: number;
+  vault_gold: number;
+  tabs: StashTab[];
+}
+
+export interface VaultItemResponse {
+  id: number;
+  name: string | null;
+  base_item: string | null;
+  quality: number;
+  quality_name: string;
+  tab: number;
+  hardcore: boolean;
+  stored_at: string;
+  catalog_id: number | null;
+}
+
+export interface GoldVaultResponse {
+  hardcore: boolean;
+  amount: number;
+}
+
 export interface GrailProgress {
   hardcore: boolean;
   unique_total: number;

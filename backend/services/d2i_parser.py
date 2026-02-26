@@ -95,6 +95,7 @@ class D2IStash:
     pages: list[D2IPage] = field(default_factory=list)
     is_modern: bool = False
     raw_header: bytes = field(default=b"")  # preserved 64-byte header for Modern format
+    gold: int = 0  # stash gold (bytes 12-15 of Modern header)
 
 
 # ─── Legacy parser constants ───────────────────────────────────────────────────
@@ -530,6 +531,7 @@ def _parse_d2i_modern(data: bytes, magic: int, version: int) -> D2IStash:
         raise ValueError(f"Modern stash too short: {len(data)} bytes")
 
     raw_header = bytes(data[:MODERN_HEADER_SIZE])
+    gold = struct.unpack_from("<I", data, 12)[0]
     jm_offsets = _find_modern_page_jm_offsets(data)
     if not jm_offsets:
         raise ValueError("Modern stash: no pages found")
@@ -541,6 +543,7 @@ def _parse_d2i_modern(data: bytes, magic: int, version: int) -> D2IStash:
         num_pages=num_pages,
         is_modern=True,
         raw_header=raw_header,
+        gold=gold,
     )
 
     for page_idx, jm_off in enumerate(jm_offsets):
@@ -617,6 +620,8 @@ def _serialize_d2i_modern(stash: D2IStash) -> bytes:
       it is preserved byte-for-byte (the last page's separator uses a different encoding).
     """
     out = bytearray(stash.raw_header)
+    # Write current gold value (may differ from raw_header if gold was deposited/withdrawn)
+    struct.pack_into("<I", out, 12, stash.gold)
     total_pages = len(stash.pages)
 
     for page_idx, page in enumerate(stash.pages):

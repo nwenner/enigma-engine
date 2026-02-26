@@ -12,6 +12,9 @@ import type {
   AutoSyncStatus,
   NotificationConfig,
   GrailProgress,
+  StashResponse,
+  VaultItemResponse,
+  GoldVaultResponse,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
@@ -307,6 +310,93 @@ export function useResetGrail() {
     mutationFn: () => api.post("/grail/reset").then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["grail"] });
+    },
+  });
+}
+
+// ─── Stash / Vault ────────────────────────────────────────────────────────────
+
+export function useStash(machine: "pc" | "deck" | null, mode: "sc" | "hc") {
+  return useQuery<StashResponse>({
+    queryKey: ["stash", machine, mode],
+    queryFn: () =>
+      api.get(`/stash?machine=${machine}&mode=${mode}`).then((r) => r.data),
+    enabled: machine !== null,
+    staleTime: 0,  // always refetch on demand
+    retry: false,
+  });
+}
+
+export function useVaultItems(mode: "sc" | "hc") {
+  return useQuery<VaultItemResponse[]>({
+    queryKey: ["vault", "items", mode],
+    queryFn: () => api.get(`/vault/items?mode=${mode}`).then((r) => r.data),
+  });
+}
+
+export function useVaultGold(mode: "sc" | "hc") {
+  return useQuery<GoldVaultResponse>({
+    queryKey: ["vault", "gold", mode],
+    queryFn: () => api.get(`/vault/gold?mode=${mode}`).then((r) => r.data),
+  });
+}
+
+export function useDepositGold() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; stash_gold: number; vault_gold: number },
+    Error,
+    { machine: "pc" | "deck"; mode: "sc" | "hc"; amount: number }
+  >({
+    mutationFn: (body) => api.post("/stash/gold/deposit", body).then((r) => r.data),
+    onSuccess: (_data, { machine, mode }) => {
+      qc.invalidateQueries({ queryKey: ["stash", machine, mode] });
+      qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
+    },
+  });
+}
+
+export function useWithdrawGold() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; stash_gold: number; vault_gold: number },
+    Error,
+    { machine: "pc" | "deck"; mode: "sc" | "hc"; amount: number }
+  >({
+    mutationFn: (body) => api.post("/stash/gold/withdraw", body).then((r) => r.data),
+    onSuccess: (_data, { machine, mode }) => {
+      qc.invalidateQueries({ queryKey: ["stash", machine, mode] });
+      qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
+    },
+  });
+}
+
+export function useStoreItem() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; name: string | null; quality: number; quality_name: string },
+    Error,
+    { machine: "pc" | "deck"; mode: "sc" | "hc"; tab: number; item_index: number }
+  >({
+    mutationFn: (body) => api.post("/stash/item/store", body).then((r) => r.data),
+    onSuccess: (_data, { machine, mode }) => {
+      qc.invalidateQueries({ queryKey: ["stash", machine, mode] });
+      qc.invalidateQueries({ queryKey: ["vault", "items", mode] });
+    },
+  });
+}
+
+export function useRetrieveVaultItem() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; message: string },
+    Error,
+    { itemId: number; machine: "pc" | "deck"; mode: "sc" | "hc" }
+  >({
+    mutationFn: ({ itemId, machine, mode }) =>
+      api.post(`/vault/items/${itemId}/retrieve`, { machine, mode }).then((r) => r.data),
+    onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["vault", "items", mode] });
     },
   });
 }

@@ -6,6 +6,7 @@ import Backups from "./pages/Backups";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
 import Grail from "./pages/Grail";
+import Stash from "./pages/Stash";
 import { usePreflight, useAutoSyncStatus } from "./api/hooks";
 
 const NAV_ITEMS = [
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
   { to: "/backups", label: "Backups", icon: "💾" },
   { to: "/history", label: "History", icon: "📜" },
   { to: "/grail", label: "Holy Grail", icon: "🏆" },
+  { to: "/stash", label: "Item Vault", icon: "🏺" },
   { to: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
@@ -168,6 +170,7 @@ export default function App() {
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/grail" element={<Grail />} />
+            <Route path="/stash" element={<Stash />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
