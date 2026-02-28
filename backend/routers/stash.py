@@ -44,6 +44,9 @@ class StashItemResponse(BaseModel):
     set_id: Optional[int]
     is_ear: bool
     is_simple: bool
+    item_level: int
+    is_ethereal: bool
+    properties: list[str]
 
 
 class StashTabResponse(BaseModel):
@@ -70,6 +73,9 @@ class VaultItemResponse(BaseModel):
     hardcore: bool
     stored_at: str
     catalog_id: Optional[int]
+    item_level: int
+    is_ethereal: bool
+    properties: list[str]
 
 
 class GoldVaultResponse(BaseModel):
@@ -305,9 +311,90 @@ async def list_vault_items(
             hardcore=item.hardcore,
             stored_at=item.stored_at.isoformat(),
             catalog_id=item.catalog_id,
+            item_level=item.item_level,
+            is_ethereal=item.is_ethereal,
+            properties=item.properties or [],
         )
         for item in items
     ]
+
+
+@router.get("/stash/debug")
+async def get_stash_debug(
+    machine: Machine = Query(...),
+    mode: Mode = Query(...),
+    tab: int = Query(0),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Debugging endpoint: return raw hex bytes + parsed fields for each item in
+    a specific stash tab. Used to reverse-engineer the Modern format item type
+    encoding by comparing bytes across known item types.
+
+    Usage:
+      GET /api/stash/debug?machine=pc&mode=sc&tab=0
+    """
+    import asyncio
+    import tempfile
+    from pathlib import Path
+    from backend.services.d2i_parser import parse_d2i
+
+    conn, save_dir = await _get_conn_and_dir(session, machine)
+
+    hardcore = mode == "hc"
+    filename = (
+        "ModernSharedStashHardCoreV2.d2i" if hardcore
+        else "ModernSharedStashSoftCoreV2.d2i"
+    )
+
+    from backend.services import ssh_client as ssh_mod
+    from backend.services.backup_manager import _sftp_download
+
+    remote_path = ssh_mod.normalize_path(f"{save_dir}/{filename}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp) / filename
+
+        def _download():
+            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
+                _sftp_download(sftp, remote_path, tmp_path)
+
+        await asyncio.to_thread(_download)
+        stash = parse_d2i(tmp_path)
+
+    if tab >= len(stash.pages):
+        raise HTTPException(400, f"Tab {tab} does not exist (stash has {len(stash.pages)} pages)")
+
+    page = stash.pages[tab]
+    items_out = []
+    for i, item in enumerate(page.items):
+        raw = bytes(page.raw_bytes[item.byte_start:item.byte_end])
+        items_out.append({
+            "index": i,
+            "byte_len": len(raw),
+            "raw_hex": raw.hex(),
+            # Annotated nibble view for readability: groups of 2 hex chars
+            "raw_bytes_spaced": " ".join(raw.hex()[j:j+2] for j in range(0, len(raw.hex()), 2)),
+            "quality": item.quality,
+            "quality_name": QUALITY_NAMES.get(item.quality, "unknown"),
+            "item_level": item.item_level,
+            "is_simple": item.is_simple,
+            "is_ear": item.is_ear,
+            "is_ethereal": item.is_ethereal,
+            "unique_id": item.unique_id,
+            "set_id": item.set_id,
+            "p1_unique_id": item.p1_unique_id,
+            "p1_set_id": item.p1_set_id,
+            "properties": item.properties,
+        })
+
+    return {
+        "machine": machine,
+        "mode": mode,
+        "tab": tab,
+        "item_count": page.item_count,
+        "items": items_out,
+    }
 
 
 @router.post("/vault/items/{item_id}/retrieve")

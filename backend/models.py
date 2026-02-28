@@ -95,9 +95,12 @@ class VaultItem(Base):
     name = Column(String, nullable=True)                         # from GrailCatalog, or None
     base_item = Column(String, nullable=True)                    # from GrailCatalog, or None
     quality = Column(Integer, nullable=False)                    # raw quality value (7=unique, 5=set, etc.)
+    item_level = Column(Integer, nullable=False, default=0)      # ilvl from bitstream
+    is_ethereal = Column(Boolean, nullable=False, default=False) # ethereal flag (bit 20 from item start)
     tab = Column(Integer, nullable=False)                        # original page index (0-based)
     hardcore = Column(Boolean, nullable=False, default=False)
     raw_item_bytes = Column(LargeBinary, nullable=False)
+    properties = Column(JSON, nullable=False, default=list)  # parsed stat strings e.g. ["+7% Poison Resist"]
     stored_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     notes = Column(String, nullable=True)
     catalog_id = Column(Integer, ForeignKey("grail_catalog.id"), nullable=True)

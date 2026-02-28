@@ -139,6 +139,9 @@ export interface StashItem {
   set_id: number | null;
   is_ear: boolean;
   is_simple: boolean;
+  item_level: number;
+  is_ethereal: boolean;
+  properties: string[];
 }
 
 export interface StashTab {
@@ -165,6 +168,9 @@ export interface VaultItemResponse {
   hardcore: boolean;
   stored_at: string;
   catalog_id: number | null;
+  item_level: number;
+  is_ethereal: boolean;
+  properties: string[];
 }
 
 export interface GoldVaultResponse {

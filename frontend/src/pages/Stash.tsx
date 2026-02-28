@@ -22,7 +22,7 @@ function qualityColor(quality: number): string {
     case 7: return "text-d2gold border-d2gold/60";
     case 5: return "text-green-400 border-green-600/60";
     case 4: return "text-yellow-300 border-yellow-600/60";
-    case 3: return "text-blue-400 border-blue-600/60";
+    case 3: return "text-blue-300 border-blue-600/60";
     case 6: return "text-orange-400 border-orange-600/60";
     default: return "text-slate-300 border-slate-600/60";
   }
@@ -54,6 +54,25 @@ function GoldBar({ current, max }: { current: number; max: number }) {
   );
 }
 
+// ─── Display name helpers ─────────────────────────────────────────────────────
+
+/** Primary display name for an item. For unknown items, returns null (caller shows quality label). */
+function itemName(name: string | null): string | null {
+  return name || null;
+}
+
+/** Property text color based on quality — mirrors D2's in-game color coding. */
+function propColor(quality: number): string {
+  switch (quality) {
+    case 7: return "text-d2gold/90";
+    case 5: return "text-green-400";
+    case 4: return "text-yellow-300";
+    case 3: return "text-blue-300";
+    case 6: return "text-orange-300";
+    default: return "text-slate-300";
+  }
+}
+
 // ─── Store item modal ─────────────────────────────────────────────────────────
 
 function StoreModal({
@@ -70,7 +89,7 @@ function StoreModal({
   onClose: () => void;
 }) {
   const store = useStoreItem();
-  const displayName = item.name ?? qualityBadge(item.quality, item.quality_name) + " Item";
+  const displayName = item.name ?? qualityBadge(item.quality, item.quality_name);
 
   const handleStore = async () => {
     try {
@@ -327,6 +346,7 @@ function StashTabView({
   onTabChange: (i: number) => void;
 }) {
   const [storeTarget, setStoreTarget] = useState<{ item: StashItem; tab: number } | null>(null);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const tab = tabs[activeTab];
 
   return (
@@ -336,7 +356,7 @@ function StashTabView({
         {tabs.map((t, i) => (
           <button
             key={i}
-            onClick={() => onTabChange(i)}
+            onClick={() => { onTabChange(i); setExpandedIdx(null); }}
             className={`flex-1 py-2.5 text-xs font-diablo tracking-wider transition-colors border-r border-d2bg-border last:border-r-0 ${
               activeTab === i
                 ? "text-d2gold bg-d2bg-border/30 border-b-2 border-b-d2gold"
@@ -356,31 +376,57 @@ function StashTabView({
         {!tab || tab.item_count === 0 ? (
           <p className="text-slate-700 text-xs text-center py-8">Empty tab</p>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-px">
             {tab.items.map((item, idx) => {
-              const displayName = item.name ?? qualityBadge(item.quality, item.quality_name) + " Item";
-              const colors = qualityColor(item.quality);
+              const name = itemName(item.name);
+              const colorClass = qualityColor(item.quality).split(" ")[0];
+              const borderClass = qualityColor(item.quality).split(" ")[1] ?? "border-slate-600/60";
+              const isExpanded = expandedIdx === idx;
+              const hasProps = item.properties.length > 0;
               return (
-                <div
-                  key={idx}
-                  className={`flex items-center gap-3 px-3 py-2 border ${colors} bg-black/20`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <span className={`text-sm ${colors.split(" ")[0]}`}>{displayName}</span>
-                    {item.base_item && (
-                      <span className="text-slate-600 text-xs ml-2">{item.base_item}</span>
+                <div key={idx}>
+                  <div
+                    className={`px-3 py-2 border ${borderClass} bg-black/20 ${hasProps ? "cursor-pointer hover:bg-black/30" : ""}`}
+                    onClick={() => hasProps && setExpandedIdx(isExpanded ? null : idx)}
+                  >
+                    {/* Name row */}
+                    <div className="flex items-center gap-2">
+                      <span className={`flex-1 text-sm font-semibold leading-snug ${colorClass}`}>
+                        {name ?? item.base_item ?? qualityBadge(item.quality, item.quality_name)}
+                      </span>
+                      {item.is_ethereal && (
+                        <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
+                      )}
+                      {item.item_level > 0 && (
+                        <span className="text-slate-600 text-[10px] shrink-0 tabular-nums">
+                          ilvl {item.item_level}
+                        </span>
+                      )}
+                      {hasProps && (
+                        <span className="text-slate-600 text-[10px] shrink-0">
+                          {isExpanded ? "▲" : "▼"}
+                        </span>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setStoreTarget({ item, tab: activeTab }); }}
+                        className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
+                        title="Store this item in vault"
+                      >
+                        Store
+                      </button>
+                    </div>
+                    {/* Base item type — only shown as secondary when a catalog name is the primary */}
+                    {name && item.base_item && (
+                      <div className="text-slate-400 text-xs mt-0.5">{item.base_item}</div>
                     )}
                   </div>
-                  <span className="text-slate-700 text-[10px] shrink-0">
-                    {qualityBadge(item.quality, item.quality_name)}
-                  </span>
-                  <button
-                    onClick={() => setStoreTarget({ item, tab: activeTab })}
-                    className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
-                    title="Store this item in vault"
-                  >
-                    Store
-                  </button>
+                  {isExpanded && hasProps && (
+                    <div className={`px-4 py-2.5 border-b border-l border-r ${borderClass} bg-black/50 space-y-0.5`}>
+                      {item.properties.map((p, i) => (
+                        <p key={i} className={`text-[12px] ${propColor(item.quality)}`}>{p}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -406,6 +452,7 @@ function StashTabView({
 function VaultSection({ mode }: { mode: Mode }) {
   const { data: items, isLoading } = useVaultItems(mode);
   const [retrieveTarget, setRetrieveTarget] = useState<VaultItemResponse | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   if (isLoading) {
     return (
@@ -427,31 +474,65 @@ function VaultSection({ mode }: { mode: Mode }) {
           No items stored. Use Store on any item in the live stash view.
         </p>
       ) : (
-        <div className="divide-y divide-d2bg-border/50">
+        <div className="divide-y divide-d2bg-border/30">
           {items.map((item) => {
-            const displayName = item.name ?? qualityBadge(item.quality, item.quality_name) + " Item";
-            const colors = qualityColor(item.quality);
+            const name = itemName(item.name);
+            const colorClass = qualityColor(item.quality).split(" ")[0];
+            const borderClass = qualityColor(item.quality).split(" ")[1] ?? "border-slate-600/60";
+            const hasProps = item.properties.length > 0;
+            const isExpanded = expandedId === item.id;
             const date = new Date(item.stored_at).toLocaleDateString();
             return (
-              <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
-                <div className="flex-1 min-w-0">
-                  <span className={`text-sm ${colors.split(" ")[0]}`}>{displayName}</span>
-                  {item.base_item && (
-                    <span className="text-slate-600 text-xs ml-2">{item.base_item}</span>
-                  )}
+              <div key={item.id}>
+                <div
+                  className={`px-4 py-2.5 ${hasProps ? "cursor-pointer hover:bg-black/20" : ""}`}
+                  onClick={() => hasProps && setExpandedId(isExpanded ? null : item.id)}
+                >
+                  {/* Name row */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 flex items-baseline gap-1.5 min-w-0">
+                      <span className={`text-sm font-semibold leading-snug ${colorClass}`}>
+                        {name ?? item.base_item ?? qualityBadge(item.quality, item.quality_name)}
+                      </span>
+                      {name && item.base_item && (
+                        <span className="text-slate-500 text-xs font-normal shrink-0">{item.base_item}</span>
+                      )}
+                    </div>
+                    {item.is_ethereal && (
+                      <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
+                    )}
+                    {item.item_level > 0 && (
+                      <span className="text-slate-600 text-[10px] shrink-0 tabular-nums">
+                        ilvl {item.item_level}
+                      </span>
+                    )}
+                    {hasProps && (
+                      <span className="text-slate-600 text-[10px] shrink-0">
+                        {isExpanded ? "▲" : "▼"}
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setRetrieveTarget(item); }}
+                      className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
+                      title="Retrieve to tab 5"
+                    >
+                      Retrieve
+                    </button>
+                  </div>
+                  {/* Metadata line */}
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-slate-700 text-[10px]">Tab {item.tab + 1}</span>
                     <span className="text-slate-800 text-[10px]">·</span>
                     <span className="text-slate-700 text-[10px]">{date}</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setRetrieveTarget(item)}
-                  className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
-                  title="Retrieve to tab 5"
-                >
-                  Retrieve
-                </button>
+                {isExpanded && hasProps && (
+                  <div className={`px-5 py-2.5 border-b border-l border-r ${borderClass} bg-black/50 space-y-0.5`}>
+                    {item.properties.map((p, i) => (
+                      <p key={i} className={`text-[12px] ${propColor(item.quality)}`}>{p}</p>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}

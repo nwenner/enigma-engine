@@ -27,9 +27,35 @@ from backend.services.d2i_parser import (
     remove_items_from_page,
     insert_item_into_page,
     validate_page_items,
+    MOD_ITEM_NAMES,
 )
 
 log = logging.getLogger(__name__)
+
+
+def _base_item_name(item_type: str) -> str | None:
+    """Return a display name for the base item type code, or None if unknown."""
+    code = item_type.strip()
+    if not code:
+        return None
+    return MOD_ITEM_NAMES.get(code) or code
+
+
+def _magic_item_name(magic_prefix: str | None, magic_suffix: str | None, item_type: str) -> str | None:
+    """
+    Build the full magic item display name: "{prefix} {base} {suffix}".
+    Returns None if no affixes are known (caller falls back to base_item display).
+    """
+    base = _base_item_name(item_type)
+    parts: list[str] = []
+    if magic_prefix:
+        parts.append(magic_prefix)
+    if base:
+        parts.append(base)
+    if magic_suffix:
+        parts.append(magic_suffix)
+    return " ".join(parts) if (magic_prefix or magic_suffix) and parts else None
+
 
 QUALITY_NAMES: dict[int, str] = {
     0: "normal",
@@ -70,6 +96,12 @@ async def _build_catalog_lookup(
                 unique_ids.add(item.unique_id)
             elif item.quality == 5 and item.set_id is not None:
                 set_ids.add(item.set_id)
+            # Also collect Phase 1 IDs — Phase 2 may have overridden quality
+            # but Phase 1's uid/sid might still be the real catalog key
+            if item.p1_unique_id is not None:
+                unique_ids.add(item.p1_unique_id)
+            if item.p1_set_id is not None:
+                set_ids.add(item.p1_set_id)
 
     lookup: dict[tuple, GrailCatalog] = {}
 
@@ -141,21 +173,66 @@ async def fetch_stash(
         items_out = []
         for item_idx, item in enumerate(page.items):
             cat: Optional[GrailCatalog] = None
-            if item.quality == 7 and item.unique_id is not None:
-                cat = catalog_lookup.get(("unique", item.unique_id))
-            elif item.quality == 5 and item.set_id is not None:
-                cat = catalog_lookup.get(("set", item.set_id))
+            display_quality = item.quality
+            display_unique_id = item.unique_id
+            display_set_id = item.set_id
+
+            # Phase 1 catalog override: only when Phase 2 found a low-confidence
+            # quality (q=0 normal, q=1 inferior, q=2 superior — minimal quality
+            # data, easy to coincidentally match). When Phase 2 found q=3/4/6/8
+            # (magic/rare/crafted/tempered, all with substantial affix data that
+            # Phase 2 validates explicitly), trust Phase 2 completely — a Phase 1
+            # catalog coincidence would be a regression (e.g. magic charm showing
+            # as the set item whose set_id happened to match the false-positive).
+            use_p1_catalog = item.quality not in (3, 4, 6, 8)
+
+            if use_p1_catalog and item.p1_unique_id is not None:
+                cat = catalog_lookup.get(("unique", item.p1_unique_id))
+                if cat:
+                    display_quality = 7
+                    display_unique_id = item.p1_unique_id
+                    display_set_id = None
+            if use_p1_catalog and cat is None and item.p1_set_id is not None:
+                cat = catalog_lookup.get(("set", item.p1_set_id))
+                if cat:
+                    display_quality = 5
+                    display_unique_id = None
+                    display_set_id = item.p1_set_id
+            # Standard catalog lookup via Phase 2's uid/sid (or Phase 1 if it won)
+            if cat is None:
+                if item.quality == 7 and item.unique_id is not None:
+                    cat = catalog_lookup.get(("unique", item.unique_id))
+                elif item.quality == 5 and item.set_id is not None:
+                    cat = catalog_lookup.get(("set", item.set_id))
+
+            # Build display name: catalog > magic full name > rare name > None
+            if cat:
+                display_name = cat.name
+                display_base = cat.base_item
+            elif item.quality == 3:
+                # Magic item — build "Prefix Base of Suffix" name; base_item is redundant
+                display_name = _magic_item_name(item.magic_prefix, item.magic_suffix, item.item_type)
+                display_base = None if display_name else _base_item_name(item.item_type)
+            elif item.quality in (4, 6) and item.rare_name:
+                display_name = item.rare_name
+                display_base = _base_item_name(item.item_type)
+            else:
+                display_name = None
+                display_base = _base_item_name(item.item_type)
 
             items_out.append({
                 "page_item_index": item_idx,
-                "name": cat.name if cat else None,
-                "base_item": cat.base_item if cat else None,
-                "quality": item.quality,
-                "quality_name": QUALITY_NAMES.get(item.quality, "unknown"),
-                "unique_id": item.unique_id,
-                "set_id": item.set_id,
+                "name": display_name,
+                "base_item": display_base,
+                "quality": display_quality,
+                "quality_name": QUALITY_NAMES.get(display_quality, "unknown"),
+                "unique_id": display_unique_id,
+                "set_id": display_set_id,
                 "is_ear": item.is_ear,
                 "is_simple": item.is_simple,
+                "item_level": item.item_level,
+                "is_ethereal": item.is_ethereal,
+                "properties": item.properties,
             })
 
         tabs.append({
@@ -377,9 +454,33 @@ async def store_item(
         item = page.items[item_index]
         item_bytes = bytes(page.raw_bytes[item.byte_start:item.byte_end])
 
-        # Look up catalog for name/base_item
+        # Look up catalog for name/base_item.
+        # Try Phase 1 IDs first (more reliable for catalog matching when Phase 2
+        # overrides quality) then fall back to Phase 2's uid/sid.
         cat: Optional[GrailCatalog] = None
-        if item.quality == 7 and item.unique_id is not None:
+        store_quality = item.quality
+        use_p1_catalog = item.quality not in (3, 4, 6, 8)
+        if use_p1_catalog and item.p1_unique_id is not None:
+            result = await session.execute(
+                select(GrailCatalog).where(
+                    GrailCatalog.quality == "unique",
+                    GrailCatalog.unique_id == item.p1_unique_id,
+                )
+            )
+            cat = result.scalar_one_or_none()
+            if cat:
+                store_quality = 7
+        if use_p1_catalog and cat is None and item.p1_set_id is not None:
+            result = await session.execute(
+                select(GrailCatalog).where(
+                    GrailCatalog.quality == "set",
+                    GrailCatalog.set_id == item.p1_set_id,
+                )
+            )
+            cat = result.scalar_one_or_none()
+            if cat:
+                store_quality = 5
+        if cat is None and item.quality == 7 and item.unique_id is not None:
             result = await session.execute(
                 select(GrailCatalog).where(
                     GrailCatalog.quality == "unique",
@@ -387,7 +488,7 @@ async def store_item(
                 )
             )
             cat = result.scalar_one_or_none()
-        elif item.quality == 5 and item.set_id is not None:
+        elif cat is None and item.quality == 5 and item.set_id is not None:
             result = await session.execute(
                 select(GrailCatalog).where(
                     GrailCatalog.quality == "set",
@@ -409,26 +510,43 @@ async def store_item(
 
         await asyncio.to_thread(_upload)
 
+        # Build stored name and base_item using same logic as fetch_stash
+        if cat:
+            vault_name = cat.name
+            vault_base = cat.base_item
+        elif item.quality == 3:
+            vault_name = _magic_item_name(item.magic_prefix, item.magic_suffix, item.item_type)
+            vault_base = None if vault_name else _base_item_name(item.item_type)
+        elif item.quality in (4, 6) and item.rare_name:
+            vault_name = item.rare_name
+            vault_base = _base_item_name(item.item_type)
+        else:
+            vault_name = None
+            vault_base = _base_item_name(item.item_type)
+
         vault_item = VaultItem(
             item_code=item.item_type,
-            name=cat.name if cat else None,
-            base_item=cat.base_item if cat else None,
-            quality=item.quality,
+            name=vault_name,
+            base_item=vault_base,
+            quality=store_quality,
+            item_level=item.item_level,
+            is_ethereal=item.is_ethereal,
             tab=tab,
             hardcore=hardcore,
             raw_item_bytes=item_bytes,
+            properties=item.properties,
             stored_at=datetime.now(timezone.utc).replace(tzinfo=None),
             catalog_id=cat.id if cat else None,
         )
         session.add(vault_item)
         await session.commit()
 
-    quality_name = QUALITY_NAMES.get(item.quality, "unknown")
-    display_name = cat.name if cat else f"{quality_name} item"
+    quality_name = QUALITY_NAMES.get(store_quality, "unknown")
+    display_name = vault_name or f"{quality_name} item"
     log.info("Vault: stored %s from tab %d on %s (%s)", display_name, tab, machine, mode)
     return {
-        "name": cat.name if cat else None,
-        "quality": item.quality,
+        "name": vault_name,
+        "quality": store_quality,
         "quality_name": quality_name,
     }
 

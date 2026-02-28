@@ -23,6 +23,18 @@ async def init_db() -> None:
             await conn.execute(text("ALTER TABLE backup_snapshots ADD COLUMN label TEXT DEFAULT 'pre_sync'"))
         except Exception:
             pass  # column already exists
+        try:
+            await conn.execute(text("ALTER TABLE vault_items ADD COLUMN item_level INTEGER DEFAULT 0"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE vault_items ADD COLUMN is_ethereal BOOLEAN DEFAULT 0"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE vault_items ADD COLUMN properties JSON DEFAULT '[]'"))
+        except Exception:
+            pass
 
 
 async def get_session() -> AsyncSession:
