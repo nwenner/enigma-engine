@@ -15,10 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.models import GrailCatalog, GrailEntry
-from backend.services.d2i_parser import (
-    D2IItem,
-    parse_d2i,
-    serialize_d2i,
+from backend.services.item_parsing import (
+    ParsedItem,
+    ParsedStash,
+    parse_stash,
+    serialize_stash,
+)
+from backend.services.item_parsing.stash_format import (
     remove_items_from_page,
     insert_item_into_page,
     validate_page_items,
@@ -43,7 +46,7 @@ QUALITY_UNIQUE = 7
 
 async def _lookup_catalog(
     session: AsyncSession,
-    item: D2IItem,
+    item: ParsedItem,
 ) -> GrailCatalog | None:
     """Find the matching catalog entry for an item."""
     if item.quality == QUALITY_UNIQUE and item.unique_id is not None:
@@ -56,8 +59,6 @@ async def _lookup_catalog(
         return result.scalar_one_or_none()
 
     if item.quality == QUALITY_SET and item.set_id is not None:
-        # In the Modern stash format item_type is not extractable, so item_code is "".
-        # Fall back to set_id-only lookup in that case (set_id is unique per setitems row).
         item_code = item.item_type.rstrip()
         query = select(GrailCatalog).where(
             GrailCatalog.set_id == item.set_id,
@@ -86,7 +87,6 @@ async def _upsert_grail_entry(
 
     Args:
         increment_count: If False, only update deposited state without incrementing find_count.
-                        Use when marking an existing detection as deposited.
     """
     result = await session.execute(
         select(GrailEntry).where(
@@ -111,15 +111,12 @@ async def _upsert_grail_entry(
         )
         session.add(entry)
     else:
-        # Only increment count if this is a new find (not just marking as deposited)
         if increment_count:
             entry.find_count += 1
             entry.last_found_at = now
-        # Only update raw bytes if not already stored
         if entry.raw_item_bytes is None:
             entry.raw_item_bytes = raw_item_bytes
             entry.raw_item_bit_len = len(raw_item_bytes) * 8
-        # Update deposited state (True takes precedence once set)
         if is_deposited:
             entry.is_deposited = True
 
@@ -139,12 +136,6 @@ async def process_portal_tab_hook(
       3. Upsert into grail_entries (DB only — stash files are never modified here)
 
     This function MUST NOT raise — errors are logged as warnings.
-
-    Args:
-        session: Database session
-        downloaded: List of dicts with 'filename' and 'local_part' keys
-        source_conn: Optional SSH connection kwargs (unused, for future features)
-        source_dir: Optional source directory path (unused, for future features)
     """
     for file_info in downloaded:
         filename = file_info.get("filename", "")
@@ -155,7 +146,7 @@ async def process_portal_tab_hook(
         local_part: Path = file_info["local_part"]
 
         try:
-            stash = parse_d2i(local_part)
+            stash = parse_stash(local_part, hardcore=hardcore)
         except Exception as e:
             log.warning("Grail: failed to parse %s: %s", filename, e)
             continue
@@ -165,16 +156,12 @@ async def process_portal_tab_hook(
             continue
 
         portal_page = stash.pages[PORTAL_TAB_INDEX]
-        log.debug("Grail: %s tab 5 has %d items", filename, portal_page.item_count)
+        log.debug("Grail: %s tab 5 has %d items", filename, len(portal_page.items))
 
         if not validate_page_items(portal_page):
-            log.warning(
-                "Grail: %s tab 5 failed validation — skipping",
-                filename,
-            )
+            log.warning("Grail: %s tab 5 failed validation — skipping", filename)
             continue
 
-        # Find unique/set items and register them in the DB
         registered = 0
         for idx, item in enumerate(portal_page.items):
             if item.quality not in (QUALITY_UNIQUE, QUALITY_SET):
@@ -182,9 +169,8 @@ async def process_portal_tab_hook(
             catalog = await _lookup_catalog(session, item)
             if catalog is None:
                 continue
-            raw_bytes = bytes(portal_page.raw_bytes[item.byte_start:item.byte_end])
+            raw_bytes = bytes(portal_page.raw_bytes[item.byte_start : item.byte_end])
             try:
-                # Hook only detects items, doesn't deposit them (is_deposited=False)
                 await _upsert_grail_entry(session, catalog, raw_bytes, hardcore, is_deposited=False)
                 registered += 1
                 log.info(
@@ -221,13 +207,10 @@ async def deposit_tab5(
       6. Upload modified stash back
 
     Returns a summary dict: { "registered": [...names], "skipped": [...names], "errors": [...msgs] }
-    Raises RuntimeError if a stash file cannot be safely processed (parse/validate failure).
-    Individual item upsert failures are collected in "errors" but do not abort.
     """
     from backend.services import ssh_client as ssh_mod
     from backend.services.backup_manager import _sftp_download, _sftp_upload, create_snapshot
 
-    # --- CRITICAL: Create backup BEFORE any modification ---
     log.info("BACKUP: Creating pre-grail-deposit backup for %s", machine)
     try:
         await create_snapshot(
@@ -253,7 +236,6 @@ async def deposit_tab5(
             remote_path = ssh_mod.normalize_path(f"{save_dir}/{filename}")
             local_path = tmp_dir / filename
 
-            # --- Download ---
             def _download(rp=remote_path, lp=local_path):
                 with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
                     try:
@@ -267,9 +249,8 @@ async def deposit_tab5(
                 log.debug("Deposit: %s not found on %s, skipping", filename, machine)
                 continue
 
-            # --- Parse ---
             try:
-                stash = parse_d2i(local_path)
+                stash = parse_stash(local_path, hardcore=hardcore)
             except Exception as e:
                 errors.append(f"{filename}: parse failed — {e}")
                 log.warning("Deposit: failed to parse %s: %s", filename, e)
@@ -286,34 +267,29 @@ async def deposit_tab5(
                 log.warning("Deposit: %s tab 5 failed validation", filename)
                 continue
 
-            if portal_page.item_count == 0:
+            if len(portal_page.items) == 0:
                 log.debug("Deposit: %s tab 5 is empty", filename)
                 continue
 
-            # --- SAFETY: Register ALL unique/set items BEFORE clearing tab 5 ---
-            # This ensures items are never lost if deposit runs before auto-sync
             indices_to_remove: list[int] = []
             items_to_deposit: list[tuple[int, GrailCatalog, bytes]] = []
-            seen_catalog_ids: set[int] = set()  # first occurrence wins; duplicates stay in stash
+            seen_catalog_ids: set[int] = set()
 
-            # First pass: identify and register all unique/set items
             for idx, item in enumerate(portal_page.items):
                 if item.quality not in (QUALITY_UNIQUE, QUALITY_SET):
                     skipped_names.append(f"{filename}[{idx}] quality={item.quality}")
                     continue
 
                 catalog = await _lookup_catalog(session, item)
-                raw_bytes = bytes(portal_page.raw_bytes[item.byte_start:item.byte_end])
+                raw_bytes = bytes(portal_page.raw_bytes[item.byte_start : item.byte_end])
 
                 if catalog is not None:
-                    # GUARD: skip duplicates within this tab 5 run (first occurrence wins)
                     if catalog.id in seen_catalog_ids:
                         skipped_names.append(f"{catalog.name}: duplicate in tab 5, leaving in stash")
                         log.info("Deposit: %s already processed this run, skipping duplicate", catalog.name)
                         continue
                     seen_catalog_ids.add(catalog.id)
 
-                    # GUARD: Check if item exists in DB
                     check_result = await session.execute(
                         select(GrailEntry).where(
                             GrailEntry.catalog_id == catalog.id,
@@ -323,36 +299,30 @@ async def deposit_tab5(
                     existing = check_result.scalar_one_or_none()
 
                     if existing is None:
-                        # Item NOT in DB yet - register it first (is_deposited=False initially)
                         try:
                             await _upsert_grail_entry(session, catalog, raw_bytes, hardcore, is_deposited=False)
-                            await session.commit()  # Commit immediately for safety
+                            await session.commit()
                             log.warning(
                                 "Deposit: item %s was NOT in DB yet - registered before deposit (%s)",
                                 catalog.name,
-                                "HC" if hardcore else "SC"
+                                "HC" if hardcore else "SC",
                             )
                         except Exception as e:
                             errors.append(f"{catalog.name}: Failed to register before deposit — {e}")
                             log.error("Deposit: CRITICAL - failed to register %s before deposit: %s", catalog.name, e)
-                            continue  # Skip this item - don't remove it from tab 5
+                            continue
                     elif existing.is_deposited:
-                        # GUARD: already in vault — leave this copy in stash untouched
                         skipped_names.append(f"{catalog.name}: already deposited, leaving in stash")
                         log.info("Deposit: %s is already in vault, skipping", catalog.name)
                         continue
 
-                    # Add to deposit list
                     items_to_deposit.append((idx, catalog, raw_bytes))
                     indices_to_remove.append(idx)
                 else:
-                    # Unknown item (not in catalog) — leave in stash, don't touch it
                     skipped_names.append(f"{filename}[{idx}] quality={item.quality}: not in catalog, leaving in stash")
 
-            # Second pass: mark items as deposited (now that all are safely registered)
             for idx, catalog, raw_bytes in items_to_deposit:
                 try:
-                    # Now mark as deposited WITHOUT incrementing count (already counted in first pass or by hook)
                     await _upsert_grail_entry(session, catalog, raw_bytes, hardcore, is_deposited=True, increment_count=False)
                     registered_names.append(catalog.name)
                     log.info("Deposit: marked %s as deposited (%s)", catalog.name, "HC" if hardcore else "SC")
@@ -363,34 +333,31 @@ async def deposit_tab5(
             if not indices_to_remove:
                 continue
 
-            # --- Remove items from tab 5 ---
             modified_page = remove_items_from_page(portal_page, indices_to_remove)
             stash.pages[PORTAL_TAB_INDEX] = modified_page
 
-            # --- Serialize ---
             try:
-                new_bytes = serialize_d2i(stash)
+                new_bytes = serialize_stash(stash)
             except Exception as e:
                 errors.append(f"{filename}: serialization failed — {e}")
                 log.warning("Deposit: failed to serialize %s: %s", filename, e)
                 continue
 
-            # --- Round-trip validate ---
+            # Round-trip validate
             try:
-                import io
-                rt_stash = parse_d2i(local_path.__class__(io.BytesIO(new_bytes)) if False else _bytes_path(tmp_dir, filename, new_bytes))
+                rt_path = _bytes_path(tmp_dir, filename, new_bytes)
+                rt_stash = parse_stash(rt_path, hardcore=hardcore)
                 rt_page = rt_stash.pages[PORTAL_TAB_INDEX]
-                expected_count = portal_page.item_count - len(indices_to_remove)
-                if rt_page.item_count != expected_count:
+                expected_count = len(portal_page.items) - len(indices_to_remove)
+                if len(rt_page.items) != expected_count:
                     raise ValueError(
-                        f"round-trip item count mismatch: expected {expected_count}, got {rt_page.item_count}"
+                        f"round-trip item count mismatch: expected {expected_count}, got {len(rt_page.items)}"
                     )
             except Exception as e:
                 errors.append(f"{filename}: round-trip validation failed — {e}. Skipping upload.")
                 log.warning("Deposit: round-trip validation failed for %s: %s", filename, e)
                 continue
 
-            # --- Upload ---
             upload_path = tmp_dir / f"{filename}.out"
             upload_path.write_bytes(new_bytes)
 
@@ -458,7 +425,6 @@ async def retrieve_item_to_tab5(
 
     item_bytes = entry.raw_item_bytes
 
-    # --- CRITICAL: Create backup BEFORE any modification ---
     log.info("BACKUP: Creating pre-grail-retrieve backup for %s", target_machine)
     try:
         await create_snapshot(
@@ -473,7 +439,6 @@ async def retrieve_item_to_tab5(
         log.error("BACKUP FAILED: Cannot proceed with retrieve: %s", e)
         raise RuntimeError(f"Pre-retrieve backup failed: {e}") from e
 
-    # Download current stash
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp) / stash_filename
         remote_path = f"{save_dir}/{stash_filename}"
@@ -490,7 +455,7 @@ async def retrieve_item_to_tab5(
         await asyncio.to_thread(_download)
 
         try:
-            stash = parse_d2i(tmp_path)
+            stash = parse_stash(tmp_path, hardcore=hardcore)
         except Exception as e:
             raise RuntimeError(f"Failed to parse {stash_filename}: {e}") from e
 
@@ -501,7 +466,7 @@ async def retrieve_item_to_tab5(
         stash.pages[PORTAL_TAB_INDEX] = insert_item_into_page(portal_page, item_bytes)
 
         try:
-            new_bytes = serialize_d2i(stash)
+            new_bytes = serialize_stash(stash)
         except Exception as e:
             raise RuntimeError(f"Failed to serialize modified stash: {e}") from e
 
@@ -517,6 +482,5 @@ async def retrieve_item_to_tab5(
         except Exception as e:
             raise RuntimeError(f"Failed to upload modified stash: {e}") from e
 
-        # Item is no longer in the vault — clear deposited flag so it can't be retrieved again
         entry.is_deposited = False
         await session.commit()

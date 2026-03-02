@@ -337,7 +337,7 @@ async def get_stash_debug(
     import asyncio
     import tempfile
     from pathlib import Path
-    from backend.services.d2i_parser import parse_d2i
+    from backend.services.item_parsing import parse_stash
 
     conn, save_dir = await _get_conn_and_dir(session, machine)
 
@@ -360,7 +360,7 @@ async def get_stash_debug(
                 _sftp_download(sftp, remote_path, tmp_path)
 
         await asyncio.to_thread(_download)
-        stash = parse_d2i(tmp_path)
+        stash = parse_stash(tmp_path, hardcore=hardcore)
 
     if tab >= len(stash.pages):
         raise HTTPException(400, f"Tab {tab} does not exist (stash has {len(stash.pages)} pages)")
@@ -383,16 +383,14 @@ async def get_stash_debug(
             "is_ethereal": item.is_ethereal,
             "unique_id": item.unique_id,
             "set_id": item.set_id,
-            "p1_unique_id": item.p1_unique_id,
-            "p1_set_id": item.p1_set_id,
-            "properties": item.properties,
+            "properties": [],
         })
 
     return {
         "machine": machine,
         "mode": mode,
         "tab": tab,
-        "item_count": page.item_count,
+        "item_count": len(page.items),
         "items": items_out,
     }
 

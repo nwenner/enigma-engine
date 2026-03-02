@@ -21,40 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.models import GrailCatalog, VaultItem, GoldVault
-from backend.services.d2i_parser import (
-    parse_d2i,
-    serialize_d2i,
+from backend.services.item_parsing import ParsedStash, parse_stash, serialize_stash
+from backend.services.item_parsing.stash_format import (
     remove_items_from_page,
     insert_item_into_page,
     validate_page_items,
-    MOD_ITEM_NAMES,
 )
 
 log = logging.getLogger(__name__)
-
-
-def _base_item_name(item_type: str) -> str | None:
-    """Return a display name for the base item type code, or None if unknown."""
-    code = item_type.strip()
-    if not code:
-        return None
-    return MOD_ITEM_NAMES.get(code) or code
-
-
-def _magic_item_name(magic_prefix: str | None, magic_suffix: str | None, item_type: str) -> str | None:
-    """
-    Build the full magic item display name: "{prefix} {base} {suffix}".
-    Returns None if no affixes are known (caller falls back to base_item display).
-    """
-    base = _base_item_name(item_type)
-    parts: list[str] = []
-    if magic_prefix:
-        parts.append(magic_prefix)
-    if base:
-        parts.append(base)
-    if magic_suffix:
-        parts.append(magic_suffix)
-    return " ".join(parts) if (magic_prefix or magic_suffix) and parts else None
 
 
 QUALITY_NAMES: dict[int, str] = {
@@ -96,12 +70,6 @@ async def _build_catalog_lookup(
                 unique_ids.add(item.unique_id)
             elif item.quality == 5 and item.set_id is not None:
                 set_ids.add(item.set_id)
-            # Also collect Phase 1 IDs — Phase 2 may have overridden quality
-            # but Phase 1's uid/sid might still be the real catalog key
-            if item.p1_unique_id is not None:
-                unique_ids.add(item.p1_unique_id)
-            if item.p1_set_id is not None:
-                set_ids.add(item.p1_set_id)
 
     lookup: dict[tuple, GrailCatalog] = {}
 
@@ -155,7 +123,7 @@ async def fetch_stash(
 
         await asyncio.to_thread(_download)
 
-        stash = parse_d2i(tmp_path)
+        stash = parse_stash(tmp_path, hardcore=hardcore)
 
     # Vault gold for this mode
     vault_result = await session.execute(
@@ -173,71 +141,45 @@ async def fetch_stash(
         items_out = []
         for item_idx, item in enumerate(page.items):
             cat: Optional[GrailCatalog] = None
-            display_quality = item.quality
-            display_unique_id = item.unique_id
-            display_set_id = item.set_id
+            if item.quality == 7 and item.unique_id is not None:
+                cat = catalog_lookup.get(("unique", item.unique_id))
+            elif item.quality == 5 and item.set_id is not None:
+                cat = catalog_lookup.get(("set", item.set_id))
 
-            # Phase 1 catalog override: only when Phase 2 found a low-confidence
-            # quality (q=0 normal, q=1 inferior, q=2 superior — minimal quality
-            # data, easy to coincidentally match). When Phase 2 found q=3/4/6/8
-            # (magic/rare/crafted/tempered, all with substantial affix data that
-            # Phase 2 validates explicitly), trust Phase 2 completely — a Phase 1
-            # catalog coincidence would be a regression (e.g. magic charm showing
-            # as the set item whose set_id happened to match the false-positive).
-            use_p1_catalog = item.quality not in (3, 4, 6, 8)
-
-            if use_p1_catalog and item.p1_unique_id is not None:
-                cat = catalog_lookup.get(("unique", item.p1_unique_id))
-                if cat:
-                    display_quality = 7
-                    display_unique_id = item.p1_unique_id
-                    display_set_id = None
-            if use_p1_catalog and cat is None and item.p1_set_id is not None:
-                cat = catalog_lookup.get(("set", item.p1_set_id))
-                if cat:
-                    display_quality = 5
-                    display_unique_id = None
-                    display_set_id = item.p1_set_id
-            # Standard catalog lookup via Phase 2's uid/sid (or Phase 1 if it won)
-            if cat is None:
-                if item.quality == 7 and item.unique_id is not None:
-                    cat = catalog_lookup.get(("unique", item.unique_id))
-                elif item.quality == 5 and item.set_id is not None:
-                    cat = catalog_lookup.get(("set", item.set_id))
-
-            # Build display name: catalog > magic full name > rare name > None
+            # Build display name: catalog > magic full name > rare name > base
             if cat:
                 display_name = cat.name
                 display_base = cat.base_item
             elif item.quality == 3:
-                # Magic item — build "Prefix Base of Suffix" name; base_item is redundant
-                display_name = _magic_item_name(item.magic_prefix, item.magic_suffix, item.item_type)
-                display_base = None if display_name else _base_item_name(item.item_type)
+                # display_name already has "Prefix Base of Suffix" from parser
+                display_name = item.display_name
+                display_base = None
             elif item.quality in (4, 6) and item.rare_name:
                 display_name = item.rare_name
-                display_base = _base_item_name(item.item_type)
+                display_base = item.base_name
             else:
                 display_name = None
-                display_base = _base_item_name(item.item_type)
+                display_base = item.base_name
 
             items_out.append({
                 "page_item_index": item_idx,
+                "item_type": item.item_type.strip(),
                 "name": display_name,
                 "base_item": display_base,
-                "quality": display_quality,
-                "quality_name": QUALITY_NAMES.get(display_quality, "unknown"),
-                "unique_id": display_unique_id,
-                "set_id": display_set_id,
+                "quality": item.quality,
+                "quality_name": QUALITY_NAMES.get(item.quality, "unknown"),
+                "unique_id": item.unique_id,
+                "set_id": item.set_id,
                 "is_ear": item.is_ear,
                 "is_simple": item.is_simple,
                 "item_level": item.item_level,
                 "is_ethereal": item.is_ethereal,
-                "properties": item.properties,
+                "properties": [],
             })
 
         tabs.append({
             "index": page_idx,
-            "item_count": page.item_count,
+            "item_count": len(page.items),
             "items": items_out,
         })
 
@@ -289,7 +231,7 @@ async def deposit_gold(
                 _sftp_download(sftp, remote_path, tmp_path)
 
         await asyncio.to_thread(_download)
-        stash = parse_d2i(tmp_path)
+        stash = parse_stash(tmp_path, hardcore=hardcore)
 
         if stash.gold < amount:
             raise ValueError(f"Stash only has {stash.gold:,} gold; cannot deposit {amount:,}")
@@ -308,7 +250,7 @@ async def deposit_gold(
             vault.amount += amount
             vault.last_updated = now
 
-        new_bytes = serialize_d2i(stash)
+        new_bytes = serialize_stash(stash)
         upload_path = Path(tmp) / f"{filename}.out"
         upload_path.write_bytes(new_bytes)
 
@@ -370,7 +312,7 @@ async def withdraw_gold(
                 _sftp_download(sftp, remote_path, tmp_path)
 
         await asyncio.to_thread(_download)
-        stash = parse_d2i(tmp_path)
+        stash = parse_stash(tmp_path, hardcore=hardcore)
 
         if stash.gold + amount > MAX_STASH_GOLD:
             max_withdraw = MAX_STASH_GOLD - stash.gold
@@ -384,7 +326,7 @@ async def withdraw_gold(
         vault.amount -= amount
         vault.last_updated = now
 
-        new_bytes = serialize_d2i(stash)
+        new_bytes = serialize_stash(stash)
         upload_path = Path(tmp) / f"{filename}.out"
         upload_path.write_bytes(new_bytes)
 
@@ -436,7 +378,7 @@ async def store_item(
                 _sftp_download(sftp, remote_path, tmp_path)
 
         await asyncio.to_thread(_download)
-        stash = parse_d2i(tmp_path)
+        stash = parse_stash(tmp_path, hardcore=hardcore)
 
         if tab >= len(stash.pages):
             raise ValueError(f"Tab {tab} does not exist (stash has {len(stash.pages)} pages)")
@@ -455,32 +397,8 @@ async def store_item(
         item_bytes = bytes(page.raw_bytes[item.byte_start:item.byte_end])
 
         # Look up catalog for name/base_item.
-        # Try Phase 1 IDs first (more reliable for catalog matching when Phase 2
-        # overrides quality) then fall back to Phase 2's uid/sid.
         cat: Optional[GrailCatalog] = None
-        store_quality = item.quality
-        use_p1_catalog = item.quality not in (3, 4, 6, 8)
-        if use_p1_catalog and item.p1_unique_id is not None:
-            result = await session.execute(
-                select(GrailCatalog).where(
-                    GrailCatalog.quality == "unique",
-                    GrailCatalog.unique_id == item.p1_unique_id,
-                )
-            )
-            cat = result.scalar_one_or_none()
-            if cat:
-                store_quality = 7
-        if use_p1_catalog and cat is None and item.p1_set_id is not None:
-            result = await session.execute(
-                select(GrailCatalog).where(
-                    GrailCatalog.quality == "set",
-                    GrailCatalog.set_id == item.p1_set_id,
-                )
-            )
-            cat = result.scalar_one_or_none()
-            if cat:
-                store_quality = 5
-        if cat is None and item.quality == 7 and item.unique_id is not None:
+        if item.quality == 7 and item.unique_id is not None:
             result = await session.execute(
                 select(GrailCatalog).where(
                     GrailCatalog.quality == "unique",
@@ -488,7 +406,7 @@ async def store_item(
                 )
             )
             cat = result.scalar_one_or_none()
-        elif cat is None and item.quality == 5 and item.set_id is not None:
+        elif item.quality == 5 and item.set_id is not None:
             result = await session.execute(
                 select(GrailCatalog).where(
                     GrailCatalog.quality == "set",
@@ -500,7 +418,7 @@ async def store_item(
         modified_page = remove_items_from_page(page, [item_index])
         stash.pages[tab] = modified_page
 
-        new_bytes = serialize_d2i(stash)
+        new_bytes = serialize_stash(stash)
         upload_path = Path(tmp) / f"{filename}.out"
         upload_path.write_bytes(new_bytes)
 
@@ -515,38 +433,38 @@ async def store_item(
             vault_name = cat.name
             vault_base = cat.base_item
         elif item.quality == 3:
-            vault_name = _magic_item_name(item.magic_prefix, item.magic_suffix, item.item_type)
-            vault_base = None if vault_name else _base_item_name(item.item_type)
+            vault_name = item.display_name
+            vault_base = None
         elif item.quality in (4, 6) and item.rare_name:
             vault_name = item.rare_name
-            vault_base = _base_item_name(item.item_type)
+            vault_base = item.base_name
         else:
             vault_name = None
-            vault_base = _base_item_name(item.item_type)
+            vault_base = item.base_name
 
         vault_item = VaultItem(
             item_code=item.item_type,
             name=vault_name,
             base_item=vault_base,
-            quality=store_quality,
+            quality=item.quality,
             item_level=item.item_level,
             is_ethereal=item.is_ethereal,
             tab=tab,
             hardcore=hardcore,
             raw_item_bytes=item_bytes,
-            properties=item.properties,
+            properties=[],
             stored_at=datetime.now(timezone.utc).replace(tzinfo=None),
             catalog_id=cat.id if cat else None,
         )
         session.add(vault_item)
         await session.commit()
 
-    quality_name = QUALITY_NAMES.get(store_quality, "unknown")
+    quality_name = QUALITY_NAMES.get(item.quality, "unknown")
     display_name = vault_name or f"{quality_name} item"
     log.info("Vault: stored %s from tab %d on %s (%s)", display_name, tab, machine, mode)
     return {
         "name": vault_name,
-        "quality": store_quality,
+        "quality": item.quality,
         "quality_name": quality_name,
     }
 
@@ -597,7 +515,8 @@ async def retrieve_vault_item(
 
         await asyncio.to_thread(_download)
 
-        stash = parse_d2i(tmp_path)
+        hardcore = "HardCore" in stash_filename
+        stash = parse_stash(tmp_path, hardcore=hardcore)
 
         if len(stash.pages) <= PORTAL_TAB_INDEX:
             raise RuntimeError(
@@ -607,7 +526,7 @@ async def retrieve_vault_item(
         modified_page = insert_item_into_page(stash.pages[PORTAL_TAB_INDEX], item_bytes)
         stash.pages[PORTAL_TAB_INDEX] = modified_page
 
-        new_bytes = serialize_d2i(stash)
+        new_bytes = serialize_stash(stash)
         upload_path = Path(tmp) / f"{stash_filename}.out"
         upload_path.write_bytes(new_bytes)
 

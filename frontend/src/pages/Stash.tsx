@@ -24,20 +24,24 @@ function qualityColor(quality: number): string {
     case 4: return "text-yellow-300 border-yellow-600/60";
     case 3: return "text-blue-300 border-blue-600/60";
     case 6: return "text-orange-400 border-orange-600/60";
-    default: return "text-slate-300 border-slate-600/60";
+    case 2: return "text-slate-200 border-slate-500/60";
+    case 8: return "text-purple-300 border-purple-600/60";
+    default: return "text-slate-400 border-slate-700/60";
   }
 }
 
-function qualityBadge(quality: number, quality_name: string): string {
+/** Short 3-char badge label for each quality tier. */
+function qualityLabel(quality: number): string {
   switch (quality) {
-    case 7: return "Unique";
-    case 5: return "Set";
-    case 4: return "Rare";
-    case 3: return "Magic";
-    case 6: return "Crafted";
-    case 2: return "Superior";
-    case 1: return "Inferior";
-    default: return quality_name.charAt(0).toUpperCase() + quality_name.slice(1);
+    case 7: return "UNQ";
+    case 5: return "SET";
+    case 4: return "RAR";
+    case 3: return "MAG";
+    case 6: return "CRF";
+    case 2: return "SUP";
+    case 1: return "INF";
+    case 8: return "TMP";
+    default: return "NRM";
   }
 }
 
@@ -52,25 +56,6 @@ function GoldBar({ current, max }: { current: number; max: number }) {
       />
     </div>
   );
-}
-
-// ─── Display name helpers ─────────────────────────────────────────────────────
-
-/** Primary display name for an item. For unknown items, returns null (caller shows quality label). */
-function itemName(name: string | null): string | null {
-  return name || null;
-}
-
-/** Property text color based on quality — mirrors D2's in-game color coding. */
-function propColor(quality: number): string {
-  switch (quality) {
-    case 7: return "text-d2gold/90";
-    case 5: return "text-green-400";
-    case 4: return "text-yellow-300";
-    case 3: return "text-blue-300";
-    case 6: return "text-orange-300";
-    default: return "text-slate-300";
-  }
 }
 
 // ─── Store item modal ─────────────────────────────────────────────────────────
@@ -89,7 +74,8 @@ function StoreModal({
   onClose: () => void;
 }) {
   const store = useStoreItem();
-  const displayName = item.name ?? qualityBadge(item.quality, item.quality_name);
+  const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
+  const colorText = qualityColor(item.quality).split(" ")[0];
 
   const handleStore = async () => {
     try {
@@ -105,10 +91,8 @@ function StoreModal({
       <div className="bg-d2bg-elevated border border-d2bg-border w-full max-w-sm p-6 animate-fadeIn">
         <h3 className="font-diablo text-d2gold text-sm tracking-widest mb-1">Store Item</h3>
         <p className="text-slate-400 text-xs mb-1">
-          <span className={`font-semibold ${qualityColor(item.quality).split(" ")[0]}`}>
-            {displayName}
-          </span>
-          {item.base_item && (
+          <span className={`font-semibold ${colorText}`}>{displayName}</span>
+          {item.base_item && item.name && (
             <span className="text-slate-500 ml-1">({item.base_item})</span>
           )}
         </p>
@@ -123,14 +107,8 @@ function StoreModal({
         )}
 
         <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">
-            Cancel
-          </button>
-          <button
-            onClick={handleStore}
-            disabled={store.isPending}
-            className="btn-d2 text-xs px-4 py-2"
-          >
+          <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">Cancel</button>
+          <button onClick={handleStore} disabled={store.isPending} className="btn-d2 text-xs px-4 py-2">
             {store.isPending ? "Storing…" : "Store Item"}
           </button>
         </div>
@@ -152,7 +130,7 @@ function RetrieveVaultModal({
 }) {
   const retrieve = useRetrieveVaultItem();
   const [machine, setMachine] = useState<Machine>("pc");
-  const displayName = item.name ?? qualityBadge(item.quality, item.quality_name) + " Item";
+  const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
 
   const handleRetrieve = async () => {
     try {
@@ -197,14 +175,8 @@ function RetrieveVaultModal({
         )}
 
         <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">
-            Cancel
-          </button>
-          <button
-            onClick={handleRetrieve}
-            disabled={retrieve.isPending}
-            className="btn-d2 text-xs px-4 py-2"
-          >
+          <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">Cancel</button>
+          <button onClick={handleRetrieve} disabled={retrieve.isPending} className="btn-d2 text-xs px-4 py-2">
             {retrieve.isPending ? "Retrieving…" : "Retrieve"}
           </button>
         </div>
@@ -289,9 +261,7 @@ function GoldPanel({
             {deposit.isPending ? "…" : "Deposit"}
           </button>
         </div>
-        {depositError && (
-          <p className="text-red-400 text-xs ml-24 mt-1">{depositError}</p>
-        )}
+        {depositError && <p className="text-red-400 text-xs ml-24 mt-1">{depositError}</p>}
       </div>
 
       {/* Vault gold */}
@@ -322,10 +292,96 @@ function GoldPanel({
             {withdraw.isPending ? "…" : "Withdraw"}
           </button>
         </div>
-        {withdrawError && (
-          <p className="text-red-400 text-xs ml-24 mt-1">{withdrawError}</p>
-        )}
+        {withdrawError && <p className="text-red-400 text-xs ml-24 mt-1">{withdrawError}</p>}
       </div>
+    </div>
+  );
+}
+
+// ─── Quality summary bar ──────────────────────────────────────────────────────
+
+const SUMMARY_ORDER = [7, 5, 6, 4, 3, 2, 1, 8, 0] as const;
+
+function QualitySummary({ items }: { items: StashItem[] }) {
+  const counts: Record<number, number> = {};
+  for (const item of items) {
+    counts[item.quality] = (counts[item.quality] ?? 0) + 1;
+  }
+
+  const parts = SUMMARY_ORDER
+    .filter((q) => counts[q])
+    .map((q) => {
+      const colorText = qualityColor(q).split(" ")[0];
+      return (
+        <span key={q} className={`${colorText} tabular-nums`}>
+          {counts[q]} {qualityLabel(q)}
+        </span>
+      );
+    });
+
+  if (parts.length === 0) return null;
+
+  return (
+    <div className="px-3 py-1.5 border-b border-d2bg-border bg-black/20 flex flex-wrap gap-x-3 gap-y-0.5">
+      {parts.map((p, i) => (
+        <span key={i} className="text-[10px]">{p}</span>
+      ))}
+    </div>
+  );
+}
+
+// ─── Single item row ──────────────────────────────────────────────────────────
+
+function ItemRow({
+  item,
+  onStore,
+}: {
+  item: StashItem;
+  onStore: () => void;
+}) {
+  const colorText = qualityColor(item.quality).split(" ")[0];
+  const colorBorder = qualityColor(item.quality).split(" ")[1] ?? "border-slate-700/60";
+  const displayName = item.name ?? item.base_item ?? item.quality_name;
+
+  return (
+    <div className={`px-3 py-2 border ${colorBorder} bg-black/20`}>
+      <div className="flex items-center gap-2">
+        {/* Quality badge */}
+        <span className={`text-[9px] font-mono px-1 border shrink-0 leading-4 ${colorText} ${colorBorder}`}>
+          {qualityLabel(item.quality)}
+        </span>
+
+        {/* Primary name */}
+        <span className={`flex-1 text-sm font-semibold leading-snug min-w-0 truncate ${colorText}`}>
+          {displayName}
+        </span>
+
+        {/* Flags + metadata */}
+        {item.is_ethereal && (
+          <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
+        )}
+        {item.item_level > 0 && (
+          <span className="text-slate-600 text-[10px] shrink-0 tabular-nums">
+            ilvl {item.item_level}
+          </span>
+        )}
+        <span className="text-slate-700 text-[10px] font-mono shrink-0 w-8 text-right">
+          {item.item_type}
+        </span>
+
+        <button
+          onClick={onStore}
+          className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
+          title="Store this item in vault"
+        >
+          Store
+        </button>
+      </div>
+
+      {/* Secondary base type — only when name is the special name (catalog/rare/magic) */}
+      {item.name && item.base_item && (
+        <div className="text-slate-500 text-xs mt-0.5 ml-9">{item.base_item}</div>
+      )}
     </div>
   );
 }
@@ -346,7 +402,6 @@ function StashTabView({
   onTabChange: (i: number) => void;
 }) {
   const [storeTarget, setStoreTarget] = useState<{ item: StashItem; tab: number } | null>(null);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const tab = tabs[activeTab];
 
   return (
@@ -356,7 +411,7 @@ function StashTabView({
         {tabs.map((t, i) => (
           <button
             key={i}
-            onClick={() => { onTabChange(i); setExpandedIdx(null); }}
+            onClick={() => onTabChange(i)}
             className={`flex-1 py-2.5 text-xs font-diablo tracking-wider transition-colors border-r border-d2bg-border last:border-r-0 ${
               activeTab === i
                 ? "text-d2gold bg-d2bg-border/30 border-b-2 border-b-d2gold"
@@ -371,65 +426,22 @@ function StashTabView({
         ))}
       </div>
 
+      {/* Quality summary */}
+      {tab && tab.items.length > 0 && <QualitySummary items={tab.items} />}
+
       {/* Item list */}
       <div className="p-3 min-h-[200px]">
         {!tab || tab.item_count === 0 ? (
           <p className="text-slate-700 text-xs text-center py-8">Empty tab</p>
         ) : (
           <div className="space-y-px">
-            {tab.items.map((item, idx) => {
-              const name = itemName(item.name);
-              const colorClass = qualityColor(item.quality).split(" ")[0];
-              const borderClass = qualityColor(item.quality).split(" ")[1] ?? "border-slate-600/60";
-              const isExpanded = expandedIdx === idx;
-              const hasProps = item.properties.length > 0;
-              return (
-                <div key={idx}>
-                  <div
-                    className={`px-3 py-2 border ${borderClass} bg-black/20 ${hasProps ? "cursor-pointer hover:bg-black/30" : ""}`}
-                    onClick={() => hasProps && setExpandedIdx(isExpanded ? null : idx)}
-                  >
-                    {/* Name row */}
-                    <div className="flex items-center gap-2">
-                      <span className={`flex-1 text-sm font-semibold leading-snug ${colorClass}`}>
-                        {name ?? item.base_item ?? qualityBadge(item.quality, item.quality_name)}
-                      </span>
-                      {item.is_ethereal && (
-                        <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
-                      )}
-                      {item.item_level > 0 && (
-                        <span className="text-slate-600 text-[10px] shrink-0 tabular-nums">
-                          ilvl {item.item_level}
-                        </span>
-                      )}
-                      {hasProps && (
-                        <span className="text-slate-600 text-[10px] shrink-0">
-                          {isExpanded ? "▲" : "▼"}
-                        </span>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setStoreTarget({ item, tab: activeTab }); }}
-                        className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
-                        title="Store this item in vault"
-                      >
-                        Store
-                      </button>
-                    </div>
-                    {/* Base item type — only shown as secondary when a catalog name is the primary */}
-                    {name && item.base_item && (
-                      <div className="text-slate-400 text-xs mt-0.5">{item.base_item}</div>
-                    )}
-                  </div>
-                  {isExpanded && hasProps && (
-                    <div className={`px-4 py-2.5 border-b border-l border-r ${borderClass} bg-black/50 space-y-0.5`}>
-                      {item.properties.map((p, i) => (
-                        <p key={i} className={`text-[12px] ${propColor(item.quality)}`}>{p}</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {tab.items.map((item, idx) => (
+              <ItemRow
+                key={idx}
+                item={item}
+                onStore={() => setStoreTarget({ item, tab: activeTab })}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -452,7 +464,6 @@ function StashTabView({
 function VaultSection({ mode }: { mode: Mode }) {
   const { data: items, isLoading } = useVaultItems(mode);
   const [retrieveTarget, setRetrieveTarget] = useState<VaultItemResponse | null>(null);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   if (isLoading) {
     return (
@@ -476,63 +487,44 @@ function VaultSection({ mode }: { mode: Mode }) {
       ) : (
         <div className="divide-y divide-d2bg-border/30">
           {items.map((item) => {
-            const name = itemName(item.name);
-            const colorClass = qualityColor(item.quality).split(" ")[0];
-            const borderClass = qualityColor(item.quality).split(" ")[1] ?? "border-slate-600/60";
-            const hasProps = item.properties.length > 0;
-            const isExpanded = expandedId === item.id;
+            const colorText = qualityColor(item.quality).split(" ")[0];
+            const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
             const date = new Date(item.stored_at).toLocaleDateString();
             return (
-              <div key={item.id}>
-                <div
-                  className={`px-4 py-2.5 ${hasProps ? "cursor-pointer hover:bg-black/20" : ""}`}
-                  onClick={() => hasProps && setExpandedId(isExpanded ? null : item.id)}
-                >
-                  {/* Name row */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 flex items-baseline gap-1.5 min-w-0">
-                      <span className={`text-sm font-semibold leading-snug ${colorClass}`}>
-                        {name ?? item.base_item ?? qualityBadge(item.quality, item.quality_name)}
-                      </span>
-                      {name && item.base_item && (
-                        <span className="text-slate-500 text-xs font-normal shrink-0">{item.base_item}</span>
-                      )}
-                    </div>
-                    {item.is_ethereal && (
-                      <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
+              <div key={item.id} className="px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[9px] font-mono px-1 border shrink-0 leading-4 ${qualityColor(item.quality)}`}>
+                    {qualityLabel(item.quality)}
+                  </span>
+                  <div className="flex-1 flex items-baseline gap-1.5 min-w-0">
+                    <span className={`text-sm font-semibold leading-snug truncate ${colorText}`}>
+                      {displayName}
+                    </span>
+                    {item.name && item.base_item && (
+                      <span className="text-slate-500 text-xs font-normal shrink-0">{item.base_item}</span>
                     )}
-                    {item.item_level > 0 && (
-                      <span className="text-slate-600 text-[10px] shrink-0 tabular-nums">
-                        ilvl {item.item_level}
-                      </span>
-                    )}
-                    {hasProps && (
-                      <span className="text-slate-600 text-[10px] shrink-0">
-                        {isExpanded ? "▲" : "▼"}
-                      </span>
-                    )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setRetrieveTarget(item); }}
-                      className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
-                      title="Retrieve to tab 5"
-                    >
-                      Retrieve
-                    </button>
                   </div>
-                  {/* Metadata line */}
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-slate-700 text-[10px]">Tab {item.tab + 1}</span>
-                    <span className="text-slate-800 text-[10px]">·</span>
-                    <span className="text-slate-700 text-[10px]">{date}</span>
-                  </div>
+                  {item.is_ethereal && (
+                    <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
+                  )}
+                  {item.item_level > 0 && (
+                    <span className="text-slate-600 text-[10px] shrink-0 tabular-nums">
+                      ilvl {item.item_level}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setRetrieveTarget(item)}
+                    className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
+                    title="Retrieve to tab 5"
+                  >
+                    Retrieve
+                  </button>
                 </div>
-                {isExpanded && hasProps && (
-                  <div className={`px-5 py-2.5 border-b border-l border-r ${borderClass} bg-black/50 space-y-0.5`}>
-                    {item.properties.map((p, i) => (
-                      <p key={i} className={`text-[12px] ${propColor(item.quality)}`}>{p}</p>
-                    ))}
-                  </div>
-                )}
+                <div className="flex items-center gap-2 mt-0.5 ml-9">
+                  <span className="text-slate-700 text-[10px]">Tab {item.tab + 1}</span>
+                  <span className="text-slate-800 text-[10px]">·</span>
+                  <span className="text-slate-700 text-[10px]">{date}</span>
+                </div>
               </div>
             );
           })}
@@ -584,13 +576,11 @@ export default function Stash() {
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="font-diablo text-d2gold text-lg tracking-widest">Item Vault</h2>
-          <p className="text-slate-500 text-xs mt-1">
-            Live stash view, unlimited gold storage, and item archival
-          </p>
-        </div>
+      <div>
+        <h2 className="font-diablo text-d2gold text-lg tracking-widest">Item Vault</h2>
+        <p className="text-slate-500 text-xs mt-1">
+          Live stash view, unlimited gold storage, and item archival
+        </p>
       </div>
 
       {/* Controls */}
@@ -649,22 +639,21 @@ export default function Stash() {
       {/* Error */}
       {stashError && (
         <div className="bg-red-950/30 border border-red-800/40 px-4 py-3">
-          <p className="text-red-400 text-xs">{(stashError as any).response?.data?.detail ?? (stashError as Error).message}</p>
+          <p className="text-red-400 text-xs">
+            {(stashError as any).response?.data?.detail ?? (stashError as Error).message}
+          </p>
         </div>
       )}
 
       {/* Live stash */}
       {stash && (
         <>
-          {/* Gold panel */}
           <GoldPanel
             stashGold={stash.gold}
             vaultGold={stash.vault_gold}
             machine={machine!}
             mode={mode}
           />
-
-          {/* Tab view */}
           <StashTabView
             tabs={stash.tabs}
             machine={machine!}

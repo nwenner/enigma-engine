@@ -131,6 +131,7 @@ export interface GrailItem {
 
 export interface StashItem {
   page_item_index: number;
+  item_type: string;       // 4-char Huffman-decoded code e.g. "cm1", "rin"
   name: string | null;
   base_item: string | null;
   quality: number;
