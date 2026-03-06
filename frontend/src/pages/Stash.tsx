@@ -21,11 +21,12 @@ function qualityColor(quality: number): string {
   switch (quality) {
     case 7: return "text-d2gold border-d2gold/60";
     case 5: return "text-green-400 border-green-600/60";
-    case 4: return "text-yellow-300 border-yellow-600/60";
-    case 3: return "text-blue-300 border-blue-600/60";
-    case 6: return "text-orange-400 border-orange-600/60";
-    case 2: return "text-slate-200 border-slate-500/60";
-    case 8: return "text-purple-300 border-purple-600/60";
+    case 6: return "text-yellow-300 border-yellow-600/60";
+    case 4: return "text-blue-300 border-blue-600/60";
+    case 8: return "text-orange-400 border-orange-600/60";
+    case 3: return "text-slate-300 border-slate-500/60";
+    case 2: return "text-slate-400 border-slate-600/60";
+    case 1: return "text-slate-500 border-slate-700/60";
     default: return "text-slate-400 border-slate-700/60";
   }
 }
@@ -35,12 +36,12 @@ function qualityLabel(quality: number): string {
   switch (quality) {
     case 7: return "UNQ";
     case 5: return "SET";
-    case 4: return "RAR";
-    case 3: return "MAG";
-    case 6: return "CRF";
-    case 2: return "SUP";
+    case 6: return "RAR";
+    case 4: return "MAG";
+    case 8: return "CRF";
+    case 3: return "SUP";
+    case 2: return "NRM";
     case 1: return "INF";
-    case 8: return "TMP";
     default: return "NRM";
   }
 }

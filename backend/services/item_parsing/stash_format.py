@@ -24,8 +24,9 @@ from pathlib import Path
 
 from .bit_reader import BitReader
 from .item_flags import read_item_flags
-from .item_fields import read_item_fields
+from .item_fields import read_item_fields, read_charm_stats
 from .item_names import base_name, resolve_name
+from .tables.rare_names import RARE_NAMES
 from .models import ParsedItem, ParsedPage, ParsedStash
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ def _parse_item(
     raw: bytes | bytearray,
     byte_start: int,
     byte_end: int,
+    page_idx: int = 0,
 ) -> ParsedItem | None:
     """
     Parse one Modern format item. Returns None on parse failure.
@@ -75,6 +77,17 @@ def _parse_item(
         return None
 
     bname = base_name(fields.item_type)
+
+    # For magic charms, bypass stored prefix_id (D2R uses different numbering)
+    # and resolve the prefix name from the actual stat values instead.
+    stat_list = None
+    if (
+        fields.quality == 4
+        and fields.item_type.strip() in ("cm1", "cm2", "cm3")
+        and fields.prop_bit_start
+    ):
+        stat_list = read_charm_stats(raw, fields.prop_bit_start, byte_end * 8)
+
     display_name, rare_name = resolve_name(
         item_type=fields.item_type,
         quality=fields.quality,
@@ -86,7 +99,35 @@ def _parse_item(
         magic_suffix_id=fields.magic_suffix_id,
         rare_name1=fields.rare_name1,
         rare_name2=fields.rare_name2,
+        stat_list=stat_list,
     )
+
+    # Warn about rare/crafted name word IDs that are missing from RARE_NAMES.
+    if fields.quality in (6, 8):
+        for label, rid in (("rare_name1", fields.rare_name1), ("rare_name2", fields.rare_name2)):
+            if rid and rid not in RARE_NAMES:
+                log.warning(
+                    "Unknown %s=%d for item '%s' at stash tab %d grid (%d,%d) — "
+                    "please report this ID so the table can be updated.",
+                    label, rid, display_name, page_idx + 1,
+                    flags.position_x, flags.position_y,
+                )
+
+    # Warn when a named-quality item fell back to base name + quality label.
+    # This means the lookup tables are incomplete (missing prefix/suffix/rare word).
+    _FALLBACK_SUFFIXES = (" (magic)", " (rare)", " (crafted)", " (set)", " (unique)")
+    if fields.quality in (4, 5, 6, 7, 8) and any(display_name.endswith(s) for s in _FALLBACK_SUFFIXES):
+        extra = ""
+        if stat_list is not None:
+            extra = f" charm_stats={stat_list[:6]}"
+        log.warning(
+            "Fallback name '%s' for %s item at stash tab %d grid (%d,%d) — "
+            "quality=%d prefix_id=%s suffix_id=%s rare_name1=%s rare_name2=%s%s",
+            display_name, fields.item_type.strip(), page_idx + 1,
+            flags.position_x, flags.position_y,
+            fields.quality, fields.magic_prefix_id, fields.magic_suffix_id,
+            fields.rare_name1 or None, fields.rare_name2 or None, extra,
+        )
 
     return ParsedItem(
         item_type=fields.item_type,
@@ -109,7 +150,7 @@ def _parse_item(
 
 # ─── Page item parsing ────────────────────────────────────────────────────────
 
-def _parse_page_items(raw: bytearray, item_count: int) -> list[ParsedItem]:
+def _parse_page_items(raw: bytearray, item_count: int, page_idx: int = 0) -> list[ParsedItem]:
     """Parse all items from a Modern format page's raw data."""
     if item_count == 0:
         return []
@@ -119,7 +160,7 @@ def _parse_page_items(raw: bytearray, item_count: int) -> list[ParsedItem]:
 
     for i, byte_start in enumerate(starts):
         byte_end = starts[i + 1] if i + 1 < len(starts) else len(raw)
-        item = _parse_item(raw, byte_start, byte_end)
+        item = _parse_item(raw, byte_start, byte_end, page_idx=page_idx)
         if item is not None:
             items.append(item)
 
@@ -252,7 +293,7 @@ def parse_stash(path_or_data: Path | bytes, hardcore: bool) -> ParsedStash:
             data_end = len(data)
 
         raw_bytes = bytearray(data[data_start:data_end])
-        items = _parse_page_items(raw_bytes, item_count)
+        items = _parse_page_items(raw_bytes, item_count, page_idx=page_idx)
 
         if page_idx > 0:
             sep_start = jm_off - MODERN_SEP_SIZE

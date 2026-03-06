@@ -32,15 +32,14 @@ log = logging.getLogger(__name__)
 
 
 QUALITY_NAMES: dict[int, str] = {
-    0: "normal",
     1: "inferior",
-    2: "superior",
-    3: "magic",
-    4: "rare",
+    2: "normal",
+    3: "superior",
+    4: "magic",
     5: "set",
-    6: "crafted",
+    6: "rare",
     7: "unique",
-    8: "tempered",
+    8: "crafted",
 }
 
 MAX_STASH_GOLD = 12_500_000
@@ -150,11 +149,11 @@ async def fetch_stash(
             if cat:
                 display_name = cat.name
                 display_base = cat.base_item
-            elif item.quality == 3:
+            elif item.quality == 4:
                 # display_name already has "Prefix Base of Suffix" from parser
                 display_name = item.display_name
                 display_base = None
-            elif item.quality in (4, 6) and item.rare_name:
+            elif item.quality in (6, 8) and item.rare_name:
                 display_name = item.rare_name
                 display_base = item.base_name
             else:
@@ -432,10 +431,10 @@ async def store_item(
         if cat:
             vault_name = cat.name
             vault_base = cat.base_item
-        elif item.quality == 3:
+        elif item.quality == 4:
             vault_name = item.display_name
             vault_base = None
-        elif item.quality in (4, 6) and item.rare_name:
+        elif item.quality in (6, 8) and item.rare_name:
             vault_name = item.rare_name
             vault_base = item.base_name
         else:

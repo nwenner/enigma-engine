@@ -8,19 +8,19 @@ from __future__ import annotations
 
 from .tables.item_types import ITEM_TYPES
 from .tables.affixes import MAGIC_PREFIXES, MAGIC_SUFFIXES, CHARM_PREFIX_TABLE
-from .tables.rare_names import RARE_PREFIXES, RARE_SUFFIXES, SKILLTAB_PREFIX_NAMES
+from .tables.rare_names import RARE_NAMES, SKILLTAB_PREFIX_NAMES
 
 # Quality name suffixes for fallback display
 QUALITY_LABELS: dict[int, str] = {
-    0: "",          # normal: no suffix
+    0: "",          # unused/unknown
     1: " (inferior)",
-    2: " (superior)",
-    3: " (magic)",
-    4: " (rare)",
+    2: "",          # normal: no suffix
+    3: " (superior)",
+    4: " (magic)",
     5: " (set)",
-    6: " (crafted)",
+    6: " (rare)",
     7: " (unique)",
-    8: " (tempered)",
+    8: " (crafted)",
 }
 
 
@@ -89,13 +89,10 @@ def _charm_prefix_name(
 
 
 def _rare_name(rare_name1: int, rare_name2: int) -> str | None:
-    """Build the combined rare/crafted name from two word IDs."""
-    p = RARE_PREFIXES.get(rare_name1, "")
-    s = RARE_SUFFIXES.get(rare_name2, "")
-    # Strip internal D2R 'RI' artifact from prefix (e.g. "PlagueRI" → "Plague")
-    p_clean = p.rstrip("RI") if p else ""
-    s_cap = s.title() if s else ""
-    combined = f"{p_clean} {s_cap}".strip()
+    """Build the combined rare/crafted name from two word IDs (D2R unified table)."""
+    p = RARE_NAMES.get(rare_name1, "")
+    s = RARE_NAMES.get(rare_name2, "")
+    combined = f"{p} {s}".strip()
     return combined or None
 
 
@@ -130,7 +127,7 @@ def resolve_name(
         return catalog_name, None
 
     rare = None
-    if quality == 3:
+    if quality == 4:
         # Magic: "Prefix Base of Suffix"
         # For charms, override stored prefix_id with stat-based lookup
         if stat_list and item_type.strip() in ("cm1", "cm2", "cm3"):
@@ -149,7 +146,7 @@ def resolve_name(
         fallback = (bname or item_type.strip()) + QUALITY_LABELS.get(quality, "")
         return fallback, None
 
-    elif quality in (4, 6) and rare_name1:
+    elif quality in (6, 8) and rare_name1:
         rare = _rare_name(rare_name1, rare_name2)
         if rare:
             return rare, rare
