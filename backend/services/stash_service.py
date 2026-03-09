@@ -191,6 +191,91 @@ async def fetch_stash(
     }
 
 
+async def fetch_stash_local(
+    session: AsyncSession,
+    mode: str,
+    local_dir: Path,
+    source_machine: str = "unknown",
+) -> dict:
+    """
+    Parse the stash file from a local snapshot directory (no SSH required).
+    Same return shape as fetch_stash.
+    """
+    hardcore = _mode_hardcore(mode)
+    filename = _stash_filename(hardcore)
+    local_path = local_dir / filename
+
+    if not local_path.exists():
+        raise FileNotFoundError(f"Stash file {filename} not found in snapshot directory")
+
+    stash = parse_stash(local_path, hardcore=hardcore)
+
+    # Vault gold for this mode
+    vault_result = await session.execute(
+        select(GoldVault).where(GoldVault.hardcore == hardcore)
+    )
+    vault = vault_result.scalar_one_or_none()
+    vault_gold = vault.amount if vault else 0
+
+    # Build catalog name lookup
+    visible_pages = stash.pages[:VISIBLE_TAB_COUNT]
+    catalog_lookup = await _build_catalog_lookup(session, [p.items for p in visible_pages])
+
+    tabs = []
+    for page_idx, page in enumerate(visible_pages):
+        items_out = []
+        for item_idx, item in enumerate(page.items):
+            cat: Optional[GrailCatalog] = None
+            if item.quality == 7 and item.unique_id is not None:
+                cat = catalog_lookup.get(("unique", item.unique_id))
+            elif item.quality == 5 and item.set_id is not None:
+                cat = catalog_lookup.get(("set", item.set_id))
+
+            # Build display name: catalog > magic full name > rare name > base
+            if cat:
+                display_name = cat.name
+                display_base = cat.base_item
+            elif item.quality == 4:
+                display_name = item.display_name
+                display_base = None
+            elif item.quality in (6, 8) and item.rare_name:
+                display_name = item.rare_name
+                display_base = item.base_name
+            else:
+                display_name = None
+                display_base = item.base_name
+
+            items_out.append({
+                "page_item_index": item_idx,
+                "item_type": item.item_type.strip(),
+                "name": display_name,
+                "base_item": display_base,
+                "quality": item.quality,
+                "quality_name": QUALITY_NAMES.get(item.quality, "unknown"),
+                "unique_id": item.unique_id,
+                "set_id": item.set_id,
+                "is_ear": item.is_ear,
+                "is_simple": item.is_simple,
+                "item_level": item.item_level,
+                "is_ethereal": item.is_ethereal,
+                "properties": [],
+            })
+
+        tabs.append({
+            "index": page_idx,
+            "item_count": len(page.items),
+            "items": items_out,
+        })
+
+    return {
+        "machine": source_machine,
+        "hardcore": hardcore,
+        "gold": stash.gold,
+        "vault_gold": vault_gold,
+        "tabs": tabs,
+    }
+
+
 async def deposit_gold(
     session: AsyncSession,
     machine: str,

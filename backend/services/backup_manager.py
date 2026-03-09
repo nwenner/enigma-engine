@@ -103,7 +103,7 @@ async def create_snapshot(
     session.add(snapshot)
     await session.commit()
 
-    await _prune_backups(session, machine, cfg, label)
+    await _prune_backups(session, cfg, label)
 
     return snapshot
 
@@ -307,41 +307,47 @@ async def run_sync(
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-async def _prune_backups(session: AsyncSession, machine: str, cfg, label: str = "pre_sync") -> None:
+async def _prune_backups(session: AsyncSession, cfg, label: str) -> None:
     """
     Delete oldest backup snapshots beyond retention limits for the given label group.
 
-    Retention rules:
-      - "pre_sync": keep 3 per platform
-      - "game_close" / "manual" (source-of-truth, combined): keep 1 per platform
-      - "pre_grail_*": never pruned
+    Retention rules (total across all platforms):
+      - "game_close" / "manual": keep 1 total
+      - "pre_sync": keep 5 total
+      - "pre_grail_*": keep 5 total
+      - "pre_vault_*": keep 5 total
+      - anything else: no-op
     """
-    # Grail backups are precious — never auto-prune them
-    if label.startswith("pre_grail"):
-        return
-
     if label in ("game_close", "manual"):
-        # Source-of-truth snapshots share a single slot per platform
         result = await session.execute(
             select(BackupSnapshot)
-            .where(
-                BackupSnapshot.source_machine == machine,
-                BackupSnapshot.label.in_(["game_close", "manual"]),
-            )
+            .where(BackupSnapshot.label.in_(["game_close", "manual"]))
             .order_by(BackupSnapshot.created_at.desc())
         )
         keep = 1
-    else:
-        # pre_sync safety backups: keep 3 per platform
+    elif label == "pre_sync":
         result = await session.execute(
             select(BackupSnapshot)
-            .where(
-                BackupSnapshot.source_machine == machine,
-                BackupSnapshot.label == "pre_sync",
-            )
+            .where(BackupSnapshot.label == "pre_sync")
             .order_by(BackupSnapshot.created_at.desc())
         )
-        keep = 3
+        keep = 5
+    elif label.startswith("pre_grail"):
+        result = await session.execute(
+            select(BackupSnapshot)
+            .where(BackupSnapshot.label.like("pre_grail%"))
+            .order_by(BackupSnapshot.created_at.desc())
+        )
+        keep = 5
+    elif label.startswith("pre_vault"):
+        result = await session.execute(
+            select(BackupSnapshot)
+            .where(BackupSnapshot.label.like("pre_vault%"))
+            .order_by(BackupSnapshot.created_at.desc())
+        )
+        keep = 5
+    else:
+        return
 
     snapshots = result.scalars().all()
     if len(snapshots) <= keep:

@@ -112,7 +112,10 @@ export function useCreateSnapshot() {
   return useMutation<SnapshotResponse, Error, "pc" | "deck">({
     mutationFn: (machine) =>
       api.post("/backups/snapshot", { machine }).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["backups"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["backups"] });
+      qc.invalidateQueries({ queryKey: ["stash"] });
+    },
   });
 }
 
@@ -316,13 +319,11 @@ export function useResetGrail() {
 
 // ─── Stash / Vault ────────────────────────────────────────────────────────────
 
-export function useStash(machine: "pc" | "deck" | null, mode: "sc" | "hc") {
+export function useStash(mode: "sc" | "hc") {
   return useQuery<StashResponse>({
-    queryKey: ["stash", machine, mode],
-    queryFn: () =>
-      api.get(`/stash?machine=${machine}&mode=${mode}`).then((r) => r.data),
-    enabled: machine !== null,
-    staleTime: 0,  // always refetch on demand
+    queryKey: ["stash", mode],
+    queryFn: () => api.get(`/stash?mode=${mode}`).then((r) => r.data),
+    staleTime: 0,
     retry: false,
   });
 }
@@ -349,8 +350,7 @@ export function useDepositGold() {
     { machine: "pc" | "deck"; mode: "sc" | "hc"; amount: number }
   >({
     mutationFn: (body) => api.post("/stash/gold/deposit", body).then((r) => r.data),
-    onSuccess: (_data, { machine, mode }) => {
-      qc.invalidateQueries({ queryKey: ["stash", machine, mode] });
+    onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
     },
   });
@@ -364,8 +364,7 @@ export function useWithdrawGold() {
     { machine: "pc" | "deck"; mode: "sc" | "hc"; amount: number }
   >({
     mutationFn: (body) => api.post("/stash/gold/withdraw", body).then((r) => r.data),
-    onSuccess: (_data, { machine, mode }) => {
-      qc.invalidateQueries({ queryKey: ["stash", machine, mode] });
+    onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
     },
   });
@@ -379,8 +378,7 @@ export function useStoreItem() {
     { machine: "pc" | "deck"; mode: "sc" | "hc"; tab: number; item_index: number }
   >({
     mutationFn: (body) => api.post("/stash/item/store", body).then((r) => r.data),
-    onSuccess: (_data, { machine, mode }) => {
-      qc.invalidateQueries({ queryKey: ["stash", machine, mode] });
+    onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["vault", "items", mode] });
     },
   });

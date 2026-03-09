@@ -21,8 +21,9 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from backend.config import get_settings
 from backend.database import get_session
-from backend.models import VaultItem, GoldVault
+from backend.models import VaultItem, GoldVault, BackupSnapshot
 from backend.services.stash_service import QUALITY_NAMES
 
 log = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ class StashResponse(BaseModel):
     gold: int
     vault_gold: int
     tabs: list[StashTabResponse]
+    snapshot_at: Optional[str] = None
 
 
 class VaultItemResponse(BaseModel):
@@ -147,23 +149,43 @@ async def _check_not_running(conn: dict, machine: Machine) -> None:
 
 @router.get("/stash", response_model=StashResponse)
 async def get_stash(
-    machine: Machine = Query(...),
     mode: Mode = Query(...),
     session: AsyncSession = Depends(get_session),
 ):
-    """Download and parse the current stash from a machine (read-only)."""
-    from backend.services.stash_service import fetch_stash
+    """Parse the stash from the latest local snapshot (read-only)."""
+    from pathlib import Path
+    from backend.services.stash_service import fetch_stash_local
 
-    conn, save_dir = await _get_conn_and_dir(session, machine)
+    result = await session.execute(
+        select(BackupSnapshot)
+        .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+        .order_by(BackupSnapshot.created_at.desc())
+        .limit(1)
+    )
+    snap = result.scalar_one_or_none()
+
+    if snap is None:
+        raise HTTPException(
+            404,
+            "No snapshot available. Take a manual snapshot or wait for auto-sync.",
+        )
+
+    local_dir = get_settings().data_dir / snap.snapshot_path
+    if not local_dir.exists():
+        raise HTTPException(
+            404,
+            "Snapshot files not found on disk. Take a new snapshot.",
+        )
 
     try:
-        data = await fetch_stash(
+        data = await fetch_stash_local(
             session=session,
-            machine=machine,
             mode=mode,
-            conn=conn,
-            save_dir=save_dir,
+            local_dir=local_dir,
+            source_machine=snap.source_machine,
         )
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
     except Exception as e:
         log.error("Stash fetch failed: %s", e)
         raise HTTPException(500, str(e))
@@ -173,6 +195,7 @@ async def get_stash(
         hardcore=data["hardcore"],
         gold=data["gold"],
         vault_gold=data["vault_gold"],
+        snapshot_at=snap.created_at.isoformat(),
         tabs=[
             StashTabResponse(
                 index=tab["index"],

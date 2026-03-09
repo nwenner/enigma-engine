@@ -15,6 +15,19 @@ type Machine = "pc" | "deck";
 
 const MAX_STASH_GOLD = 12_500_000;
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtRelative(iso: string): string {
+  const d = new Date(iso.endsWith("Z") ? iso : iso + "Z");
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 // ─── Quality styling ──────────────────────────────────────────────────────────
 
 function qualityColor(quality: number): string {
@@ -546,33 +559,20 @@ function VaultSection({ mode }: { mode: Mode }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Stash() {
-  const [machine, setMachine] = useState<Machine | null>(null);
   const [mode, setMode] = useState<Mode>("sc");
   const [activeTab, setActiveTab] = useState(0);
-  const [fetchRequested, setFetchRequested] = useState(false);
+  const [writeMachine, setWriteMachine] = useState<Machine>("pc");
 
   const { data: preflight } = usePreflight();
+  const pcOnline = preflight ? preflight.pc_error === null : null;
+  const deckOnline = preflight ? preflight.deck_error === null : null;
 
-  const effectiveMachine = fetchRequested ? machine : null;
   const {
     data: stash,
     isFetching,
     error: stashError,
     refetch,
-  } = useStash(effectiveMachine, mode);
-
-  const handleLoad = () => {
-    if (!machine) return;
-    setActiveTab(0);
-    if (fetchRequested && effectiveMachine === machine) {
-      refetch();
-    } else {
-      setFetchRequested(true);
-    }
-  };
-
-  const pcOnline = preflight ? preflight.pc_error === null : null;
-  const deckOnline = preflight ? preflight.deck_error === null : null;
+  } = useStash(mode);
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -580,18 +580,18 @@ export default function Stash() {
       <div>
         <h2 className="font-diablo text-d2gold text-lg tracking-widest">Item Vault</h2>
         <p className="text-slate-500 text-xs mt-1">
-          Live stash view, unlimited gold storage, and item archival
+          Latest snapshot view, unlimited gold storage, and item archival
         </p>
       </div>
 
       {/* Controls */}
-      <div className="flex flex-wrap gap-3 items-center">
-        {/* Mode */}
+      <div className="flex flex-wrap gap-4 items-center">
+        {/* Mode toggle */}
         <div className="flex gap-1">
           {(["sc", "hc"] as const).map((m) => (
             <button
               key={m}
-              onClick={() => { setMode(m); setFetchRequested(false); }}
+              onClick={() => setMode(m)}
               className={`px-3 py-1.5 text-xs border transition-colors ${
                 mode === m
                   ? "border-d2gold text-d2gold bg-d2gold/8"
@@ -603,39 +603,49 @@ export default function Stash() {
           ))}
         </div>
 
-        {/* Machine */}
-        <div className="flex gap-1">
-          {(["pc", "deck"] as const).map((m) => {
-            const online = m === "pc" ? pcOnline : deckOnline;
-            return (
-              <button
-                key={m}
-                onClick={() => { setMachine(m); setFetchRequested(false); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border transition-colors ${
-                  machine === m
-                    ? "border-d2gold text-d2gold bg-d2gold/8"
-                    : "border-d2bg-border text-slate-500 hover:border-slate-500"
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    online === null ? "bg-slate-600" : online ? "bg-green-400" : "bg-red-600"
+        {/* Write target */}
+        <div className="flex items-center gap-2">
+          <span className="text-slate-600 text-xs">Write to:</span>
+          <div className="flex gap-1">
+            {(["pc", "deck"] as const).map((m) => {
+              const online = m === "pc" ? pcOnline : deckOnline;
+              return (
+                <button
+                  key={m}
+                  onClick={() => setWriteMachine(m)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border transition-colors ${
+                    writeMachine === m
+                      ? "border-d2gold text-d2gold bg-d2gold/8"
+                      : "border-d2bg-border text-slate-500 hover:border-slate-500"
                   }`}
-                />
-                {m === "pc" ? "Windows PC" : "Steam Deck"}
-              </button>
-            );
-          })}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      online === null ? "bg-slate-600" : online ? "bg-green-400" : "bg-red-600"
+                    }`}
+                  />
+                  {m === "pc" ? "Windows PC" : "Steam Deck"}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <button
-          onClick={handleLoad}
-          disabled={!machine || isFetching}
-          className="btn-d2 text-xs px-4 py-1.5"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="btn-d2-ghost text-xs px-4 py-1.5"
         >
-          {isFetching ? "Loading…" : "Load Stash"}
+          {isFetching ? "Loading…" : "Refresh"}
         </button>
       </div>
+
+      {/* Snapshot source info */}
+      {stash?.snapshot_at && (
+        <p className="text-slate-600 text-xs -mt-3">
+          Snapshot from {stash.machine === "pc" ? "Windows PC" : "Steam Deck"} · {fmtRelative(stash.snapshot_at)}
+        </p>
+      )}
 
       {/* Error */}
       {stashError && (
@@ -646,18 +656,18 @@ export default function Stash() {
         </div>
       )}
 
-      {/* Live stash */}
-      {stash && (
+      {/* Stash view */}
+      {stash && !stashError && (
         <>
           <GoldPanel
             stashGold={stash.gold}
             vaultGold={stash.vault_gold}
-            machine={machine!}
+            machine={writeMachine}
             mode={mode}
           />
           <StashTabView
             tabs={stash.tabs}
-            machine={machine!}
+            machine={writeMachine}
             mode={mode}
             activeTab={Math.min(activeTab, stash.tabs.length - 1)}
             onTabChange={setActiveTab}

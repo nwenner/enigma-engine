@@ -7,15 +7,21 @@ import type { SnapshotResponse } from "../api/types";
 const fmtUtc = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z").toLocaleString();
 
 function LabelBadge({ label }: { label: string }) {
-  const map: Record<string, { text: string; cls: string }> = {
-    game_close: { text: "Auto", cls: "bg-blue-950/40 text-blue-400 border-blue-900/60" },
-    manual:     { text: "Manual", cls: "bg-emerald-950/40 text-emerald-400 border-emerald-900/60" },
-    pre_sync:   { text: "Safety", cls: "bg-slate-800/60 text-slate-400 border-slate-700/60" },
-  };
-  const entry = map[label] ?? { text: "Grail", cls: "bg-yellow-950/40 text-yellow-400 border-yellow-900/60" };
+  let text: string;
+  let cls: string;
+  if (label === "pre_sync") {
+    text = "Safety";
+    cls = "bg-slate-800/60 text-slate-400 border-slate-700/60";
+  } else if (label.startsWith("pre_vault")) {
+    text = "Vault";
+    cls = "bg-violet-950/40 text-violet-400 border-violet-900/60";
+  } else {
+    text = "Grail";
+    cls = "bg-yellow-950/40 text-yellow-400 border-yellow-900/60";
+  }
   return (
-    <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${entry.cls}`}>
-      {entry.text}
+    <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${cls}`}>
+      {text}
     </span>
   );
 }
@@ -80,7 +86,7 @@ export default function Backups() {
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Backups</h1>
-          <p className="text-slate-500 text-sm mt-1">Automatic snapshots taken before each sync</p>
+          <p className="text-slate-500 text-sm mt-1">Safety, grail, and vault backups — latest snapshot always preserved above</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -123,26 +129,78 @@ export default function Backups() {
         </div>
       )}
 
-      {isLoading && (
-        <div className="text-slate-500 text-center py-10">Loading backups...</div>
-      )}
+      {(() => {
+        const allBackups = backups ?? [];
+        const latestSnapshot = allBackups.find(
+          (s) => s.label === "manual" || s.label === "game_close"
+        );
+        const regularBackups = allBackups.filter(
+          (s) => s.label !== "manual" && s.label !== "game_close"
+        );
 
-      {!isLoading && (backups ?? []).length === 0 && (
-        <div className="text-slate-500 text-center py-10 text-sm">
-          No backups yet — backups are created automatically before each sync
-        </div>
-      )}
+        return (
+          <>
+            {/* Latest Snapshot - pinned */}
+            <div className="card-d2 p-4 border-l-2 border-l-d2gold/40 mb-6">
+              <p className="text-slate-600 text-[10px] uppercase tracking-wider mb-3">Latest Snapshot</p>
+              {isLoading ? (
+                <div className="text-slate-600 text-sm">Loading...</div>
+              ) : latestSnapshot ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${
+                        latestSnapshot.source_machine === "pc"
+                          ? "bg-violet-950/40 text-violet-400 border-violet-900/60"
+                          : "bg-cyan-950/40 text-cyan-400 border-cyan-900/60"
+                      }`}>
+                        {latestSnapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
+                      </span>
+                      <span className="text-slate-200 text-sm font-medium">{fmtUtc(latestSnapshot.created_at)}</span>
+                      <span className="text-slate-500 text-xs">
+                        {latestSnapshot.file_count} file{latestSnapshot.file_count !== 1 ? "s" : ""}
+                      </span>
+                      {(latestSnapshot.characters ?? []).length > 0 && (
+                        <span className="text-slate-500 text-xs">
+                          · {latestSnapshot.characters!.length} character{latestSnapshot.characters!.length !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setConfirmRestore(latestSnapshot.id)}
+                    className="btn-d2 text-xs px-3 py-1.5 shrink-0"
+                  >
+                    Restore
+                  </button>
+                </div>
+              ) : (
+                <p className="text-slate-600 text-sm">
+                  No snapshot yet — take a manual snapshot or wait for auto-sync
+                </p>
+              )}
+            </div>
 
-      <div className="space-y-3">
-        {(backups ?? []).map((snap) => (
-          <SnapshotRow
-            key={snap.id}
-            snapshot={snap}
-            onDelete={() => setConfirmDelete(snap.id)}
-            onRestore={() => setConfirmRestore(snap.id)}
-          />
-        ))}
-      </div>
+            {/* Safety / Grail / Vault backups */}
+            {!isLoading && regularBackups.length === 0 && (
+              <div className="text-slate-500 text-center py-10 text-sm">
+                No safety backups yet — created automatically before each sync
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {regularBackups.map((snap) => (
+                <SnapshotRow
+                  key={snap.id}
+                  snapshot={snap}
+                  onDelete={() => setConfirmDelete(snap.id)}
+                  onRestore={() => setConfirmRestore(snap.id)}
+                />
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       {confirmDelete !== null && (
         <ConfirmDialog

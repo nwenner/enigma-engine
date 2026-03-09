@@ -157,6 +157,7 @@ export interface StashResponse {
   gold: number;
   vault_gold: number;
   tabs: StashTab[];
+  snapshot_at: string | null;
 }
 
 export interface VaultItemResponse {
