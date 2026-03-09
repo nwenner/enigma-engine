@@ -15,6 +15,12 @@ import type {
   StashResponse,
   VaultItemResponse,
   GoldVaultResponse,
+  SeasonDetail,
+  SeasonListItem,
+  SeasonCreateInput,
+  ValidateItemResponse,
+  RewardOut,
+  ValidateRewardResponse,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
@@ -395,6 +401,175 @@ export function useRetrieveVaultItem() {
       api.post(`/vault/items/${itemId}/retrieve`, { machine, mode }).then((r) => r.data),
     onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["vault", "items", mode] });
+    },
+  });
+}
+
+// ─── Item hex export (for season rewards) ────────────────────────────────────
+
+export function useFetchStashItemBytes() {
+  return useMutation<
+    { hex: string; byte_len: number; display_name: string; quality: number; quality_name: string; item_type: string },
+    Error,
+    { mode: "sc" | "hc"; tab: number; index: number }
+  >({
+    mutationFn: ({ mode, tab, index }) =>
+      api.get(`/stash/item-bytes?mode=${mode}&tab=${tab}&index=${index}`).then((r) => r.data),
+  });
+}
+
+export function useFetchVaultItemBytes() {
+  return useMutation<
+    { hex: string; byte_len: number; display_name: string; quality: number; quality_name: string; item_type: string },
+    Error,
+    number
+  >({
+    mutationFn: (itemId) =>
+      api.get(`/vault/items/${itemId}/bytes`).then((r) => r.data),
+  });
+}
+
+// ─── Seasons ──────────────────────────────────────────────────────────────────
+
+export function useSeasons() {
+  return useQuery<SeasonListItem[]>({
+    queryKey: ["seasons"],
+    queryFn: () => api.get("/seasons").then((r) => r.data),
+  });
+}
+
+export function useActiveSeason() {
+  return useQuery<SeasonDetail>({
+    queryKey: ["seasons", "active"],
+    queryFn: () => api.get("/seasons/active").then((r) => r.data),
+    retry: false,
+  });
+}
+
+export function useSeason(id: number | null) {
+  return useQuery<SeasonDetail>({
+    queryKey: ["seasons", id],
+    queryFn: () => api.get(`/seasons/${id}`).then((r) => r.data),
+    enabled: id !== null,
+  });
+}
+
+export function useCreateSeason() {
+  const qc = useQueryClient();
+  return useMutation<SeasonDetail, Error, SeasonCreateInput>({
+    mutationFn: (body) => api.post("/seasons", body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
+  });
+}
+
+export function useStartSeason() {
+  const qc = useQueryClient();
+  return useMutation<SeasonDetail, Error, number>({
+    mutationFn: (id) => api.post(`/seasons/${id}/start`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["seasons"] });
+      qc.invalidateQueries({ queryKey: ["characters"] });
+      qc.invalidateQueries({ queryKey: ["grail"] });
+      qc.invalidateQueries({ queryKey: ["vault"] });
+    },
+  });
+}
+
+export function useEndSeason() {
+  const qc = useQueryClient();
+  return useMutation<SeasonDetail, Error, number>({
+    mutationFn: (id) => api.post(`/seasons/${id}/end`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
+  });
+}
+
+export function useDeleteSeason() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, number>({
+    mutationFn: (id) => api.delete(`/seasons/${id}`).then(() => undefined),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
+  });
+}
+
+export function useClaimAchievement() {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; claimed_at: string }, Error, number>({
+    mutationFn: (achievementId) =>
+      api.post(`/seasons/achievements/${achievementId}/claim`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["seasons"] });
+    },
+  });
+}
+
+export function useValidateRewardItem() {
+  return useMutation<ValidateItemResponse, Error, string>({
+    mutationFn: (hex) =>
+      api.post("/seasons/milestones/validate-item", { reward_item_hex: hex }).then((r) => r.data),
+  });
+}
+
+// ─── Reward Library ───────────────────────────────────────────────────────────
+
+export function useRewards() {
+  return useQuery<RewardOut[]>({
+    queryKey: ["rewards"],
+    queryFn: () => api.get("/rewards").then((r) => r.data),
+  });
+}
+
+export function useValidateReward() {
+  return useMutation<ValidateRewardResponse, Error, string>({
+    mutationFn: (hex) => api.post("/rewards/validate", { hex }).then((r) => r.data),
+  });
+}
+
+export function useCreateReward() {
+  const qc = useQueryClient();
+  return useMutation<RewardOut, Error, { name: string; hex: string; notes?: string | null }>({
+    mutationFn: (body) => api.post("/rewards", body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rewards"] }),
+  });
+}
+
+export function useUpdateReward() {
+  const qc = useQueryClient();
+  return useMutation<RewardOut, Error, { id: number; name?: string; notes?: string | null }>({
+    mutationFn: ({ id, ...body }) => api.patch(`/rewards/${id}`, body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rewards"] }),
+  });
+}
+
+export function useDeleteReward() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, number>({
+    mutationFn: (id) => api.delete(`/rewards/${id}`).then(() => undefined),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rewards"] }),
+  });
+}
+
+export interface ExtractedD2IItem {
+  filename: string;
+  hex: string;
+  byte_len: number;
+  item_name: string | null;
+  item_code: string | null;
+  quality: number | null;
+  quality_name: string | null;
+  item_level: number | null;
+  is_ethereal: boolean;
+  valid: boolean;
+  error: string | null;
+}
+
+export function useExtractFromD2I() {
+  return useMutation<ExtractedD2IItem, Error, File>({
+    mutationFn: (file) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api.post("/rewards/extract-from-item", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }).then((r) => r.data);
     },
   });
 }

@@ -269,3 +269,40 @@ class TestUnknownLabel:
         await _prune_backups(session, _cfg(), "")
 
         session.execute.assert_not_called()
+
+
+# ─── season_archive (never pruned) ───────────────────────────────────────────
+
+class TestSeasonArchivePrune:
+    async def test_season_archive_is_never_pruned(self) -> None:
+        """season_archive snapshots are never auto-pruned regardless of count."""
+        session = AsyncMock()
+        # Even with 100 season_archive snaps, the function returns early
+        await _prune_backups(session, _cfg(), "season_archive")
+        session.execute.assert_not_called()
+        session.delete.assert_not_called()
+        session.commit.assert_not_called()
+
+
+# ─── pre_season_reward (keep 5 total) ────────────────────────────────────────
+
+class TestPreSeasonRewardPrune:
+    async def test_keeps_5_total(self) -> None:
+        """7 pre_season_reward snapshots → delete 2."""
+        snaps = [_snap(i, label="pre_season_reward") for i in range(7)]
+        session = _session(snaps)
+        await _prune_backups(session, _cfg(), "pre_season_reward")
+        assert session.delete.call_count == 2
+        session.commit.assert_called_once()
+
+    async def test_no_op_below_limit(self) -> None:
+        snaps = [_snap(i, label="pre_season_reward") for i in range(3)]
+        session = _session(snaps)
+        await _prune_backups(session, _cfg(), "pre_season_reward")
+        session.delete.assert_not_called()
+
+    async def test_no_op_at_exact_limit(self) -> None:
+        snaps = [_snap(i, label="pre_season_reward") for i in range(5)]
+        session = _session(snaps)
+        await _prune_backups(session, _cfg(), "pre_season_reward")
+        session.delete.assert_not_called()

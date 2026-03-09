@@ -7,6 +7,8 @@ import {
   useStoreItem,
   useRetrieveVaultItem,
   usePreflight,
+  useFetchStashItemBytes,
+  useFetchVaultItemBytes,
 } from "../api/hooks";
 import type { StashItem, VaultItemResponse } from "../api/types";
 import { fmtRelative, fmtUtcDate } from "../utils/dates";
@@ -57,6 +59,74 @@ function GoldBar({ current, max }: { current: number; max: number }) {
         style={{ width: `${pct}%` }}
       />
     </div>
+  );
+}
+
+// ─── Copy hex button ──────────────────────────────────────────────────────────
+
+function CopyStashHexButton({ mode, tab, index }: { mode: Mode; tab: number; index: number }) {
+  const fetch = useFetchStashItemBytes();
+  const [state, setState] = useState<"idle" | "loading" | "copied" | "error">("idle");
+
+  const handleClick = async () => {
+    setState("loading");
+    try {
+      const result = await fetch.mutateAsync({ mode, tab, index });
+      await navigator.clipboard.writeText(result.hex);
+      setState("copied");
+      setTimeout(() => setState("idle"), 2000);
+    } catch {
+      setState("error");
+      setTimeout(() => setState("idle"), 2000);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={state === "loading"}
+      title="Copy raw item hex bytes (for season rewards)"
+      className={`text-[10px] font-mono px-1.5 py-0.5 border transition-colors shrink-0 ${
+        state === "copied" ? "text-green-400 border-green-700" :
+        state === "error"  ? "text-red-400 border-red-700" :
+        "text-slate-600 border-slate-800 hover:text-d2gold hover:border-d2gold/50"
+      }`}
+    >
+      {state === "loading" ? "…" : state === "copied" ? "✓hex" : state === "error" ? "err" : "hex"}
+    </button>
+  );
+}
+
+function CopyVaultHexButton({ itemId }: { itemId: number }) {
+  const fetch = useFetchVaultItemBytes();
+  const [state, setState] = useState<"idle" | "loading" | "copied" | "error">("idle");
+
+  const handleClick = async () => {
+    setState("loading");
+    try {
+      const result = await fetch.mutateAsync(itemId);
+      await navigator.clipboard.writeText(result.hex);
+      setState("copied");
+      setTimeout(() => setState("idle"), 2000);
+    } catch {
+      setState("error");
+      setTimeout(() => setState("idle"), 2000);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={state === "loading"}
+      title="Copy raw item hex bytes (for season rewards)"
+      className={`text-[10px] font-mono px-1.5 py-0.5 border transition-colors shrink-0 ${
+        state === "copied" ? "text-green-400 border-green-700" :
+        state === "error"  ? "text-red-400 border-red-700" :
+        "text-slate-600 border-slate-800 hover:text-d2gold hover:border-d2gold/50"
+      }`}
+    >
+      {state === "loading" ? "…" : state === "copied" ? "✓hex" : state === "error" ? "err" : "hex"}
+    </button>
   );
 }
 
@@ -336,9 +406,13 @@ function QualitySummary({ items }: { items: StashItem[] }) {
 
 function ItemRow({
   item,
+  tab,
+  mode,
   onStore,
 }: {
   item: StashItem;
+  tab: number;
+  mode: Mode;
   onStore: () => void;
 }) {
   const colorText = qualityColor(item.quality).split(" ")[0];
@@ -371,6 +445,7 @@ function ItemRow({
           {item.item_type}
         </span>
 
+        <CopyStashHexButton mode={mode} tab={tab} index={item.page_item_index} />
         <button
           onClick={onStore}
           className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
@@ -441,6 +516,8 @@ function StashTabView({
               <ItemRow
                 key={idx}
                 item={item}
+                tab={activeTab}
+                mode={mode}
                 onStore={() => setStoreTarget({ item, tab: activeTab })}
               />
             ))}
@@ -514,6 +591,7 @@ function VaultSection({ mode }: { mode: Mode }) {
                       ilvl {item.item_level}
                     </span>
                   )}
+                  <CopyVaultHexButton itemId={item.id} />
                   <button
                     onClick={() => setRetrieveTarget(item)}
                     className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"

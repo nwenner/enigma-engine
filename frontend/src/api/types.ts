@@ -188,3 +188,109 @@ export interface GrailProgress {
   set_found: number;
   items: GrailItem[];
 }
+
+// ─── Seasons ──────────────────────────────────────────────────────────────────
+
+export interface SeasonMilestone {
+  id: number;
+  season_id: number;
+  name: string;
+  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell";
+  level_target: number | null;
+  reward_item_name: string | null;
+  reward_item_code: string | null;
+  has_reward: boolean;
+  time_limit_hours: number | null;
+  is_expired: boolean;
+  sort_order: number;
+}
+
+export interface SeasonAchievement {
+  id: number;
+  season_id: number;
+  milestone_id: number;
+  character_name: string;
+  character_class: string;
+  character_level: number;
+  achieved_at: string;
+  claimed_at: string | null;
+}
+
+export interface SeasonDetail {
+  id: number;
+  name: string;
+  status: "setup" | "active" | "completed";
+  started_at: string | null;
+  ended_at: string | null;
+  scheduled_end_at: string | null;
+  duration_weeks: number | null;
+  notes: string | null;
+  created_at: string;
+  milestones: SeasonMilestone[];
+  achievements: SeasonAchievement[];
+}
+
+export interface SeasonListItem {
+  id: number;
+  name: string;
+  status: "setup" | "active" | "completed";
+  started_at: string | null;
+  ended_at: string | null;
+  scheduled_end_at: string | null;
+  duration_weeks: number | null;
+  created_at: string;
+  milestone_count: number;
+  achievement_count: number;
+}
+
+export interface MilestoneCreateInput {
+  name: string;
+  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell";
+  level_target?: number | null;
+  sort_order: number;
+  reward_item_hex?: string | null;
+  reward_item_name?: string | null;
+  reward_item_code?: string | null;
+  time_limit_hours?: number | null;
+}
+
+export interface SeasonCreateInput {
+  name: string;
+  notes?: string | null;
+  duration_weeks?: number | null;
+  milestones: MilestoneCreateInput[];
+}
+
+export interface ValidateItemResponse {
+  item_name: string | null;
+  item_code: string | null;
+  quality: number | null;
+}
+
+// ─── Reward Library ───────────────────────────────────────────────────────────
+
+export interface RewardOut {
+  id: number;
+  name: string;
+  item_code: string | null;
+  item_name: string | null;
+  quality: number | null;
+  quality_name: string | null;
+  item_level: number | null;
+  is_ethereal: boolean;
+  notes: string | null;
+  byte_len: number;
+  created_at: string;
+}
+
+export interface ValidateRewardResponse {
+  item_name: string | null;
+  item_code: string | null;
+  quality: number | null;
+  quality_name: string | null;
+  item_level: number | null;
+  is_ethereal: boolean | null;
+  byte_len: number;
+  valid: boolean;
+  error: string | null;
+}

@@ -13,6 +13,8 @@ from backend.routers import autosync as autosync_router
 from backend.routers import notifications as notifications_router
 from backend.routers import grail as grail_router
 from backend.routers import stash as stash_router
+from backend.routers import seasons as seasons_router
+from backend.routers import rewards as rewards_router
 from backend.services.auto_sync import run_auto_sync_watcher
 
 
@@ -49,6 +51,8 @@ app.include_router(autosync_router.router, prefix="/api")
 app.include_router(notifications_router.router, prefix="/api")
 app.include_router(grail_router.router, prefix="/api")
 app.include_router(stash_router.router, prefix="/api")
+app.include_router(seasons_router.router, prefix="/api")
+app.include_router(rewards_router.router, prefix="/api")
 
 # Serve React SPA static assets
 if FRONTEND_DIST.exists():

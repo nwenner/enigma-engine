@@ -59,6 +59,7 @@ class Character(Base):
     hardcore = Column(Boolean, default=False)
     ever_died = Column(Boolean, default=False)
     expansion = Column(Boolean, default=True)
+    difficulty_active = Column(Integer, nullable=False, default=0)  # 0=Normal, 1=Nightmare, 2=Hell
     modified_at = Column(Float, nullable=False)
     last_updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -130,3 +131,68 @@ class GrailEntry(Base):
     is_deposited = Column(Boolean, nullable=False, default=False)  # True if tab 5 was cleared
 
     __table_args__ = (UniqueConstraint("catalog_id", "hardcore", name="uq_grail_entry"),)
+
+
+# ─── Seasons ──────────────────────────────────────────────────────────────────
+
+class Season(Base):
+    __tablename__ = "seasons"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)                       # "Season 1: Ladder Reset"
+    status = Column(String, nullable=False, default="setup")    # "setup" | "active" | "completed"
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    archive_snapshot_id = Column(Integer, ForeignKey("backup_snapshots.id"), nullable=True)
+    notes = Column(String, nullable=True)
+    duration_weeks = Column(Integer, nullable=True)             # null = no time limit; 1-26
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SeasonMilestone(Base):
+    __tablename__ = "season_milestones"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)                       # "Cleared Normal", "Hit Level 50"
+    milestone_type = Column(String, nullable=False)             # "level" | "cleared_normal" | "cleared_nightmare"
+    level_target = Column(Integer, nullable=True)               # for milestone_type="level" only
+    reward_item_bytes = Column(LargeBinary, nullable=True)
+    reward_item_name = Column(String, nullable=True)            # display name
+    reward_item_code = Column(String(4), nullable=True)         # 4-char type code for UI
+    time_limit_hours = Column(Integer, nullable=True)           # null = no time limit; e.g. 48 = 2 days
+    sort_order = Column(Integer, nullable=False, default=0)
+
+
+class SeasonAchievement(Base):
+    __tablename__ = "season_achievements"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False, index=True)
+    milestone_id = Column(Integer, ForeignKey("season_milestones.id"), nullable=False, index=True)
+    character_name = Column(String, nullable=False)
+    character_class = Column(String, nullable=False)
+    character_level = Column(Integer, nullable=False)
+    achieved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    claimed_at = Column(DateTime, nullable=True)                # null = reward not yet claimed
+
+    __table_args__ = (UniqueConstraint("milestone_id", "character_name", name="uq_season_achievement"),)
+
+
+# ─── Season Reward Library ────────────────────────────────────────────────────
+
+class SeasonReward(Base):
+    """User-curated library of items to use as season milestone rewards."""
+    __tablename__ = "season_rewards"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)           # User-defined label, e.g. "Harlequin Crest"
+    item_code = Column(String(4), nullable=True)    # 4-char Huffman type code from parsing
+    item_name = Column(String, nullable=True)       # Parsed display name
+    quality = Column(Integer, nullable=True)        # Raw quality int (7=unique, 5=set, etc.)
+    quality_name = Column(String, nullable=True)    # e.g. "unique"
+    item_level = Column(Integer, nullable=True)     # Parsed ilvl
+    is_ethereal = Column(Boolean, nullable=False, default=False)
+    raw_item_bytes = Column(LargeBinary, nullable=False)
+    notes = Column(String, nullable=True)           # Optional user notes
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

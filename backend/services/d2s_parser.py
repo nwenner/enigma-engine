@@ -63,9 +63,27 @@ class D2SCharacter:
     ever_died: bool
     expansion: bool
     filename: str
+    difficulty_active: int = 0  # 0=Normal, 1=Nightmare, 2=Hell
+    hell_completed: bool = False  # True if Baal killed in Hell (quests CompletedDifficulty)
+
+    @property
+    def cleared_normal(self) -> bool:
+        return self.difficulty_active >= 1
+
+    @property
+    def cleared_nightmare(self) -> bool:
+        return self.difficulty_active >= 2
+
+    @property
+    def cleared_hell(self) -> bool:
+        return self.hell_completed
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["cleared_normal"] = self.cleared_normal
+        d["cleared_nightmare"] = self.cleared_nightmare
+        d["cleared_hell"] = self.cleared_hell
+        return d
 
 
 def parse_d2s(path: Path) -> D2SCharacter:
@@ -114,6 +132,47 @@ def parse_d2s(path: Path) -> D2SCharacter:
     ever_died = bool(status & (1 << 3))
     expansion = bool(status & (1 << 5))
 
+    # Difficulty / location block: 3 bytes at indices 0=Normal, 1=Nightmare, 2=Hell.
+    # Bit 7 (0x80) of each byte = character is currently active at that difficulty.
+    # Source: D2SLib-D2R (https://github.com/locbones/D2SLib-D2R) Locations.cs
+    #
+    # v96-99 layout: offset 0x00A8
+    #   After header(16) + ActiveWeapon(4) + Name(16) + Status…Level(8) + Created(4) +
+    #   LastPlayed(4) + Unk(4) + AssignedSkills[16](64) + MouseSkills(16) + Appearances(32)
+    #
+    # v100+ layout: offset 0x0098
+    #   The 16-byte "Name (old)" field is absent from the header area (name moved to 0x12B),
+    #   so every field from 0x14 onward shifts 16 bytes earlier: 0x00A8 - 0x10 = 0x0098
+    difficulty_active = 0
+    diff_offset = 0x0098 if version >= 100 else 0x00A8
+    if len(data) >= diff_offset + 3:
+        diff_data = data[diff_offset: diff_offset + 3]
+        for i, b in enumerate(diff_data):
+            if b & 0x80:
+                difficulty_active = i
+
+    # Quests section: "Woo!" header followed by 3 × QuestsDifficulty blocks.
+    # Source: D2SLib-D2R Quests.cs
+    #
+    # v96-99: quests at 0x014B; v100+: 0x013B (16 bytes earlier, no "Name old" field)
+    #
+    # Hell CompletedDifficulty byte offset from quests start:
+    #   header(10) + Normal(94) + Nightmare(94)
+    #   + Hell[ActI(14) + ActII(16) + ActIII(16) + ActIV(18)]
+    #   + Hell ActV[TraveledToAct(2) + NPC(2) + junk(4) + 6×quest(12) + ResetStats(1)]
+    #   = 10 + 94 + 94 + 64 + 21 = 283
+    # Bit 0x80 set → difficulty completed (Baal killed in Hell).
+    _WOO = b"Woo!"
+    _HELL_COMPLETED_FROM_QUESTS = 283
+    quests_offset = 0x013B if version >= 100 else 0x014B
+    hell_completed = False
+    if (
+        len(data) >= quests_offset + 4
+        and data[quests_offset: quests_offset + 4] == _WOO
+        and len(data) > quests_offset + _HELL_COMPLETED_FROM_QUESTS
+    ):
+        hell_completed = bool(data[quests_offset + _HELL_COMPLETED_FROM_QUESTS] & 0x80)
+
     return D2SCharacter(
         name=name,
         class_name=CLASS_NAMES.get(class_id, f"Unknown(class {class_id})"),
@@ -123,4 +182,6 @@ def parse_d2s(path: Path) -> D2SCharacter:
         ever_died=ever_died,
         expansion=expansion,
         filename=path.name,
+        difficulty_active=difficulty_active,
+        hell_completed=hell_completed,
     )

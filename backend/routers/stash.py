@@ -342,6 +342,83 @@ async def list_vault_items(
     ]
 
 
+@router.get("/stash/item-bytes")
+async def get_stash_item_bytes(
+    mode: Mode = Query(...),
+    tab: int = Query(...),
+    index: int = Query(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Return the raw hex bytes for a single item from the latest local snapshot.
+    No SSH required — reads from disk.  Use this to grab bytes for season rewards.
+    """
+    from backend.services.stash_service import _mode_hardcore, _stash_filename
+    from backend.services.item_parsing import parse_stash
+
+    result = await session.execute(
+        select(BackupSnapshot)
+        .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+        .order_by(BackupSnapshot.created_at.desc())
+        .limit(1)
+    )
+    snap = result.scalar_one_or_none()
+    if snap is None:
+        raise HTTPException(404, "No snapshot available")
+
+    local_dir = get_settings().data_dir / snap.snapshot_path
+    hardcore = _mode_hardcore(mode)
+    local_path = local_dir / _stash_filename(hardcore)
+    if not local_path.exists():
+        raise HTTPException(404, "Stash file not found in snapshot")
+
+    stash = parse_stash(local_path, hardcore=hardcore)
+
+    if tab >= len(stash.pages):
+        raise HTTPException(400, f"Tab {tab} out of range")
+    page = stash.pages[tab]
+    if index >= len(page.items):
+        raise HTTPException(400, f"Item index {index} out of range (tab has {len(page.items)} items)")
+
+    item = page.items[index]
+    raw = bytes(page.raw_bytes[item.byte_start:item.byte_end])
+    hex_spaced = " ".join(f"{b:02x}" for b in raw)
+
+    return {
+        "hex": hex_spaced,
+        "byte_len": len(raw),
+        "display_name": item.display_name,
+        "quality": item.quality,
+        "quality_name": QUALITY_NAMES.get(item.quality, "unknown"),
+        "item_type": item.item_type.strip(),
+    }
+
+
+@router.get("/vault/items/{item_id}/bytes")
+async def get_vault_item_bytes(
+    item_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Return the raw hex bytes for a vault item (already stored in DB)."""
+    item = await session.get(VaultItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Vault item not found")
+    if not item.raw_item_bytes:
+        raise HTTPException(404, "No raw bytes stored for this item")
+
+    raw = bytes(item.raw_item_bytes)
+    hex_spaced = " ".join(f"{b:02x}" for b in raw)
+
+    return {
+        "hex": hex_spaced,
+        "byte_len": len(raw),
+        "display_name": item.name or item.base_item or "Unknown",
+        "quality": item.quality,
+        "quality_name": QUALITY_NAMES.get(item.quality, "unknown"),
+        "item_type": item.item_code,
+    }
+
+
 @router.get("/stash/debug")
 async def get_stash_debug(
     machine: Machine = Query(...),

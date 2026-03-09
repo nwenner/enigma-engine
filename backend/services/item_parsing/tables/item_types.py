@@ -528,4 +528,6 @@ ITEM_TYPES: dict[str, str] = {
     "wsd": "War Sword",
     "xrg": "Scutum",
     "xtp": "Mage Plate",
+    # ── Reign of the Warlock patch ──────────────────────────────────────────
+    "wac": "Occult Tome",
 }

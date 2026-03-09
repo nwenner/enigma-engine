@@ -304,6 +304,13 @@ async def run_sync(
         except Exception as _grail_err:
             log.warning("Grail hook failed (sync unaffected): %s", _grail_err)
 
+        # --- 8d. Check season milestones ---
+        try:
+            from backend.services.seasons_service import check_season_milestones
+            await check_season_milestones(session=session, downloaded=downloaded)
+        except Exception as _season_err:
+            log.warning("Seasons hook failed (sync unaffected): %s", _season_err)
+
     except Exception as e:
         log.error("Sync operation %d failed: %s", operation.id, e)
         operation.status = "failed"
@@ -357,6 +364,16 @@ async def _prune_backups(session: AsyncSession, cfg, label: str) -> None:
             .order_by(BackupSnapshot.created_at.desc())
         )
         keep = 5
+    elif label == "pre_season_reward":
+        result = await session.execute(
+            select(BackupSnapshot)
+            .where(BackupSnapshot.label == "pre_season_reward")
+            .order_by(BackupSnapshot.created_at.desc())
+        )
+        keep = 5
+    elif label == "season_archive":
+        # Season archives are never auto-pruned — lifecycle managed via Season records
+        return
     else:
         return
 

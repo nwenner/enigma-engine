@@ -36,6 +36,25 @@ async def init_db() -> None:
         except Exception:
             pass
 
+        # ── Seasons feature migrations ──────────────────────────────────────
+        # characters: difficulty_active
+        try:
+            await conn.execute(text("ALTER TABLE characters ADD COLUMN difficulty_active INTEGER NOT NULL DEFAULT 0"))
+        except Exception:
+            pass
+
+        # seasons: duration_weeks
+        try:
+            await conn.execute(text("ALTER TABLE seasons ADD COLUMN duration_weeks INTEGER"))
+        except Exception:
+            pass
+
+        # season_milestones: time_limit_hours
+        try:
+            await conn.execute(text("ALTER TABLE season_milestones ADD COLUMN time_limit_hours INTEGER"))
+        except Exception:
+            pass
+
 
 async def get_session() -> AsyncSession:
     async with AsyncSessionLocal() as session:

@@ -113,6 +113,8 @@ async def upsert_characters(session: AsyncSession, chars: list[dict]) -> None:
         incoming_mtime = float(char_dict.get("modified_at", 0.0))
         now = datetime.utcnow()
 
+        difficulty_active = int(char_dict.get("difficulty_active", 0))
+
         if existing is None:
             session.add(
                 Character(
@@ -124,6 +126,7 @@ async def upsert_characters(session: AsyncSession, chars: list[dict]) -> None:
                     hardcore=bool(char_dict.get("hardcore", False)),
                     ever_died=bool(char_dict.get("ever_died", False)),
                     expansion=bool(char_dict.get("expansion", True)),
+                    difficulty_active=difficulty_active,
                     modified_at=incoming_mtime,
                     last_updated_at=now,
                 )
@@ -136,6 +139,7 @@ async def upsert_characters(session: AsyncSession, chars: list[dict]) -> None:
             existing.hardcore = bool(char_dict.get("hardcore", False))
             existing.ever_died = bool(char_dict.get("ever_died", False))
             existing.expansion = bool(char_dict.get("expansion", True))
+            existing.difficulty_active = difficulty_active
             existing.modified_at = incoming_mtime
             existing.last_updated_at = now
         else:
