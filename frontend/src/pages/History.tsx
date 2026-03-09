@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useHistory } from "../api/hooks";
 import Collapsible from "../components/Collapsible";
 import type { SyncOperationResponse } from "../api/types";
-
-const fmtUtc = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z").toLocaleString();
+import { fmtUtc, parseUtc } from "../utils/dates";
 
 const STATUS_STYLES: Record<string, string> = {
   success: "bg-green-950/40 text-green-400 border-green-900/60",
@@ -76,8 +75,8 @@ function OperationRow({ operation }: { operation: SyncOperationResponse }) {
   const duration =
     operation.completed_at
       ? Math.round(
-          (new Date(operation.completed_at).getTime() -
-            new Date(operation.started_at).getTime()) /
+          (parseUtc(operation.completed_at).getTime() -
+            parseUtc(operation.started_at).getTime()) /
             1000
         )
       : null;

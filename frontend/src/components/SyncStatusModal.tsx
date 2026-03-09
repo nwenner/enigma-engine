@@ -1,4 +1,5 @@
 import { useSyncStatus } from "../api/hooks";
+import { fmtUtcTime } from "../utils/dates";
 
 interface Props {
   syncId: number;
@@ -69,7 +70,7 @@ export default function SyncStatusModal({ syncId, onClose }: Props) {
                 <div className="flex justify-between">
                   <span>Completed</span>
                   <span className="text-slate-300">
-                    {new Date(status.completed_at).toLocaleTimeString()}
+                    {fmtUtcTime(status.completed_at)}
                   </span>
                 </div>
               )}

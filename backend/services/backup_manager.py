@@ -70,7 +70,7 @@ async def create_snapshot(
     backup_subdir = cfg.backups_dir / machine / f"{timestamp}_{label}"
     backup_subdir.mkdir(parents=True, exist_ok=True)
 
-    def _download_all() -> list[str]:
+    def _download_all() -> list[dict]:
         backed_up = []
         with ssh_mod.get_sftp(**conn_kwargs) as (_ssh, sftp):
             all_files = ssh_mod.list_all_files(sftp, save_dir)
@@ -78,17 +78,24 @@ async def create_snapshot(
                 remote = ssh_mod.normalize_path(file_info["path"])
                 local = backup_subdir / file_info["filename"]
                 _sftp_download(sftp, remote, local)
-                backed_up.append(file_info["filename"])
+                backed_up.append({
+                    "filename": file_info["filename"],
+                    "modified_at": file_info.get("modified_at", 0.0),
+                })
         return backed_up
 
     backed_up_files = await asyncio.to_thread(_download_all)
 
     backup_chars = []
-    for fname in backed_up_files:
+    char_list = []
+    for item in backed_up_files:
+        fname = item["filename"]
         if fname.endswith(".d2s"):
             try:
                 c = parse_d2s(backup_subdir / fname)
-                backup_chars.append(c.to_dict())
+                d = c.to_dict()
+                backup_chars.append(d)
+                char_list.append({**d, "modified_at": item["modified_at"]})
             except D2SParseError:
                 pass
 
@@ -104,6 +111,10 @@ async def create_snapshot(
     await session.commit()
 
     await _prune_backups(session, cfg, label)
+
+    if label in ("manual", "game_close") and char_list:
+        from backend.routers.characters import upsert_characters
+        await upsert_characters(session, char_list)
 
     return snapshot
 

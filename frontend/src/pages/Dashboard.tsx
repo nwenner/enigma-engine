@@ -14,6 +14,7 @@ import CharacterCard from "../components/CharacterCard";
 import SyncStatusModal from "../components/SyncStatusModal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { CharacterInfo, SnapshotResponse, SyncStatusResponse } from "../api/types";
+import { parseUtc, fmtRelative } from "../utils/dates";
 
 // ─── Stale check ──────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ const SYNC_THRESHOLD_SECONDS = 60;
 
 function isStale(chars: CharacterInfo[], lastSync: SyncStatusResponse | null): boolean {
   if (!lastSync?.completed_at) return false;
-  const syncTime = new Date(lastSync.completed_at).getTime() / 1000;
+  const syncTime = parseUtc(lastSync.completed_at).getTime() / 1000;
   return chars.some((c) => c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS);
 }
 
@@ -157,15 +158,6 @@ const CLASS_ICONS: Record<number, string> = {
   0: "🏹", 1: "🔥", 2: "💀", 3: "🛡️", 4: "⚔️", 5: "🌿", 6: "🗡️", 7: "🔮",
 };
 
-function relativeTime(iso: string): string {
-  const ms = Date.now() - new Date(iso.endsWith("Z") ? iso : iso + "Z").getTime();
-  const s = ms / 1000;
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
-  return new Date(iso.endsWith("Z") ? iso : iso + "Z").toLocaleDateString();
-}
 
 function LatestBackup({ snapshot }: { snapshot: SnapshotResponse }) {
   // snapshot.characters stores D2SCharacter.to_dict() shape (no modified_at/last_updated_at)
@@ -194,7 +186,7 @@ function LatestBackup({ snapshot }: { snapshot: SnapshotResponse }) {
           }`}>
             {snapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
           </span>
-          <span className="text-slate-300 text-sm">{relativeTime(snapshot.created_at)}</span>
+          <span className="text-slate-300 text-sm">{fmtRelative(snapshot.created_at)}</span>
           <span className="text-slate-600 text-xs">·</span>
           <span className="text-slate-500 text-xs">
             {snapshot.file_count} file{snapshot.file_count !== 1 ? "s" : ""}
@@ -254,7 +246,7 @@ export default function Dashboard() {
 
   const latestSnapshot = backups && backups.length > 0
     ? [...backups].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        (a, b) => parseUtc(b.created_at).getTime() - parseUtc(a.created_at).getTime()
       )[0]
     : null;
 

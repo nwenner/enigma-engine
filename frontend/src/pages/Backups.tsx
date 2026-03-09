@@ -3,8 +3,7 @@ import { useBackups, useDeleteBackup, useRestoreBackup, useCreateSnapshot, usePr
 import Collapsible from "../components/Collapsible";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { SnapshotResponse } from "../api/types";
-
-const fmtUtc = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z").toLocaleString();
+import { fmtUtc } from "../utils/dates";
 
 function LabelBadge({ label }: { label: string }) {
   let text: string;

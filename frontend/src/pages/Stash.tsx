@@ -9,24 +9,12 @@ import {
   usePreflight,
 } from "../api/hooks";
 import type { StashItem, VaultItemResponse } from "../api/types";
+import { fmtRelative, fmtUtcDate } from "../utils/dates";
 
 type Mode = "sc" | "hc";
 type Machine = "pc" | "deck";
 
 const MAX_STASH_GOLD = 12_500_000;
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtRelative(iso: string): string {
-  const d = new Date(iso.endsWith("Z") ? iso : iso + "Z");
-  const diff = Date.now() - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 // ─── Quality styling ──────────────────────────────────────────────────────────
 
@@ -503,7 +491,7 @@ function VaultSection({ mode }: { mode: Mode }) {
           {items.map((item) => {
             const colorText = qualityColor(item.quality).split(" ")[0];
             const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
-            const date = new Date(item.stored_at).toLocaleDateString();
+            const date = fmtUtcDate(item.stored_at);
             return (
               <div key={item.id} className="px-4 py-2.5">
                 <div className="flex items-center gap-2">
