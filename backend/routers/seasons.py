@@ -21,11 +21,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
-from backend.models import Season, SeasonMilestone, SeasonAchievement
+from backend.models import Season, SeasonMilestone, SeasonAchievement, SeasonStats, Character, GoldVault, GrailEntry, GrailCatalog
 from backend.routers.settings import _get_conn_kwargs, _get_setting
 from backend.services import ssh_client as ssh_mod
 
@@ -117,6 +117,34 @@ class ValidateItemResponse(BaseModel):
     item_name: Optional[str]
     item_code: Optional[str]
     quality: Optional[int]
+
+
+class CharacterStatEntry(BaseModel):
+    name: str
+    class_name: str
+    level: int
+    ever_died: bool
+    difficulty_active: int
+
+
+class SeasonStatsOut(BaseModel):
+    season_id: int
+    season_name: str
+    status: str
+    started_at: Optional[str]
+    days_elapsed: int
+    highest_level_sc: Optional[int]
+    highest_level_hc: Optional[int]
+    characters_sc: list[CharacterStatEntry]
+    characters_hc: list[CharacterStatEntry]
+    total_gold_vault_sc: int
+    total_gold_vault_hc: int
+    grail_uniques_sc: int
+    grail_sets_sc: int
+    grail_uniques_hc: int
+    grail_sets_hc: int
+    grail_catalog_total: int
+    grail_progress_pct: float
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -246,6 +274,129 @@ async def get_active_season(session: AsyncSession = Depends(get_session)):
     return await _season_out(session, season)
 
 
+async def _live_stats_out(session: AsyncSession, season: Season) -> SeasonStatsOut:
+    """Compute live season stats from current DB data."""
+    chars_result = await session.execute(select(Character))
+    all_chars = list(chars_result.scalars().all())
+    sc_chars = [c for c in all_chars if not c.hardcore]
+    hc_chars = [c for c in all_chars if c.hardcore]
+
+    highest_level_sc = max((c.level for c in sc_chars), default=None)
+    highest_level_hc = max((c.level for c in hc_chars), default=None)
+
+    gold_result = await session.execute(select(GoldVault))
+    gold_map = {g.hardcore: g.amount for g in gold_result.scalars().all()}
+
+    grail_uniques_sc = (await session.execute(
+        select(func.count(GrailEntry.id))
+        .join(GrailCatalog, GrailEntry.catalog_id == GrailCatalog.id)
+        .where(GrailEntry.hardcore == False, GrailCatalog.quality == "unique")
+    )).scalar() or 0
+    grail_sets_sc = (await session.execute(
+        select(func.count(GrailEntry.id))
+        .join(GrailCatalog, GrailEntry.catalog_id == GrailCatalog.id)
+        .where(GrailEntry.hardcore == False, GrailCatalog.quality == "set")
+    )).scalar() or 0
+    grail_uniques_hc = (await session.execute(
+        select(func.count(GrailEntry.id))
+        .join(GrailCatalog, GrailEntry.catalog_id == GrailCatalog.id)
+        .where(GrailEntry.hardcore == True, GrailCatalog.quality == "unique")
+    )).scalar() or 0
+    grail_sets_hc = (await session.execute(
+        select(func.count(GrailEntry.id))
+        .join(GrailCatalog, GrailEntry.catalog_id == GrailCatalog.id)
+        .where(GrailEntry.hardcore == True, GrailCatalog.quality == "set")
+    )).scalar() or 0
+    grail_catalog_total = (await session.execute(
+        select(func.count(GrailCatalog.id))
+    )).scalar() or 0
+
+    days_elapsed = 0
+    if season.started_at:
+        started = season.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        days_elapsed = (datetime.now(timezone.utc) - started).days
+
+    grail_progress_pct = round(
+        (grail_uniques_sc + grail_sets_sc) / grail_catalog_total * 100, 1
+    ) if grail_catalog_total > 0 else 0.0
+
+    return SeasonStatsOut(
+        season_id=season.id,
+        season_name=season.name,
+        status=season.status,
+        started_at=season.started_at.isoformat() if season.started_at else None,
+        days_elapsed=days_elapsed,
+        highest_level_sc=highest_level_sc,
+        highest_level_hc=highest_level_hc,
+        characters_sc=[CharacterStatEntry(**{k: getattr(c, k) for k in ("name", "class_name", "level", "ever_died", "difficulty_active")}) for c in sc_chars],
+        characters_hc=[CharacterStatEntry(**{k: getattr(c, k) for k in ("name", "class_name", "level", "ever_died", "difficulty_active")}) for c in hc_chars],
+        total_gold_vault_sc=gold_map.get(False, 0),
+        total_gold_vault_hc=gold_map.get(True, 0),
+        grail_uniques_sc=grail_uniques_sc,
+        grail_sets_sc=grail_sets_sc,
+        grail_uniques_hc=grail_uniques_hc,
+        grail_sets_hc=grail_sets_hc,
+        grail_catalog_total=grail_catalog_total,
+        grail_progress_pct=grail_progress_pct,
+    )
+
+
+@router.get("/seasons/active/stats", response_model=SeasonStatsOut)
+async def get_active_season_stats(session: AsyncSession = Depends(get_session)):
+    """Live metrics for the active season, computed from current DB data."""
+    result = await session.execute(select(Season).where(Season.status == "active"))
+    season = result.scalar_one_or_none()
+    if season is None:
+        raise HTTPException(404, "No active season")
+    return await _live_stats_out(session, season)
+
+
+@router.get("/seasons/{season_id}/stats", response_model=SeasonStatsOut)
+async def get_season_stats(season_id: int, session: AsyncSession = Depends(get_session)):
+    """Finalized metrics for a completed season from the SeasonStats snapshot."""
+    season = await session.get(Season, season_id)
+    if season is None:
+        raise HTTPException(404, "Season not found")
+
+    # For active seasons, return live data
+    if season.status == "active":
+        return await _live_stats_out(session, season)
+
+    stats_result = await session.execute(
+        select(SeasonStats).where(SeasonStats.season_id == season_id)
+    )
+    stats = stats_result.scalar_one_or_none()
+    if stats is None:
+        raise HTTPException(404, "No stats snapshot found for this season")
+
+    days_elapsed = stats.days_played or 0
+    grail_progress_pct = round(
+        (stats.grail_uniques_sc + stats.grail_sets_sc) / stats.grail_catalog_total * 100, 1
+    ) if stats.grail_catalog_total > 0 else 0.0
+
+    return SeasonStatsOut(
+        season_id=season.id,
+        season_name=season.name,
+        status=season.status,
+        started_at=season.started_at.isoformat() if season.started_at else None,
+        days_elapsed=days_elapsed,
+        highest_level_sc=stats.highest_level_sc,
+        highest_level_hc=stats.highest_level_hc,
+        characters_sc=[CharacterStatEntry(**c) for c in (stats.characters_sc or [])],
+        characters_hc=[CharacterStatEntry(**c) for c in (stats.characters_hc or [])],
+        total_gold_vault_sc=stats.total_gold_vault_sc,
+        total_gold_vault_hc=stats.total_gold_vault_hc,
+        grail_uniques_sc=stats.grail_uniques_sc,
+        grail_sets_sc=stats.grail_sets_sc,
+        grail_uniques_hc=stats.grail_uniques_hc,
+        grail_sets_hc=stats.grail_sets_hc,
+        grail_catalog_total=stats.grail_catalog_total,
+        grail_progress_pct=grail_progress_pct,
+    )
+
+
 @router.post("/seasons", response_model=SeasonOut)
 async def create_season(body: SeasonCreate, session: AsyncSession = Depends(get_session)):
     if body.duration_weeks is not None and not (1 <= body.duration_weeks <= 26):
@@ -357,11 +508,16 @@ async def start_season(
 
 @router.post("/seasons/{season_id}/end", response_model=SeasonOut)
 async def end_season(season_id: int, session: AsyncSession = Depends(get_session)):
+    from backend.services.seasons_service import compute_and_save_season_stats
+
     season = await session.get(Season, season_id)
     if season is None:
         raise HTTPException(404, "Season not found")
     if season.status != "active":
         raise HTTPException(400, "Season is not active")
+
+    # Snapshot metrics before marking completed
+    await compute_and_save_season_stats(session, season)
 
     season.status = "completed"
     season.ended_at = datetime.now(timezone.utc)

@@ -267,6 +267,34 @@ export interface ValidateItemResponse {
   quality: number | null;
 }
 
+export interface CharacterStatEntry {
+  name: string;
+  class_name: string;
+  level: number;
+  ever_died: boolean;
+  difficulty_active: number;  // 0=Normal, 1=Nightmare, 2=Hell
+}
+
+export interface SeasonStatsResponse {
+  season_id: number;
+  season_name: string;
+  status: string;
+  started_at: string | null;
+  days_elapsed: number;
+  highest_level_sc: number | null;
+  highest_level_hc: number | null;
+  characters_sc: CharacterStatEntry[];
+  characters_hc: CharacterStatEntry[];
+  total_gold_vault_sc: number;
+  total_gold_vault_hc: number;
+  grail_uniques_sc: number;
+  grail_sets_sc: number;
+  grail_uniques_hc: number;
+  grail_sets_hc: number;
+  grail_catalog_total: number;
+  grail_progress_pct: number;
+}
+
 // ─── Reward Library ───────────────────────────────────────────────────────────
 
 export interface RewardOut {

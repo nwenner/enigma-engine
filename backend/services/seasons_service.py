@@ -11,9 +11,10 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
 
+from sqlalchemy import func
 from backend.models import (
     Season, SeasonMilestone, SeasonAchievement,
-    Character, GrailEntry, VaultItem, GoldVault,
+    Character, GrailEntry, GrailCatalog, VaultItem, GoldVault, SeasonStats,
 )
 from backend.services.d2s_parser import parse_d2s, D2SParseError
 
@@ -138,6 +139,101 @@ def _milestone_met(
     return False
 
 
+# ─── Season stats snapshot ────────────────────────────────────────────────────
+
+async def compute_and_save_season_stats(session: AsyncSession, season: Season) -> SeasonStats:
+    """
+    Compute current-season metrics from DB and upsert into SeasonStats.
+    Call this before wiping data (start_season) or when ending a season.
+    """
+    # Characters
+    chars_result = await session.execute(select(Character))
+    all_chars = list(chars_result.scalars().all())
+    sc_chars = [c for c in all_chars if not c.hardcore]
+    hc_chars = [c for c in all_chars if c.hardcore]
+
+    def _char_dict(c: Character) -> dict:
+        return {
+            "name": c.name,
+            "class_name": c.class_name,
+            "level": c.level,
+            "ever_died": c.ever_died,
+            "difficulty_active": c.difficulty_active,
+        }
+
+    highest_level_sc = max((c.level for c in sc_chars), default=None)
+    highest_level_hc = max((c.level for c in hc_chars), default=None)
+
+    # Gold vault
+    gold_result = await session.execute(select(GoldVault))
+    gold_map = {g.hardcore: g.amount for g in gold_result.scalars().all()}
+    gold_sc = gold_map.get(False, 0)
+    gold_hc = gold_map.get(True, 0)
+
+    # Grail counts (join GrailEntry → GrailCatalog for quality)
+    grail_uniques_sc = (await session.execute(
+        select(func.count(GrailEntry.id))
+        .join(GrailCatalog, GrailEntry.catalog_id == GrailCatalog.id)
+        .where(GrailEntry.hardcore == False, GrailCatalog.quality == "unique")
+    )).scalar() or 0
+
+    grail_sets_sc = (await session.execute(
+        select(func.count(GrailEntry.id))
+        .join(GrailCatalog, GrailEntry.catalog_id == GrailCatalog.id)
+        .where(GrailEntry.hardcore == False, GrailCatalog.quality == "set")
+    )).scalar() or 0
+
+    grail_uniques_hc = (await session.execute(
+        select(func.count(GrailEntry.id))
+        .join(GrailCatalog, GrailEntry.catalog_id == GrailCatalog.id)
+        .where(GrailEntry.hardcore == True, GrailCatalog.quality == "unique")
+    )).scalar() or 0
+
+    grail_sets_hc = (await session.execute(
+        select(func.count(GrailEntry.id))
+        .join(GrailCatalog, GrailEntry.catalog_id == GrailCatalog.id)
+        .where(GrailEntry.hardcore == True, GrailCatalog.quality == "set")
+    )).scalar() or 0
+
+    grail_catalog_total = (await session.execute(
+        select(func.count(GrailCatalog.id))
+    )).scalar() or 0
+
+    # Days played
+    days_played: int | None = None
+    if season.started_at:
+        started = season.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        days_played = (datetime.now(timezone.utc) - started).days
+
+    # Upsert SeasonStats
+    existing = (await session.execute(
+        select(SeasonStats).where(SeasonStats.season_id == season.id)
+    )).scalar_one_or_none()
+
+    if existing is None:
+        existing = SeasonStats(season_id=season.id)
+        session.add(existing)
+
+    existing.highest_level_sc = highest_level_sc
+    existing.highest_level_hc = highest_level_hc
+    existing.characters_sc = [_char_dict(c) for c in sc_chars]
+    existing.characters_hc = [_char_dict(c) for c in hc_chars]
+    existing.total_gold_vault_sc = gold_sc
+    existing.total_gold_vault_hc = gold_hc
+    existing.grail_uniques_sc = grail_uniques_sc
+    existing.grail_sets_sc = grail_sets_sc
+    existing.grail_uniques_hc = grail_uniques_hc
+    existing.grail_sets_hc = grail_sets_hc
+    existing.grail_catalog_total = grail_catalog_total
+    existing.days_played = days_played
+    existing.snapshot_at = datetime.now(timezone.utc)
+
+    await session.commit()
+    return existing
+
+
 # ─── Start season (wipe saves + DB reset) ─────────────────────────────────────
 
 async def start_season(
@@ -219,6 +315,9 @@ async def start_season(
     pc_removed = await asyncio.to_thread(_wipe_machine, pc_conn, pc_save_dir)
     deck_removed = await asyncio.to_thread(_wipe_machine, deck_conn, deck_save_dir)
     log.info("Season start: wiped %d PC files, %d Deck files", pc_removed, deck_removed)
+
+    # Snapshot metrics before wipe
+    await compute_and_save_season_stats(session, season)
 
     # Reset DB tables
     await session.execute(delete(Character))

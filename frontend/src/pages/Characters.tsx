@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useCharacters, useRefreshCharacters } from "../api/hooks";
+import { useCharacters, useRefreshCharacters, useActiveSeason } from "../api/hooks";
 import type { CharacterInfo } from "../api/types";
 
 const CLASS_ICONS: Record<number, string> = {
@@ -7,6 +7,17 @@ const CLASS_ICONS: Record<number, string> = {
 };
 
 type SortKey = "name" | "level" | "class_name" | "modified_at";
+
+function SeasonBanner() {
+  const { data: season } = useActiveSeason();
+  if (!season) return null;
+  return (
+    <div className="text-slate-500 text-xs mb-4 flex items-center gap-1.5">
+      <span className="text-d2gold">🗓</span>
+      <span>Season: <span className="text-slate-300">{season.name}</span></span>
+    </div>
+  );
+}
 
 export default function Characters() {
   const [search, setSearch] = useState("");
@@ -46,6 +57,7 @@ export default function Characters() {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto animate-fadeIn">
+      <SeasonBanner />
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Characters</h1>

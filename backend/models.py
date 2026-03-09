@@ -179,6 +179,29 @@ class SeasonAchievement(Base):
     __table_args__ = (UniqueConstraint("milestone_id", "character_name", name="uq_season_achievement"),)
 
 
+# ─── Season Stats (finalized metrics snapshot at season end/start) ────────────
+
+class SeasonStats(Base):
+    __tablename__ = "season_stats"
+
+    id                   = Column(Integer, primary_key=True, autoincrement=True)
+    season_id            = Column(Integer, ForeignKey("seasons.id"), unique=True, nullable=False)
+    highest_level_sc     = Column(Integer, nullable=True)
+    highest_level_hc     = Column(Integer, nullable=True)
+    characters_sc        = Column(JSON, nullable=False, default=list)
+    # [{name, class_name, level, ever_died, difficulty_active}]
+    characters_hc        = Column(JSON, nullable=False, default=list)
+    total_gold_vault_sc  = Column(BigInteger, nullable=False, default=0)
+    total_gold_vault_hc  = Column(BigInteger, nullable=False, default=0)
+    grail_uniques_sc     = Column(Integer, nullable=False, default=0)
+    grail_sets_sc        = Column(Integer, nullable=False, default=0)
+    grail_uniques_hc     = Column(Integer, nullable=False, default=0)
+    grail_sets_hc        = Column(Integer, nullable=False, default=0)
+    grail_catalog_total  = Column(Integer, nullable=False, default=0)
+    days_played          = Column(Integer, nullable=True)
+    snapshot_at          = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 # ─── Season Reward Library ────────────────────────────────────────────────────
 
 class SeasonReward(Base):

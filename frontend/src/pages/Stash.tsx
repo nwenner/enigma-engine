@@ -9,8 +9,20 @@ import {
   usePreflight,
   useFetchStashItemBytes,
   useFetchVaultItemBytes,
+  useActiveSeason,
 } from "../api/hooks";
 import type { StashItem, VaultItemResponse } from "../api/types";
+
+function SeasonBanner() {
+  const { data: season } = useActiveSeason();
+  if (!season) return null;
+  return (
+    <div className="text-slate-500 text-xs flex items-center gap-1.5">
+      <span className="text-d2gold">🗓</span>
+      <span>Season: <span className="text-slate-300">{season.name}</span></span>
+    </div>
+  );
+}
 import { fmtRelative, fmtUtcDate } from "../utils/dates";
 
 type Mode = "sc" | "hc";
@@ -648,6 +660,9 @@ export default function Stash() {
         <p className="text-slate-500 text-xs mt-1">
           Latest snapshot view, unlimited gold storage, and item archival
         </p>
+        <div className="mt-2">
+          <SeasonBanner />
+        </div>
       </div>
 
       {/* Controls */}

@@ -1,20 +1,18 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
-  useCharacters,
   useStartSync,
   usePreflight,
   useLastSync,
   useAutoSyncStatus,
   useDismissAutoSync,
   useTriggerAutoSync,
-  useBackups,
+  useActiveSeasonStats,
 } from "../api/hooks";
-import CharacterCard from "../components/CharacterCard";
 import SyncStatusModal from "../components/SyncStatusModal";
 import ConfirmDialog from "../components/ConfirmDialog";
-import type { CharacterInfo, SnapshotResponse, SyncStatusResponse } from "../api/types";
-import { parseUtc, fmtRelative } from "../utils/dates";
+import type { CharacterInfo, SeasonStatsResponse, SyncStatusResponse } from "../api/types";
+import { parseUtc } from "../utils/dates";
 
 // ─── Stale check ──────────────────────────────────────────────────────────────
 
@@ -26,33 +24,7 @@ function isStale(chars: CharacterInfo[], lastSync: SyncStatusResponse | null): b
   return chars.some((c) => c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS);
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function RecommendationBanner({
-  chars,
-  lastSync,
-}: {
-  chars: CharacterInfo[];
-  lastSync: SyncStatusResponse | null;
-}) {
-  if (!lastSync?.completed_at) return null;
-
-  if (isStale(chars, lastSync)) {
-    return (
-      <div className="bg-d2gold/8 border border-d2gold/30 px-4 py-3 text-d2gold text-sm mb-6 flex items-center gap-2">
-        <span>⚠️</span>
-        <span>Saves modified since last sync — choose a direction above</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-green-950/25 border border-green-800/40 px-4 py-3 text-green-400 text-sm mb-6 flex items-center gap-2">
-      <span>✓</span>
-      <span>Save files are in sync</span>
-    </div>
-  );
-}
+// ─── Auto-sync status line ────────────────────────────────────────────────────
 
 function AutoSyncStatusLine({
   onDismiss,
@@ -152,73 +124,126 @@ function AutoSyncStatusLine({
   return null;
 }
 
-// ─── Latest Backup ────────────────────────────────────────────────────────────
+// ─── Season overview ──────────────────────────────────────────────────────────
 
-const CLASS_ICONS: Record<number, string> = {
-  0: "🏹", 1: "🔥", 2: "💀", 3: "🛡️", 4: "⚔️", 5: "🌿", 6: "🗡️", 7: "🔮",
+const CLASS_ICONS: Record<string, string> = {
+  Amazon: "🏹", Sorceress: "🔥", Necromancer: "💀", Paladin: "🛡️",
+  Barbarian: "⚔️", Druid: "🌿", Assassin: "🗡️", Warlock: "🔮",
 };
 
+const DIFF_LABEL = ["N", "NM", "Hell"];
+const DIFF_COLOR = [
+  "bg-slate-800 text-slate-400 border-slate-700",
+  "bg-blue-950/60 text-blue-400 border-blue-900/60",
+  "bg-red-950/60 text-red-400 border-red-900/60",
+];
 
-function LatestBackup({ snapshot }: { snapshot: SnapshotResponse }) {
-  // snapshot.characters stores D2SCharacter.to_dict() shape (no modified_at/last_updated_at)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const chars: any[] = snapshot.characters ?? [];
+function fmtGold(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return n.toLocaleString();
+}
+
+function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
+  const topChar = [...stats.characters_sc].sort((a, b) => b.level - a.level)[0] ?? null;
 
   return (
-    <div className="card-d2">
-      <div className="px-4 py-3 border-b border-d2bg-border flex items-center justify-between">
-        <h2 className="font-diablo text-d2gold text-sm tracking-widest">Latest Backup</h2>
-        <NavLink
-          to="/backups"
-          className="text-slate-500 text-xs hover:text-d2gold transition-colors tracking-wide"
-        >
-          View all →
-        </NavLink>
+    <div className="card-d2 mb-6">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-d2bg-border flex items-center gap-3 flex-wrap">
+        <h2 className="font-diablo text-d2gold text-sm tracking-widest">{stats.season_name}</h2>
+        <span className="text-[10px] px-2 py-0.5 border bg-green-950/40 text-green-400 border-green-900/60 tracking-wide">
+          Active
+        </span>
+        <span className="text-slate-500 text-xs ml-auto">Day {stats.days_elapsed}</span>
       </div>
 
-      <div className="px-4 py-3">
-        {/* Metadata row */}
-        <div className="flex items-center gap-2.5 flex-wrap mb-3">
-          <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${
-            snapshot.source_machine === "pc"
-              ? "bg-violet-950/40 text-violet-400 border-violet-900/60"
-              : "bg-cyan-950/40 text-cyan-400 border-cyan-900/60"
-          }`}>
-            {snapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
-          </span>
-          <span className="text-slate-300 text-sm">{fmtRelative(snapshot.created_at)}</span>
-          <span className="text-slate-600 text-xs">·</span>
-          <span className="text-slate-500 text-xs">
-            {snapshot.file_count} file{snapshot.file_count !== 1 ? "s" : ""}
-          </span>
+      {/* Metrics row */}
+      <div className="grid grid-cols-3 divide-x divide-d2bg-border border-b border-d2bg-border">
+        {/* Highest Level */}
+        <div className="px-4 py-4 text-center">
+          <p className="text-slate-500 text-[10px] tracking-widest uppercase mb-1">Highest Level</p>
+          {stats.highest_level_sc != null ? (
+            <>
+              <p className="text-d2gold font-diablo text-2xl leading-none">{stats.highest_level_sc}</p>
+              {topChar && (
+                <p className="text-slate-500 text-xs mt-1 truncate">{topChar.class_name}</p>
+              )}
+            </>
+          ) : (
+            <p className="text-slate-600 text-lg">—</p>
+          )}
         </div>
 
-        {/* Character list */}
-        {chars.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {chars.map((c, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 bg-d2bg-elevated border border-d2bg-border px-2.5 py-1.5"
-              >
-                <span className="text-sm leading-none opacity-80">
-                  {CLASS_ICONS[c.class_id] ?? "🎮"}
-                </span>
-                <span className="text-slate-100 text-xs font-medium truncate">{c.name}</span>
-                <span className="text-slate-500 text-xs ml-auto shrink-0">
-                  {c.class_name} · {c.level}
-                </span>
-                {c.hardcore && (
-                  <span className="text-[9px] bg-red-950/60 text-red-400 px-1 border border-red-900/80 shrink-0">
-                    HC
-                  </span>
-                )}
-              </div>
-            ))}
+        {/* Gold Vault */}
+        <div className="px-4 py-4 text-center">
+          <p className="text-slate-500 text-[10px] tracking-widest uppercase mb-1">Gold Vault</p>
+          <p className="text-d2gold font-diablo text-2xl leading-none">
+            {fmtGold(stats.total_gold_vault_sc)}
+          </p>
+          <p className="text-slate-500 text-xs mt-1">SC</p>
+        </div>
+
+        {/* Grail Progress */}
+        <div className="px-4 py-4 text-center">
+          <p className="text-slate-500 text-[10px] tracking-widest uppercase mb-1">Grail</p>
+          <p className="text-d2gold font-diablo text-2xl leading-none">{stats.grail_progress_pct}%</p>
+          <p className="text-slate-500 text-xs mt-1">
+            {stats.grail_uniques_sc}U · {stats.grail_sets_sc}S
+          </p>
+        </div>
+      </div>
+
+      {/* Characters */}
+      {stats.characters_sc.length > 0 && (
+        <div className="px-4 py-3">
+          <div className="flex flex-wrap gap-1.5">
+            {[...stats.characters_sc]
+              .sort((a, b) => b.level - a.level)
+              .map((c) => (
+                <div
+                  key={c.name}
+                  className="flex items-center gap-1.5 bg-d2bg-elevated border border-d2bg-border px-2.5 py-1 text-xs"
+                >
+                  <span className="leading-none opacity-80">{CLASS_ICONS[c.class_name] ?? "🎮"}</span>
+                  <span className="text-slate-200 font-medium">{c.name}</span>
+                  <span className="text-slate-500">·</span>
+                  <span className="text-slate-400">{c.class_name}</span>
+                  <span className="text-slate-500">·</span>
+                  <span className="text-slate-300">Lv {c.level}</span>
+                  {c.difficulty_active > 0 && (
+                    <span className={`text-[9px] px-1 border ${DIFF_COLOR[c.difficulty_active]}`}>
+                      {DIFF_LABEL[c.difficulty_active]}
+                    </span>
+                  )}
+                  {c.ever_died && (
+                    <span className="text-[9px] text-slate-600">†</span>
+                  )}
+                </div>
+              ))}
           </div>
-        ) : (
-          <p className="text-slate-600 text-xs">No character data in this snapshot.</p>
-        )}
+        </div>
+      )}
+
+      {stats.characters_sc.length === 0 && (
+        <div className="px-4 py-3">
+          <p className="text-slate-600 text-xs">No characters yet — start playing!</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NoSeasonCard() {
+  return (
+    <div className="card-d2 mb-6">
+      <div className="px-4 py-6 text-center">
+        <p className="text-slate-600 text-sm">
+          No active season —{" "}
+          <NavLink to="/seasons" className="text-d2gold hover:underline">
+            set one up on the Seasons page
+          </NavLink>
+        </p>
       </div>
     </div>
   );
@@ -232,23 +257,16 @@ export default function Dashboard() {
   const { data: autoSyncStatus } = useAutoSyncStatus();
   const refetchMs = autoSyncStatus?.poll_interval ? autoSyncStatus.poll_interval * 1000 : undefined;
 
-  const { data: chars, isLoading, error } = useCharacters(refetchMs);
   const { data: preflight } = usePreflight(refetchMs);
   const { data: lastSync } = useLastSync(refetchMs);
-  const { data: backups } = useBackups(refetchMs);
+  const { data: seasonStats, isLoading: statsLoading } = useActiveSeasonStats(refetchMs);
+
+  // For stale check we need chars — use lastSync + preflight
   const startSync = useStartSync();
   const dismissAutoSync = useDismissAutoSync();
   const triggerAutoSync = useTriggerAutoSync();
   const [activeSyncId, setActiveSyncId] = useState<number | null>(null);
   const [pendingDirection, setPendingDirection] = useState<Direction | null>(null);
-
-  const sortedChars = [...(chars ?? [])].sort((a, b) => b.modified_at - a.modified_at);
-
-  const latestSnapshot = backups && backups.length > 0
-    ? [...backups].sort(
-        (a, b) => parseUtc(b.created_at).getTime() - parseUtc(a.created_at).getTime()
-      )[0]
-    : null;
 
   const pcOnline = preflight?.pc_error === null;
   const deckOnline = preflight?.deck_error === null;
@@ -264,6 +282,10 @@ export default function Dashboard() {
     ? "Steam Deck is offline"
     : null;
 
+  // Stale-save banner: if no season active, fall back to checking lastSync against an empty chars list
+  const staleChars: CharacterInfo[] = [];
+  const showStaleBanner = isStale(staleChars, lastSync ?? null);
+
   const handleSync = async (direction: Direction) => {
     setPendingDirection(null);
     const result = await startSync.mutateAsync(direction);
@@ -278,8 +300,32 @@ export default function Dashboard() {
         <p className="text-slate-500 text-sm mt-1">Sync save files between your PC and Steam Deck</p>
       </div>
 
-      {/* Recommendation banner */}
-      <RecommendationBanner chars={chars ?? []} lastSync={lastSync ?? null} />
+      {/* Stale save banner */}
+      {showStaleBanner && lastSync?.completed_at && (
+        <div className="bg-d2gold/8 border border-d2gold/30 px-4 py-3 text-d2gold text-sm mb-6 flex items-center gap-2">
+          <span>⚠️</span>
+          <span>Saves modified since last sync — choose a direction above</span>
+        </div>
+      )}
+
+      {/* In-sync banner */}
+      {!showStaleBanner && lastSync?.completed_at && (
+        <div className="bg-green-950/25 border border-green-800/40 px-4 py-3 text-green-400 text-sm mb-6 flex items-center gap-2">
+          <span>✓</span>
+          <span>Save files are in sync</span>
+        </div>
+      )}
+
+      {/* Season Overview */}
+      {statsLoading ? (
+        <div className="card-d2 mb-6 px-4 py-6 text-center text-slate-600 text-sm">
+          Loading season…
+        </div>
+      ) : seasonStats ? (
+        <SeasonOverviewCard stats={seasonStats} />
+      ) : (
+        <NoSeasonCard />
+      )}
 
       {/* Sync buttons */}
       <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
@@ -330,41 +376,6 @@ export default function Dashboard() {
           syncNowPending={triggerAutoSync.isPending}
         />
       </div>
-
-      {/* Character list */}
-      <div className="card-d2">
-        <div className="px-4 py-3 border-b border-d2bg-border flex items-center gap-2">
-          <h2 className="font-diablo text-d2gold text-sm tracking-widest">Characters</h2>
-          <span className="text-slate-600 text-xs font-normal">({sortedChars.length})</span>
-        </div>
-
-        <div className="p-4">
-          {isLoading && (
-            <div className="text-slate-500 text-sm py-8 text-center">Loading characters...</div>
-          )}
-
-          {error && !isLoading && (
-            <div className="text-slate-500 text-sm py-8 text-center">Could not load characters</div>
-          )}
-
-          {!isLoading && sortedChars.length === 0 && !error && (
-            <div className="text-slate-500 text-sm py-8 text-center">No characters found</div>
-          )}
-
-          <div className="space-y-2">
-            {sortedChars.map((c) => (
-              <CharacterCard key={c.filename} character={c} />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Latest Backup */}
-      {latestSnapshot && (
-        <div className="mt-4">
-          <LatestBackup snapshot={latestSnapshot} />
-        </div>
-      )}
 
       {pendingDirection !== null && (
         <ConfirmDialog

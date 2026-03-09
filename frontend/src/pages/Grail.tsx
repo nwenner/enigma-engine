@@ -7,8 +7,20 @@ import {
   useDepositTab5,
   useResetGrail,
   usePreflight,
+  useActiveSeason,
 } from "../api/hooks";
 import type { GrailItem } from "../api/types";
+
+function SeasonBanner() {
+  const { data: season } = useActiveSeason();
+  if (!season) return null;
+  return (
+    <div className="text-slate-500 text-xs mb-4 flex items-center gap-1.5">
+      <span className="text-d2gold">🗓</span>
+      <span>Season: <span className="text-slate-300">{season.name}</span></span>
+    </div>
+  );
+}
 
 type Mode = "sc" | "hc";
 type QualityFilter = "all" | "unique" | "set";
@@ -464,6 +476,7 @@ export default function Grail() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fadeIn">
+      <SeasonBanner />
       {/* Header */}
       <div className="mb-6">
         <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Holy Grail</h1>

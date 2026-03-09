@@ -21,6 +21,7 @@ import type {
   ValidateItemResponse,
   RewardOut,
   ValidateRewardResponse,
+  SeasonStatsResponse,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
@@ -443,6 +444,15 @@ export function useActiveSeason() {
     queryKey: ["seasons", "active"],
     queryFn: () => api.get("/seasons/active").then((r) => r.data),
     retry: false,
+  });
+}
+
+export function useActiveSeasonStats(refetchMs?: number) {
+  return useQuery<SeasonStatsResponse>({
+    queryKey: ["seasons", "active", "stats"],
+    queryFn: () => api.get("/seasons/active/stats").then((r) => r.data),
+    retry: false,
+    refetchInterval: refetchMs,
   });
 }
 
