@@ -19,6 +19,9 @@ import type {
   SeasonDetail,
   SeasonListItem,
   SeasonCreateInput,
+  SeasonMilestone,
+  MilestoneCreateInput,
+  MilestonePatch,
   ValidateItemResponse,
   RewardOut,
   ValidateRewardResponse,
@@ -540,6 +543,33 @@ export function useDeleteSeason() {
   const qc = useQueryClient();
   return useMutation<void, Error, number>({
     mutationFn: (id) => api.delete(`/seasons/${id}`).then(() => undefined),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
+  });
+}
+
+export function useAddMilestone() {
+  const qc = useQueryClient();
+  return useMutation<SeasonMilestone, Error, { seasonId: number; milestone: MilestoneCreateInput }>({
+    mutationFn: ({ seasonId, milestone }) =>
+      api.post(`/seasons/${seasonId}/milestones`, milestone).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
+  });
+}
+
+export function usePatchMilestone() {
+  const qc = useQueryClient();
+  return useMutation<SeasonMilestone, Error, { seasonId: number; milestoneId: number; patch: MilestonePatch }>({
+    mutationFn: ({ seasonId, milestoneId, patch }) =>
+      api.patch(`/seasons/${seasonId}/milestones/${milestoneId}`, patch).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
+  });
+}
+
+export function useDeleteMilestone() {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; achievements_deleted: number }, Error, { seasonId: number; milestoneId: number }>({
+    mutationFn: ({ seasonId, milestoneId }) =>
+      api.delete(`/seasons/${seasonId}/milestones/${milestoneId}`).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
   });
 }

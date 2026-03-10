@@ -423,7 +423,7 @@ function ResetPanel() {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Grail() {
-  const [mode, setMode] = useState<Mode>("sc");
+  const mode: Mode = "sc";
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>("all");
   const [foundFilter, setFoundFilter] = useState<FoundFilter>("found");
   const [search, setSearch] = useState("");

@@ -12,8 +12,11 @@ Endpoints:
   POST   /api/seasons/{id}/start               — start season (wipe + activate)
   POST   /api/seasons/{id}/end                 — mark season completed
   GET    /api/seasons/{id}/achievements        — achievements for a season
-  POST   /api/seasons/milestones/validate-item — parse hex bytes → item preview
-  POST   /api/seasons/achievements/{id}/claim  — claim reward item
+  POST   /api/seasons/milestones/validate-item          — parse hex bytes → item preview
+  POST   /api/seasons/achievements/{id}/claim           — claim reward item
+  POST   /api/seasons/{id}/milestones                   — add milestone to active/setup season
+  PATCH  /api/seasons/{id}/milestones/{ms_id}           — edit milestone fields (partial update)
+  DELETE /api/seasons/{id}/milestones/{ms_id}           — delete milestone + cascade achievements
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -107,6 +110,16 @@ class SeasonListItem(BaseModel):
 
 class StartSeasonRequest(BaseModel):
     pass  # no body required — uses settings DB for conn info
+
+
+class MilestonePatch(BaseModel):
+    """All fields optional — only provided fields are updated (model_fields_set)."""
+    name: Optional[str] = None
+    milestone_type: Optional[str] = None
+    level_target: Optional[int] = None          # explicit None clears the target
+    reward_item_hex: Optional[str] = None        # "" or None = clear reward; non-empty = replace
+    reward_item_name: Optional[str] = None
+    time_limit_hours: Optional[int] = None       # explicit None clears the limit
 
 
 class ValidateItemRequest(BaseModel):
@@ -590,3 +603,149 @@ async def claim_achievement(
         raise HTTPException(409, str(e))
 
     return {"success": True, "claimed_at": achievement.claimed_at.isoformat()}
+
+
+# ─── Milestone editing ────────────────────────────────────────────────────────
+
+async def _editable_season_and_milestone(
+    season_id: int,
+    milestone_id: int,
+    session: AsyncSession,
+) -> tuple[Season, SeasonMilestone]:
+    """Shared guard: season exists, is not completed, milestone belongs to it."""
+    season = await session.get(Season, season_id)
+    if season is None:
+        raise HTTPException(404, "Season not found")
+    if season.status == "completed":
+        raise HTTPException(400, "Cannot edit milestones on a completed season")
+    ms = await session.get(SeasonMilestone, milestone_id)
+    if ms is None or ms.season_id != season_id:
+        raise HTTPException(404, "Milestone not found")
+    return season, ms
+
+
+@router.post("/seasons/{season_id}/milestones", response_model=MilestoneOut)
+async def add_milestone(
+    season_id: int,
+    body: MilestoneIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Add a single milestone to an active or setup season."""
+    season = await session.get(Season, season_id)
+    if season is None:
+        raise HTTPException(404, "Season not found")
+    if season.status == "completed":
+        raise HTTPException(400, "Cannot add milestones to a completed season")
+    if body.time_limit_hours is not None and body.time_limit_hours <= 0:
+        raise HTTPException(400, "time_limit_hours must be positive")
+
+    # Append after existing milestones
+    max_order_result = await session.execute(
+        select(func.max(SeasonMilestone.sort_order))
+        .where(SeasonMilestone.season_id == season_id)
+    )
+    max_order = max_order_result.scalar() or 0
+    sort_order = body.sort_order if body.sort_order > max_order else max_order + 1
+
+    reward_bytes: bytes | None = None
+    if body.reward_item_hex:
+        try:
+            reward_bytes = _hex_to_bytes(body.reward_item_hex)
+        except ValueError as e:
+            raise HTTPException(400, f"Invalid hex: {e}")
+
+    ms = SeasonMilestone(
+        season_id=season_id,
+        name=body.name,
+        milestone_type=body.milestone_type,
+        level_target=body.level_target,
+        reward_item_bytes=reward_bytes,
+        reward_item_name=body.reward_item_name,
+        reward_item_code=body.reward_item_code,
+        time_limit_hours=body.time_limit_hours,
+        sort_order=sort_order,
+    )
+    session.add(ms)
+    await session.commit()
+    return _ms_out(ms, season.started_at)
+
+
+@router.patch("/seasons/{season_id}/milestones/{milestone_id}", response_model=MilestoneOut)
+async def patch_milestone(
+    season_id: int,
+    milestone_id: int,
+    body: MilestonePatch,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Partially update a milestone. Only fields present in the request body are
+    changed — absent fields are left untouched (model_fields_set semantics).
+
+    Reward handling:
+      - reward_item_hex not provided  → keep existing reward bytes
+      - reward_item_hex = "" or null  → clear reward (bytes + name + code)
+      - reward_item_hex = "<hex>"     → replace reward bytes
+    Time limit:
+      - time_limit_hours not provided → keep existing
+      - time_limit_hours = null       → clear (no time limit)
+    """
+    season, ms = await _editable_season_and_milestone(season_id, milestone_id, session)
+    fields = body.model_fields_set
+
+    if "name" in fields and body.name is not None:
+        ms.name = body.name
+
+    if "milestone_type" in fields and body.milestone_type is not None:
+        ms.milestone_type = body.milestone_type
+
+    if "level_target" in fields:
+        ms.level_target = body.level_target
+
+    if "reward_item_hex" in fields:
+        if not body.reward_item_hex:
+            ms.reward_item_bytes = None
+            ms.reward_item_name = None
+            ms.reward_item_code = None
+        else:
+            try:
+                ms.reward_item_bytes = _hex_to_bytes(body.reward_item_hex)
+            except ValueError as e:
+                raise HTTPException(400, f"Invalid hex: {e}")
+            if "reward_item_name" in fields:
+                ms.reward_item_name = body.reward_item_name
+    elif "reward_item_name" in fields:
+        ms.reward_item_name = body.reward_item_name
+
+    if "time_limit_hours" in fields:
+        ms.time_limit_hours = body.time_limit_hours
+
+    await session.commit()
+    return _ms_out(ms, season.started_at)
+
+
+@router.delete("/seasons/{season_id}/milestones/{milestone_id}")
+async def delete_milestone(
+    season_id: int,
+    milestone_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Delete a milestone and cascade-delete all of its achievements.
+    Returns the number of achievement records removed so the caller can warn
+    the user if any claimed rewards are affected.
+    """
+    _season, ms = await _editable_season_and_milestone(season_id, milestone_id, session)
+
+    ach_result = await session.execute(
+        select(func.count(SeasonAchievement.id))
+        .where(SeasonAchievement.milestone_id == milestone_id)
+    )
+    achievements_deleted = ach_result.scalar() or 0
+
+    await session.execute(
+        delete(SeasonAchievement).where(SeasonAchievement.milestone_id == milestone_id)
+    )
+    await session.delete(ms)
+    await session.commit()
+
+    return {"success": True, "achievements_deleted": achievements_deleted}

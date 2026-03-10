@@ -275,6 +275,15 @@ export interface MilestoneCreateInput {
   time_limit_hours?: number | null;
 }
 
+export interface MilestonePatch {
+  name?: string;
+  milestone_type?: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell";
+  level_target?: number | null;
+  reward_item_hex?: string | null;   // "" or null = clear; non-empty = replace
+  reward_item_name?: string | null;
+  time_limit_hours?: number | null;  // null = clear time limit
+}
+
 export interface SeasonCreateInput {
   name: string;
   notes?: string | null;

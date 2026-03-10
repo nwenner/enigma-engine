@@ -9,6 +9,9 @@ import {
   useClaimAchievement,
   useValidateRewardItem,
   useRewards,
+  useAddMilestone,
+  usePatchMilestone,
+  useDeleteMilestone,
 } from "../api/hooks";
 import type {
   SeasonDetail,
@@ -201,12 +204,264 @@ function MilestoneRow({
   );
 }
 
+// ─── Edit Milestone Modal ─────────────────────────────────────────────────────
+
+function EditMilestoneModal({
+  ms,
+  seasonId,
+  onClose,
+}: {
+  ms: SeasonMilestone;
+  seasonId: number;
+  onClose: () => void;
+}) {
+  const patch = usePatchMilestone();
+  const { data: rewards } = useRewards();
+  const validateItem = useValidateRewardItem();
+
+  const [name, setName] = useState(ms.name);
+  const [milestoneType, setMilestoneType] = useState(ms.milestone_type);
+  const [levelTarget, setLevelTarget] = useState(String(ms.level_target ?? ""));
+  const [timeLimitDays, setTimeLimitDays] = useState(
+    ms.time_limit_hours != null ? String(ms.time_limit_hours / 24) : ""
+  );
+
+  // "keep" = don't touch reward; "clear" = remove it; "replace" = set new hex
+  const [rewardMode, setRewardMode] = useState<"keep" | "clear" | "replace">("keep");
+  const [rewardHex, setRewardHex] = useState("");
+  const [rewardName, setRewardName] = useState("");
+  const [rewardLibraryId, setRewardLibraryId] = useState<number | null>(null);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validated, setValidated] = useState(false);
+  const [validateError, setValidateError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleValidate = async () => {
+    if (!rewardHex.trim()) return;
+    setValidating(true); setValidateError(null); setValidated(false);
+    try {
+      const result = await validateItem.mutateAsync(rewardHex);
+      setValidated(true);
+      if (result.item_name && !rewardName) setRewardName(result.item_name);
+    } catch (e: unknown) {
+      setValidateError(e instanceof Error ? e.message : "Validation failed");
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) { setError("Name is required"); return; }
+    setError(null);
+
+    const patchBody: Record<string, unknown> = {};
+
+    if (name !== ms.name) patchBody.name = name;
+    if (milestoneType !== ms.milestone_type) patchBody.milestone_type = milestoneType;
+
+    const newLevel = milestoneType === "level" ? (parseInt(levelTarget) || null) : null;
+    if (newLevel !== ms.level_target) patchBody.level_target = newLevel;
+
+    const newHours = timeLimitDays.trim() ? Math.round(parseFloat(timeLimitDays) * 24) : null;
+    if (newHours !== ms.time_limit_hours) patchBody.time_limit_hours = newHours;
+
+    if (rewardMode === "clear") {
+      patchBody.reward_item_hex = null;
+      patchBody.reward_item_name = null;
+    } else if (rewardMode === "replace" && rewardHex.trim()) {
+      patchBody.reward_item_hex = rewardHex.trim();
+      patchBody.reward_item_name = rewardName.trim() || null;
+    }
+
+    if (Object.keys(patchBody).length === 0) { onClose(); return; }
+
+    try {
+      await patch.mutateAsync({ seasonId, milestoneId: ms.id, patch: patchBody as any });
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="card-d2 w-full max-w-lg p-6 animate-fadeIn space-y-4 overflow-y-auto max-h-[90vh]">
+        <h3 className="font-diablo text-d2gold text-sm tracking-widest">Edit Milestone</h3>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-widest text-slate-500">Name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} className="input-d2" />
+        </div>
+
+        <div className="flex gap-2">
+          <div className="flex-1 space-y-1.5">
+            <label className="text-[10px] uppercase tracking-widest text-slate-500">Type</label>
+            <select
+              value={milestoneType}
+              onChange={(e) => setMilestoneType(e.target.value as SeasonMilestone["milestone_type"])}
+              className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
+            >
+              <option value="level">Level</option>
+              <option value="cleared_normal">Cleared Normal</option>
+              <option value="cleared_nightmare">Cleared Nightmare</option>
+              <option value="cleared_hell">Cleared Hell</option>
+            </select>
+          </div>
+          {milestoneType === "level" && (
+            <div className="w-24 space-y-1.5">
+              <label className="text-[10px] uppercase tracking-widest text-slate-500">Level</label>
+              <input
+                type="number" min={1} max={99}
+                value={levelTarget}
+                onChange={(e) => setLevelTarget(e.target.value)}
+                className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-widest text-slate-500">⏱ Time Limit (days from season start)</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number" min={1} max={180}
+              placeholder="No limit"
+              value={timeLimitDays}
+              onChange={(e) => setTimeLimitDays(e.target.value)}
+              className="w-28 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
+            />
+            {timeLimitDays && (
+              <button onClick={() => setTimeLimitDays("")} className="text-xs text-slate-600 hover:text-red-400 transition-colors">
+                ✕ clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Reward section */}
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase tracking-widest text-slate-500">🎁 Reward Item</label>
+
+          {ms.has_reward && (
+            <div className="flex items-center gap-2 p-2 bg-d2bg-elevated border border-d2bg-border text-xs">
+              <span className="text-d2gold/60">Current:</span>
+              <span className="text-slate-300">{ms.reward_item_name ?? ms.reward_item_code ?? "item"}</span>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {(["keep", "replace", "clear"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => { setRewardMode(m); setShowLibrary(false); }}
+                className={`text-xs px-3 py-1.5 border transition-colors ${
+                  rewardMode === m
+                    ? m === "clear" ? "border-red-700 text-red-400 bg-red-950/30"
+                                    : "border-d2gold text-d2gold bg-d2gold/8"
+                    : "border-d2bg-border text-slate-500 hover:border-slate-500"
+                }`}
+              >
+                {m === "keep" ? (ms.has_reward ? "Keep existing" : "No reward") : m === "replace" ? "Set new" : "Clear reward"}
+              </button>
+            ))}
+          </div>
+
+          {rewardMode === "replace" && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-600">Hex paste or library</span>
+                <button onClick={() => setShowLibrary((v) => !v)} className="text-[10px] text-d2gold/70 hover:text-d2gold transition-colors">
+                  {showLibrary ? "▲ Hide library" : "📚 Pick from library"}
+                </button>
+              </div>
+              {showLibrary && (
+                <div className="border border-d2bg-border bg-black/30 max-h-40 overflow-y-auto divide-y divide-d2bg-border/30">
+                  {!rewards || rewards.length === 0 ? (
+                    <p className="text-slate-600 text-xs px-3 py-2">No rewards in library yet.</p>
+                  ) : rewards.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => {
+                        setRewardLibraryId(r.id);
+                        setRewardName(r.name);
+                        setRewardHex(`[library:${r.id}]`);
+                        setValidated(true);
+                        setShowLibrary(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-d2bg-elevated/40 transition-colors ${
+                        rewardLibraryId === r.id ? "bg-d2gold/5 border-l-2 border-d2gold" : ""
+                      }`}
+                    >
+                      <span className="text-[9px] font-mono text-slate-500 border border-slate-700 px-1 shrink-0">
+                        {(r.quality_name ?? "NRM").slice(0, 3).toUpperCase()}
+                      </span>
+                      <span className="text-sm text-slate-200 truncate">{r.name}</span>
+                      {r.is_ethereal && <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!rewardLibraryId && (
+                <div className="flex gap-2">
+                  <textarea
+                    placeholder="10 0f 00 00 4a 4d ..."
+                    value={rewardHex}
+                    onChange={(e) => { setRewardHex(e.target.value); setValidated(false); setRewardLibraryId(null); }}
+                    rows={2}
+                    className="flex-1 bg-d2bg border border-d2bg-border text-slate-300 text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-d2gold/50 resize-none transition-colors"
+                  />
+                  <button onClick={handleValidate} disabled={validating || !rewardHex.trim()} className="btn-d2-ghost text-xs px-3">
+                    {validating ? "…" : "Validate"}
+                  </button>
+                </div>
+              )}
+              {rewardLibraryId && rewardName && (
+                <div className="flex items-center gap-2 px-2 py-1.5 border border-d2gold/30 bg-d2gold/5">
+                  <span className="text-d2gold/80 text-xs">📚</span>
+                  <span className="text-d2gold text-sm font-medium flex-1">{rewardName}</span>
+                  <button onClick={() => { setRewardHex(""); setRewardName(""); setRewardLibraryId(null); setValidated(false); }} className="text-[10px] text-slate-600 hover:text-red-400 transition-colors">
+                    ✕ clear
+                  </button>
+                </div>
+              )}
+              {validated && !rewardLibraryId && rewardName && (
+                <p className="text-xs text-green-400">✓ {rewardName}</p>
+              )}
+              {validateError && <p className="text-xs text-red-400">{validateError}</p>}
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-red-400 text-sm bg-red-950/30 border border-red-800/40 px-3 py-2">{error}</p>}
+
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="btn-d2-ghost text-sm">Cancel</button>
+          <button onClick={handleSave} disabled={patch.isPending} className="btn-d2 text-sm">
+            {patch.isPending ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Active Season Card ────────────────────────────────────────────────────────
 
 function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
   const endSeason = useEndSeason();
+  const addMilestone = useAddMilestone();
+  const deleteMilestone = useDeleteMilestone();
+
   const [showEnd, setShowEnd] = useState(false);
   const [endError, setEndError] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editTarget, setEditTarget] = useState<SeasonMilestone | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SeasonMilestone | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newMilestone, setNewMilestone] = useState<MilestoneFormRow | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
 
   const handleEnd = async () => {
     setEndError(null);
@@ -215,6 +470,48 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
       setShowEnd(false);
     } catch (e: unknown) {
       setEndError(e instanceof Error ? e.message : "Failed to end season");
+    }
+  };
+
+  const handleDeleteMilestone = async () => {
+    if (!deleteTarget) return;
+    setDeleteError(null);
+    try {
+      await deleteMilestone.mutateAsync({ seasonId: season.id, milestoneId: deleteTarget.id });
+      setDeleteTarget(null);
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
+
+  const handleAddMilestone = async () => {
+    if (!newMilestone) return;
+    setAddError(null);
+    try {
+      let hex = newMilestone.reward_item_hex.trim() || null;
+      if (newMilestone.reward_library_id) {
+        const resp = await fetch(`/api/rewards/${newMilestone.reward_library_id}/bytes`);
+        if (!resp.ok) throw new Error("Failed to load reward bytes from library");
+        const data = await resp.json();
+        hex = data.hex;
+      }
+      const days = newMilestone.time_limit_days.trim() ? parseFloat(newMilestone.time_limit_days) : null;
+      await addMilestone.mutateAsync({
+        seasonId: season.id,
+        milestone: {
+          name: newMilestone.name,
+          milestone_type: newMilestone.milestone_type,
+          level_target: newMilestone.milestone_type === "level" ? (parseInt(newMilestone.level_target) || null) : null,
+          sort_order: 999,
+          reward_item_hex: hex,
+          reward_item_name: newMilestone.reward_item_name.trim() || null,
+          time_limit_hours: days !== null ? Math.round(days * 24) : null,
+        },
+      });
+      setNewMilestone(null);
+      setShowAddForm(false);
+    } catch (e: unknown) {
+      setAddError(e instanceof Error ? e.message : "Failed to add milestone");
     }
   };
 
@@ -250,13 +547,25 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
               )}
             </div>
           </div>
-          <button
-            onClick={() => setShowEnd(true)}
-            disabled={endSeason.isPending || endSeason.isSuccess}
-            className="btn-d2-danger text-xs shrink-0"
-          >
-            End Season
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => { setEditMode((v) => !v); setShowAddForm(false); setNewMilestone(null); }}
+              className={`text-xs px-3 py-1.5 border transition-colors ${
+                editMode
+                  ? "border-d2gold text-d2gold bg-d2gold/8"
+                  : "border-d2bg-border text-slate-500 hover:border-slate-500"
+              }`}
+            >
+              {editMode ? "Done Editing" : "Edit Milestones"}
+            </button>
+            <button
+              onClick={() => setShowEnd(true)}
+              disabled={endSeason.isPending || endSeason.isSuccess}
+              className="btn-d2-danger text-xs"
+            >
+              End Season
+            </button>
+          </div>
         </div>
 
         {season.notes && (
@@ -266,18 +575,76 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
         )}
 
         <div className="p-4 space-y-2">
-          <p className="text-slate-600 text-[10px] uppercase tracking-wider mb-3">Milestones</p>
-          {season.milestones.length === 0 ? (
+          <p className="text-slate-600 text-[10px] uppercase tracking-wider mb-3">
+            Milestones
+            {editMode && <span className="text-amber-500/70 ml-2">— editing active</span>}
+          </p>
+
+          {season.milestones.length === 0 && !editMode && (
             <p className="text-slate-600 text-sm">No milestones configured.</p>
-          ) : (
-            season.milestones.map((ms) => (
-              <MilestoneRow
-                key={ms.id}
-                ms={ms}
-                achievements={season.achievements}
-                canClaim={true}
-              />
-            ))
+          )}
+
+          {season.milestones.map((ms) => {
+            const achCount = season.achievements.filter((a) => a.milestone_id === ms.id).length;
+            return (
+              <div key={ms.id}>
+                <MilestoneRow ms={ms} achievements={season.achievements} canClaim={!editMode} />
+                {editMode && (
+                  <div className="flex gap-2 mt-1 ml-1">
+                    <button
+                      onClick={() => setEditTarget(ms)}
+                      className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => { setDeleteTarget(ms); setDeleteError(null); }}
+                      className="text-[11px] text-slate-600 hover:text-red-400 border border-slate-800 hover:border-red-800 px-2 py-0.5 transition-colors"
+                    >
+                      Delete{achCount > 0 && ` (${achCount} achievement${achCount !== 1 ? "s" : ""})`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Add milestone form */}
+          {editMode && (
+            <div className="pt-2 border-t border-d2bg-border/50 mt-2">
+              {!showAddForm ? (
+                <button
+                  onClick={() => {
+                    setShowAddForm(true);
+                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "level", level_target: "50", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null });
+                  }}
+                  className="text-xs text-d2gold/70 hover:text-d2gold transition-colors"
+                >
+                  + Add Milestone
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  {newMilestone && (
+                    <MilestoneFormRowUI
+                      row={newMilestone}
+                      onChange={setNewMilestone}
+                      onRemove={() => { setShowAddForm(false); setNewMilestone(null); setAddError(null); }}
+                    />
+                  )}
+                  {addError && (
+                    <p className="text-red-400 text-xs bg-red-950/30 border border-red-800/40 px-3 py-2">{addError}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button onClick={handleAddMilestone} disabled={addMilestone.isPending || !newMilestone?.name.trim()} className="btn-d2 text-xs">
+                      {addMilestone.isPending ? "Adding…" : "Add Milestone"}
+                    </button>
+                    <button onClick={() => { setShowAddForm(false); setNewMilestone(null); setAddError(null); }} className="btn-d2-ghost text-xs">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -292,6 +659,38 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
           onCancel={() => { setShowEnd(false); setEndError(null); }}
           loading={endSeason.isPending}
           error={endError}
+        />
+      )}
+
+      {editTarget && (
+        <EditMilestoneModal
+          ms={editTarget}
+          seasonId={season.id}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete Milestone"
+          message={(() => {
+            const achCount = season.achievements.filter((a) => a.milestone_id === deleteTarget.id).length;
+            const claimedCount = season.achievements.filter((a) => a.milestone_id === deleteTarget.id && a.claimed_at).length;
+            let msg = `Delete "${deleteTarget.name}"?`;
+            if (achCount > 0) {
+              msg += `\n\nThis will also delete ${achCount} achievement record${achCount !== 1 ? "s" : ""}.`;
+              if (claimedCount > 0) {
+                msg += ` ${claimedCount} of these have already been claimed — the reward items in the stash will NOT be removed.`;
+              }
+            }
+            return msg;
+          })()}
+          confirmLabel="Delete"
+          dangerous
+          onConfirm={handleDeleteMilestone}
+          onCancel={() => { setDeleteTarget(null); setDeleteError(null); }}
+          loading={deleteMilestone.isPending}
+          error={deleteError}
         />
       )}
     </div>
