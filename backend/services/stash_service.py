@@ -20,7 +20,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from backend.models import GrailCatalog, VaultItem, GoldVault
+from backend.models import GrailCatalog, VaultItem, GoldVault, BackupSnapshot, Season
 from backend.services.item_parsing import ParsedStash, parse_stash, serialize_stash
 from backend.services.item_parsing.stash_format import (
     remove_items_from_page,
@@ -49,6 +49,49 @@ VISIBLE_TAB_COUNT = 5  # pages 0-4 are real tabs; page 5 is the terminal marker
 
 def _mode_hardcore(mode: str) -> bool:
     return mode == "hc"
+
+
+async def _update_local_snapshot_stash(
+    session: AsyncSession,
+    filename: str,
+    stash_bytes: bytes,
+) -> None:
+    """
+    Write modified stash bytes into the latest local snapshot directory.
+
+    This keeps the local snapshot (source of truth for the display) in sync after
+    any vault operation that modifies the remote stash file. Without this, the
+    display would show stale gold/items until the next Check In.
+    """
+    from backend.config import get_settings
+
+    active_result = await session.execute(
+        select(Season).where(Season.status == "active")
+    )
+    active_season = active_result.scalar_one_or_none()
+
+    snap_query = (
+        select(BackupSnapshot)
+        .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+        .order_by(BackupSnapshot.created_at.desc())
+        .limit(1)
+    )
+    if active_season and active_season.started_at:
+        snap_query = snap_query.where(BackupSnapshot.created_at >= active_season.started_at)
+
+    result = await session.execute(snap_query)
+    snap = result.scalar_one_or_none()
+
+    if snap is None:
+        log.warning("No local snapshot found to update after vault operation")
+        return
+
+    snap_dir = get_settings().data_dir / snap.snapshot_path
+    if snap_dir.exists():
+        (snap_dir / filename).write_bytes(stash_bytes)
+        log.info("Updated local snapshot stash file: %s/%s", snap.snapshot_path, filename)
+    else:
+        log.warning("Local snapshot directory missing: %s", snap_dir)
 
 
 def _stash_filename(hardcore: bool) -> str:
@@ -343,6 +386,7 @@ async def deposit_gold(
                 _sftp_upload(sftp, upload_path, remote_path)
 
         await asyncio.to_thread(_upload)
+        await _update_local_snapshot_stash(session, filename, new_bytes)
         await session.commit()
 
     log.info("Vault: deposited %d gold from %s (%s)", amount, machine, mode)
@@ -419,6 +463,7 @@ async def withdraw_gold(
                 _sftp_upload(sftp, upload_path, remote_path)
 
         await asyncio.to_thread(_upload)
+        await _update_local_snapshot_stash(session, filename, new_bytes)
         await session.commit()
 
     log.info("Vault: withdrew %d gold to %s (%s)", amount, machine, mode)
@@ -511,6 +556,7 @@ async def store_item(
                 _sftp_upload(sftp, upload_path, remote_path)
 
         await asyncio.to_thread(_upload)
+        await _update_local_snapshot_stash(session, filename, new_bytes)
 
         # Build stored name and base_item using same logic as fetch_stash
         if cat:
@@ -619,6 +665,7 @@ async def retrieve_vault_item(
                 _sftp_upload(sftp, upload_path, remote_path)
 
         await asyncio.to_thread(_upload)
+        await _update_local_snapshot_stash(session, stash_filename, new_bytes)
 
     await session.delete(vault_item)
     await session.commit()

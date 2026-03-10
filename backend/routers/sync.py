@@ -439,13 +439,15 @@ async def compare_with_device(
     )
 
 
+PREFLIGHT_TIMEOUT = 5  # seconds — short timeout for status checks only
+
 @router.get("/sync/preflight", response_model=PreflightResponse)
 async def preflight_check(session: AsyncSession = Depends(get_session)):
     async def _check(machine: str, is_windows: bool):
         try:
             kwargs = await _get_conn_kwargs(session, machine)
             def _do():
-                with get_sftp(**kwargs) as (ssh, _sftp):
+                with get_sftp(**kwargs, connect_timeout=PREFLIGHT_TIMEOUT) as (ssh, _sftp):
                     return check_d2r_running(ssh, is_windows)
             return await asyncio.to_thread(_do), None
         except SSHConnectionError as e:
@@ -453,8 +455,10 @@ async def preflight_check(session: AsyncSession = Depends(get_session)):
         except Exception as e:
             return None, str(e)
 
-    pc_running, pc_err = await _check("pc", True)
-    deck_running, deck_err = await _check("deck", False)
+    (pc_running, pc_err), (deck_running, deck_err) = await asyncio.gather(
+        _check("pc", True),
+        _check("deck", False),
+    )
 
     safe = (pc_running is False) and (deck_running is False)
 

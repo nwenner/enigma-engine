@@ -92,7 +92,7 @@ export default function App() {
             Enigma Engine
           </h1>
           <p className="text-slate-600 text-[10px] tracking-widest uppercase mt-1">
-            D2R Save Sync
+            D2R Season Manager
           </p>
         </div>
 

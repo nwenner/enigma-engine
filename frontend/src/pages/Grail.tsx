@@ -496,22 +496,6 @@ export default function Grail() {
         </div>
       )}
 
-      {/* Mode toggle */}
-      <div className="flex gap-2 mb-5">
-        {(["sc", "hc"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`text-xs px-5 py-2 border transition-colors ${
-              mode === m
-                ? "border-d2gold text-d2gold bg-d2gold/8"
-                : "border-d2bg-border text-slate-500 hover:border-slate-500 hover:text-slate-300"
-            }`}
-          >
-            {m === "sc" ? "Softcore" : "Hardcore"}
-          </button>
-        ))}
-      </div>
 
       {/* Progress summary */}
       {data && (

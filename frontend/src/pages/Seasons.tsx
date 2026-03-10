@@ -75,27 +75,19 @@ function ConfirmDialog({
   error?: string | null;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-d2bg-elevated border border-d2bg-border p-6 max-w-md w-full mx-4 space-y-4">
-        <h3 className="text-d2gold font-semibold text-base">{title}</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="card-d2 p-6 max-w-md w-full space-y-4 animate-fadeIn">
+        <h3 className="font-diablo text-d2gold text-sm tracking-widest">{title}</h3>
         <p className="text-slate-300 text-sm whitespace-pre-line">{message}</p>
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+        {error && <p className="text-red-400 text-sm bg-red-950/30 border border-red-800/40 px-3 py-2">{error}</p>}
         <div className="flex gap-3 justify-end">
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 border border-d2bg-border hover:border-slate-500 transition-colors"
-          >
+          <button onClick={onCancel} disabled={loading} className="btn-d2-ghost text-sm">
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={loading}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              dangerous
-                ? "bg-red-900/40 text-red-300 border border-red-800 hover:bg-red-800/50"
-                : "bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30"
-            } disabled:opacity-50`}
+            className={dangerous ? "btn-d2-danger text-sm" : "btn-d2 text-sm"}
           >
             {loading ? "Working…" : confirmLabel}
           </button>
@@ -134,7 +126,7 @@ function MilestoneRow({
   };
 
   return (
-    <div className={`border bg-d2bg/40 p-4 space-y-2 ${ms.is_expired ? "border-slate-800 opacity-60" : "border-d2bg-border"}`}>
+    <div className={`card-d2 p-4 space-y-2 ${ms.is_expired ? "opacity-60" : ""}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className={`text-sm font-medium ${ms.is_expired ? "text-slate-500" : "text-slate-200"}`}>
@@ -162,7 +154,7 @@ function MilestoneRow({
         {canClaim && unclaimedWithReward.length > 0 && (
           <button
             onClick={() => setClaimAch(unclaimedWithReward[0])}
-            className="shrink-0 px-3 py-1.5 text-xs font-medium bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30 transition-colors"
+            className="btn-d2 text-xs shrink-0"
           >
             Claim Reward →
           </button>
@@ -237,52 +229,57 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
           <span>This season's time has elapsed. End it whenever you're ready to archive your results.</span>
         </div>
       )}
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h2 className="text-d2gold font-semibold text-lg">{season.name}</h2>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-            <span>Started {fmtDate(season.started_at)}</span>
-            {season.duration_weeks !== null && season.scheduled_end_at && (
-              <>
-                <span className="text-slate-700">·</span>
-                <span className="text-slate-400">{fmtDurationWeeks(season.duration_weeks)} season</span>
-                <span className="text-slate-700">·</span>
-                {isScheduledOver ? (
-                  <span className="text-amber-400/80">Time elapsed</span>
-                ) : (
-                  <span className="text-amber-400/80">{fmtTimeRemaining(season.scheduled_end_at)}</span>
-                )}
-              </>
-            )}
+
+      <div className="card-d2">
+        <div className="px-4 py-3 border-b border-d2bg-border flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h2 className="font-diablo text-d2gold text-sm tracking-widest">{season.name}</h2>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <span>Started {fmtDate(season.started_at)}</span>
+              {season.duration_weeks !== null && season.scheduled_end_at && (
+                <>
+                  <span className="text-slate-700">·</span>
+                  <span className="text-slate-400">{fmtDurationWeeks(season.duration_weeks)} season</span>
+                  <span className="text-slate-700">·</span>
+                  {isScheduledOver ? (
+                    <span className="text-amber-400/80">Time elapsed</span>
+                  ) : (
+                    <span className="text-amber-400/80">{fmtTimeRemaining(season.scheduled_end_at)}</span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
+          <button
+            onClick={() => setShowEnd(true)}
+            disabled={endSeason.isPending || endSeason.isSuccess}
+            className="btn-d2-danger text-xs shrink-0"
+          >
+            End Season
+          </button>
         </div>
-        <button
-          onClick={() => setShowEnd(true)}
-          disabled={endSeason.isPending || endSeason.isSuccess}
-          className="shrink-0 px-3 py-1.5 text-xs text-slate-400 border border-slate-700 hover:border-red-700 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
-        >
-          End Season
-        </button>
-      </div>
 
-      {season.notes && (
-        <p className="text-slate-400 text-sm italic">{season.notes}</p>
-      )}
-
-      <div className="space-y-2">
-        <h3 className="text-slate-400 text-xs uppercase tracking-widest">Milestones</h3>
-        {season.milestones.length === 0 ? (
-          <p className="text-slate-600 text-sm">No milestones configured.</p>
-        ) : (
-          season.milestones.map((ms) => (
-            <MilestoneRow
-              key={ms.id}
-              ms={ms}
-              achievements={season.achievements}
-              canClaim={true}
-            />
-          ))
+        {season.notes && (
+          <div className="px-4 py-3 border-b border-d2bg-border">
+            <p className="text-slate-400 text-sm italic">{season.notes}</p>
+          </div>
         )}
+
+        <div className="p-4 space-y-2">
+          <p className="text-slate-600 text-[10px] uppercase tracking-wider mb-3">Milestones</p>
+          {season.milestones.length === 0 ? (
+            <p className="text-slate-600 text-sm">No milestones configured.</p>
+          ) : (
+            season.milestones.map((ms) => (
+              <MilestoneRow
+                key={ms.id}
+                ms={ms}
+                achievements={season.achievements}
+                canClaim={true}
+              />
+            ))
+          )}
+        </div>
       </div>
 
       {showEnd && (
@@ -311,7 +308,7 @@ type MilestoneFormRow = {
   time_limit_days: string;
   reward_item_hex: string;
   reward_item_name: string;
-  reward_library_id: number | null;  // set when picked from library
+  reward_library_id: number | null;
   validated: boolean;
   validating: boolean;
   validateError: string | null;
@@ -353,7 +350,7 @@ function MilestoneFormRowUI({
   };
 
   return (
-    <div className="border border-d2bg-border bg-d2bg/30 p-3 space-y-2">
+    <div className="card-d2 p-3 space-y-2">
       {/* Row 1: name + type + level + remove */}
       <div className="flex items-center gap-2">
         <input
@@ -361,12 +358,12 @@ function MilestoneFormRowUI({
           placeholder="Milestone name"
           value={row.name}
           onChange={(e) => onChange({ ...row, name: e.target.value })}
-          className="flex-1 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50"
+          className="flex-1 input-d2 text-xs py-1.5"
         />
         <select
           value={row.milestone_type}
           onChange={(e) => onChange({ ...row, milestone_type: e.target.value as MilestoneFormRow["milestone_type"] })}
-          className="bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50"
+          className="bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
         >
           <option value="level">Level</option>
           <option value="cleared_normal">Cleared Normal</option>
@@ -381,13 +378,10 @@ function MilestoneFormRowUI({
             max={99}
             value={row.level_target}
             onChange={(e) => onChange({ ...row, level_target: e.target.value })}
-            className="w-16 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50"
+            className="w-16 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
           />
         )}
-        <button
-          onClick={onRemove}
-          className="text-slate-600 hover:text-red-400 text-sm px-2 py-1.5"
-        >
+        <button onClick={onRemove} className="text-slate-600 hover:text-red-400 text-sm px-2 py-1.5 transition-colors">
           ✕
         </button>
       </div>
@@ -404,7 +398,7 @@ function MilestoneFormRowUI({
           max={180}
           value={row.time_limit_days}
           onChange={(e) => onChange({ ...row, time_limit_days: e.target.value })}
-          className="w-24 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50"
+          className="w-24 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
         />
         <span className="text-xs text-slate-500">days from season start (blank = no limit)</span>
       </div>
@@ -423,7 +417,6 @@ function MilestoneFormRowUI({
           </button>
         </div>
 
-        {/* Library picker */}
         {showLibrary && (
           <div className="border border-d2bg-border bg-black/30 max-h-48 overflow-y-auto divide-y divide-d2bg-border/30">
             {!rewards || rewards.length === 0 ? (
@@ -435,12 +428,10 @@ function MilestoneFormRowUI({
                 <button
                   key={r.id}
                   onClick={() => {
-                    // We only have the display data here; hex is fetched on save
-                    // Store the reward_library_id and name; hex will be resolved server-side
                     onChange({
                       ...row,
                       reward_item_name: r.name,
-                      reward_item_hex: `[library:${r.id}]`,  // placeholder — router resolves this
+                      reward_item_hex: `[library:${r.id}]`,
                       reward_library_id: r.id,
                       validated: true,
                       validateError: null,
@@ -463,7 +454,6 @@ function MilestoneFormRowUI({
           </div>
         )}
 
-        {/* Manual hex paste (only show if not using library) */}
         {!row.reward_library_id && (
           <div className="flex gap-2">
             <textarea
@@ -471,19 +461,18 @@ function MilestoneFormRowUI({
               value={row.reward_item_hex}
               onChange={(e) => onChange({ ...row, reward_item_hex: e.target.value, validated: false, reward_library_id: null })}
               rows={2}
-              className="flex-1 bg-d2bg border border-d2bg-border text-slate-300 text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-d2gold/50 resize-none"
+              className="flex-1 bg-d2bg border border-d2bg-border text-slate-300 text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-d2gold/50 resize-none transition-colors"
             />
             <button
               onClick={handleValidate}
               disabled={row.validating || !row.reward_item_hex.trim()}
-              className="px-3 py-1 text-xs border border-d2bg-border text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors disabled:opacity-40"
+              className="btn-d2-ghost text-xs px-3"
             >
               {row.validating ? "…" : "Validate"}
             </button>
           </div>
         )}
 
-        {/* Selected reward display */}
         {row.reward_library_id && row.reward_item_name && (
           <div className="flex items-center gap-2 px-2 py-1.5 border border-d2gold/30 bg-d2gold/5">
             <span className="text-d2gold/80 text-xs">📚</span>
@@ -508,7 +497,7 @@ function MilestoneFormRowUI({
   );
 }
 
-// ─── Start Season Panel (shared) ─────────────────────────────────────────────
+// ─── Start Season Panel ───────────────────────────────────────────────────────
 
 const START_SEASON_WARNING = `WARNING: This will:\n• Archive the latest local snapshot\n• Clear Characters, Grail, Item Vault, and Gold Vault data\n\nYour devices are NOT touched — use Sync to Device after starting to push the empty state. This cannot be undone (the archive is kept as a backup).`;
 
@@ -542,11 +531,11 @@ function StartSeasonPanel({
   };
 
   return (
-    <div className="space-y-4 border border-d2gold/30 bg-d2gold/5 p-4">
+    <div className="card-d2 p-4 border-l-2 border-l-d2gold/40 space-y-4">
       <div>
-        <p className="text-d2gold font-medium">Season "{seasonName}" created in setup mode.</p>
-        <p className="text-slate-400 text-sm mt-1">
-          Ready to start? Starting will archive the latest local snapshot, then clear
+        <p className="font-diablo text-d2gold text-xs tracking-widest mb-1">Ready to Start</p>
+        <p className="text-slate-400 text-sm">
+          Season "{seasonName}" is in setup mode. Starting will archive the latest local snapshot, then clear
           Characters, Grail, Item Vault, and Gold Vault data. Use Sync to Device afterwards
           to push the empty state to your machines.{durationNote}
         </p>
@@ -554,13 +543,15 @@ function StartSeasonPanel({
       <div className="flex gap-3">
         <button
           onClick={() => { setShowConfirm(true); setStartError(null); }}
-          className="px-4 py-2 text-sm font-medium bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30 transition-colors"
+          className="btn-d2 text-sm"
         >
           Start Season →
         </button>
         {dismissButton}
       </div>
-      {startError && <p className="text-red-400 text-xs">{startError}</p>}
+      {startError && (
+        <p className="text-red-400 text-xs bg-red-950/30 border border-red-800/40 px-3 py-2">{startError}</p>
+      )}
       {showConfirm && (
         <ConfirmDialog
           title="Start Season"
@@ -585,7 +576,7 @@ function CreateSeasonPanel() {
   const createSeason = useCreateSeason();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
-  const [durationWeeks, setDurationWeeks] = useState("");  // "" = no limit
+  const [durationWeeks, setDurationWeeks] = useState("");
   const [milestones, setMilestones] = useState<MilestoneFormRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<SeasonDetail | null>(null);
@@ -614,7 +605,6 @@ function CreateSeasonPanel() {
     }
     setError(null);
     try {
-      // Resolve library rewards — fetch hex bytes for any milestone using a library reward
       const resolvedHexes: Record<number, string> = {};
       for (const m of milestones) {
         if (m.reward_library_id && !resolvedHexes[m.reward_library_id]) {
@@ -663,10 +653,7 @@ function CreateSeasonPanel() {
         seasonName={created.name}
         durationWeeks={created.duration_weeks}
         dismissButton={
-          <button
-            onClick={() => setCreated(null)}
-            className="px-4 py-2 text-sm text-slate-400 border border-d2bg-border hover:border-slate-500 transition-colors"
-          >
+          <button onClick={() => setCreated(null)} className="btn-d2-ghost text-sm">
             Not yet
           </button>
         }
@@ -675,22 +662,21 @@ function CreateSeasonPanel() {
   }
 
   return (
-    <div className="space-y-4 border border-d2bg-border p-4">
-      <h3 className="text-slate-300 text-sm font-medium">Create New Season</h3>
+    <div className="card-d2 p-4 space-y-4">
+      <h3 className="font-diablo text-d2gold text-xs tracking-widest">Create New Season</h3>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <label className="text-[10px] uppercase tracking-widest text-slate-500">Season Name</label>
         <input
           type="text"
           placeholder="Season 1: Ladder Reset"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-3 py-2 focus:outline-none focus:border-d2gold/50"
+          className="input-d2"
         />
       </div>
 
-      {/* Duration */}
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <label className="text-[10px] uppercase tracking-widest text-slate-500">
           Season Duration (weeks, optional)
         </label>
@@ -702,7 +688,7 @@ function CreateSeasonPanel() {
             max={26}
             value={durationWeeks}
             onChange={(e) => setDurationWeeks(e.target.value)}
-            className="w-28 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-3 py-2 focus:outline-none focus:border-d2gold/50"
+            className="w-28 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-3 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
           />
           <span className="text-xs text-slate-500">
             {durationWeeks.trim() && !isNaN(parseInt(durationWeeks))
@@ -712,24 +698,21 @@ function CreateSeasonPanel() {
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <label className="text-[10px] uppercase tracking-widest text-slate-500">Notes (optional)</label>
         <textarea
           placeholder="Season rules, goals, etc."
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          className="w-full bg-d2bg border border-d2bg-border text-slate-300 text-sm px-3 py-2 focus:outline-none focus:border-d2gold/50 resize-none"
+          className="w-full bg-d2bg border border-d2bg-border text-slate-300 text-sm px-3 py-1.5 focus:outline-none focus:border-d2gold/50 resize-none transition-colors"
         />
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-[10px] uppercase tracking-widest text-slate-500">Milestones</label>
-          <button
-            onClick={addMilestone}
-            className="text-xs text-d2gold/70 hover:text-d2gold transition-colors"
-          >
+          <button onClick={addMilestone} className="text-xs text-d2gold/70 hover:text-d2gold transition-colors">
             + Add Milestone
           </button>
         </div>
@@ -746,12 +729,14 @@ function CreateSeasonPanel() {
         )}
       </div>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && (
+        <p className="text-red-400 text-sm bg-red-950/30 border border-red-800/40 px-3 py-2">{error}</p>
+      )}
 
       <button
         onClick={handleSave}
         disabled={createSeason.isPending || !name.trim()}
-        className="px-4 py-2 text-sm font-medium bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30 transition-colors disabled:opacity-50"
+        className="btn-d2 text-sm"
       >
         {createSeason.isPending ? "Saving…" : "Save Season"}
       </button>
@@ -772,15 +757,18 @@ function PastSeason({ item }: { item: SeasonListItem }) {
   };
 
   return (
-    <div className="border border-d2bg-border">
+    <div className="card-d2 overflow-hidden">
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-d2bg-elevated/40 transition-colors"
       >
         <div className="flex items-center gap-3">
+          <span className="text-slate-600 text-xs w-4 transition-transform duration-200" style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "none" }}>
+            ▶
+          </span>
           <span className="text-slate-200 text-sm">{item.name}</span>
           <span className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
-            item.status === "active" ? "text-green-400 border-green-800" :
+            item.status === "active" ? "text-green-400 border-green-800/60 bg-green-950/40" :
             item.status === "setup" ? "text-slate-400 border-d2bg-border" :
             "text-slate-500 border-d2bg-border"
           }`}>
@@ -793,7 +781,6 @@ function PastSeason({ item }: { item: SeasonListItem }) {
         <div className="flex items-center gap-4 text-xs text-slate-500">
           <span>{item.achievement_count} achievements</span>
           <span>{fmtDate(item.started_at)} – {fmtDate(item.ended_at ?? item.scheduled_end_at)}</span>
-          <span>{open ? "▲" : "▼"}</span>
         </div>
       </button>
 
@@ -808,7 +795,7 @@ function PastSeason({ item }: { item: SeasonListItem }) {
                 dismissButton={
                   <button
                     onClick={() => setConfirmDelete(true)}
-                    className="px-4 py-2 text-sm text-red-400 border border-red-900/50 hover:border-red-700 hover:bg-red-950/30 transition-colors"
+                    className="btn-d2-danger text-sm"
                   >
                     Delete Season
                   </button>
@@ -854,32 +841,30 @@ export default function Seasons() {
   const hasActive = !!activeSeason;
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-8">
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn space-y-8">
       <div>
-        <h1 className="text-d2gold font-diablo text-xl tracking-widest">Seasons</h1>
-        <p className="text-slate-500 text-xs mt-1">Fresh-start mechanics with milestone rewards. SC only.</p>
+        <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Seasons</h1>
+        <p className="text-slate-500 text-sm mt-1">Fresh-start mechanics with milestone rewards. SC only.</p>
       </div>
 
       {/* Active Season */}
       <section className="space-y-3">
-        <h2 className="text-slate-400 text-xs uppercase tracking-widest border-b border-d2bg-border pb-2">
-          Active Season
-        </h2>
+        <p className="text-slate-600 text-[10px] uppercase tracking-wider">Active Season</p>
         {loadingActive ? (
-          <p className="text-slate-600 text-sm">Loading…</p>
+          <div className="card-d2 px-4 py-6 text-center text-slate-600 text-sm">Loading…</div>
         ) : hasActive ? (
           <ActiveSeasonCard season={activeSeason} />
         ) : (
-          <p className="text-slate-500 text-sm">No active season.</p>
+          <div className="card-d2 px-4 py-6 text-center">
+            <p className="text-slate-500 text-sm">No active season.</p>
+          </div>
         )}
       </section>
 
       {/* Create New Season (only when no active season) */}
       {!hasActive && (
         <section className="space-y-3">
-          <h2 className="text-slate-400 text-xs uppercase tracking-widest border-b border-d2bg-border pb-2">
-            New Season
-          </h2>
+          <p className="text-slate-600 text-[10px] uppercase tracking-wider">New Season</p>
           <CreateSeasonPanel />
         </section>
       )}
@@ -887,9 +872,7 @@ export default function Seasons() {
       {/* Setup seasons waiting to start */}
       {seasons?.filter((s) => s.status === "setup").length ? (
         <section className="space-y-3">
-          <h2 className="text-slate-400 text-xs uppercase tracking-widest border-b border-d2bg-border pb-2">
-            Pending Start
-          </h2>
+          <p className="text-slate-600 text-[10px] uppercase tracking-wider">Pending Start</p>
           {seasons.filter((s) => s.status === "setup").map((s) => (
             <PastSeason key={s.id} item={s} />
           ))}
@@ -898,15 +881,17 @@ export default function Seasons() {
 
       {/* Past Seasons */}
       <section className="space-y-3">
-        <h2 className="text-slate-400 text-xs uppercase tracking-widest border-b border-d2bg-border pb-2">
-          Past Seasons
-        </h2>
+        <p className="text-slate-600 text-[10px] uppercase tracking-wider">Past Seasons</p>
         {loadingList ? (
-          <p className="text-slate-600 text-sm">Loading…</p>
+          <div className="card-d2 px-4 py-6 text-center text-slate-600 text-sm">Loading…</div>
         ) : listError ? (
-          <p className="text-red-400 text-sm">Failed to load seasons.</p>
+          <div className="bg-red-950/30 border border-red-800/50 px-4 py-3 text-red-400 text-sm">
+            Failed to load seasons.
+          </div>
         ) : pastSeasons.filter((s) => s.status === "completed").length === 0 ? (
-          <p className="text-slate-600 text-sm">No completed seasons yet.</p>
+          <div className="card-d2 px-4 py-6 text-center">
+            <p className="text-slate-600 text-sm">No completed seasons yet.</p>
+          </div>
         ) : (
           pastSeasons.filter((s) => s.status === "completed").map((s) => (
             <PastSeason key={s.id} item={s} />

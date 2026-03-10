@@ -97,7 +97,7 @@ export function useCheckIn() {
       qc.invalidateQueries({ queryKey: ["characters"] });
       qc.invalidateQueries({ queryKey: ["grail"] });
       qc.invalidateQueries({ queryKey: ["stash"] });
-      qc.invalidateQueries({ queryKey: ["seasons", "active", "stats"] });
+      qc.invalidateQueries({ queryKey: ["seasons"] });
     },
   });
 }
@@ -385,6 +385,7 @@ export function useDepositGold() {
   >({
     mutationFn: (body) => api.post("/stash/gold/deposit", body).then((r) => r.data),
     onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
     },
   });
@@ -399,6 +400,7 @@ export function useWithdrawGold() {
   >({
     mutationFn: (body) => api.post("/stash/gold/withdraw", body).then((r) => r.data),
     onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
     },
   });
@@ -413,6 +415,7 @@ export function useStoreItem() {
   >({
     mutationFn: (body) => api.post("/stash/item/store", body).then((r) => r.data),
     onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "items", mode] });
     },
   });
@@ -428,6 +431,7 @@ export function useRetrieveVaultItem() {
     mutationFn: ({ itemId, machine, mode }) =>
       api.post(`/vault/items/${itemId}/retrieve`, { machine, mode }).then((r) => r.data),
     onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "items", mode] });
     },
   });

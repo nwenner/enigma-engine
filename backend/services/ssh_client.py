@@ -47,6 +47,7 @@ def _make_client(
     password: str | None = None,
     key_path: str | None = None,
     key_passphrase: str | None = None,
+    connect_timeout: int = CONNECT_TIMEOUT,
 ) -> paramiko.SSHClient:
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -55,9 +56,9 @@ def _make_client(
         hostname=host,
         port=port,
         username=username,
-        timeout=CONNECT_TIMEOUT,
-        banner_timeout=BANNER_TIMEOUT,
-        auth_timeout=AUTH_TIMEOUT,
+        timeout=connect_timeout,
+        banner_timeout=connect_timeout,
+        auth_timeout=connect_timeout,
         look_for_keys=False,
         allow_agent=False,
     )
@@ -87,9 +88,10 @@ def get_sftp(
     password: str | None = None,
     key_path: str | None = None,
     key_passphrase: str | None = None,
+    connect_timeout: int = CONNECT_TIMEOUT,
 ) -> Generator[tuple[paramiko.SSHClient, paramiko.SFTPClient], None, None]:
     """Context manager that yields (ssh_client, sftp_client) and cleans up on exit."""
-    client = _make_client(host, port, username, password, key_path, key_passphrase)
+    client = _make_client(host, port, username, password, key_path, key_passphrase, connect_timeout)
     try:
         sftp = client.open_sftp()
         try:

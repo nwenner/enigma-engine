@@ -6,7 +6,6 @@ import {
   useWithdrawGold,
   useStoreItem,
   useRetrieveVaultItem,
-  usePreflight,
   useFetchStashItemBytes,
   useFetchVaultItemBytes,
   useActiveSeason,
@@ -46,7 +45,6 @@ function qualityColor(quality: number): string {
   }
 }
 
-/** Short 3-char badge label for each quality tier. */
 function qualityLabel(quality: number): string {
   switch (quality) {
     case 7: return "UNQ";
@@ -172,7 +170,7 @@ function StoreModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="bg-d2bg-elevated border border-d2bg-border w-full max-w-sm p-6 animate-fadeIn">
+      <div className="card-d2 w-full max-w-sm p-6 animate-fadeIn">
         <h3 className="font-diablo text-d2gold text-sm tracking-widest mb-1">Store Item</h3>
         <p className="text-slate-400 text-xs mb-1">
           <span className={`font-semibold ${colorText}`}>{displayName}</span>
@@ -227,7 +225,7 @@ function RetrieveVaultModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="bg-d2bg-elevated border border-d2bg-border w-full max-w-sm p-6 animate-fadeIn">
+      <div className="card-d2 w-full max-w-sm p-6 animate-fadeIn">
         <h3 className="font-diablo text-d2gold text-sm tracking-widest mb-1">Retrieve Item</h3>
         <p className="text-slate-400 text-xs mb-4">
           <span className={`font-semibold ${qualityColor(item.quality).split(" ")[0]}`}>
@@ -316,7 +314,7 @@ function GoldPanel({
   };
 
   return (
-    <div className="bg-d2bg-elevated border border-d2bg-border p-4 space-y-4">
+    <div className="card-d2 p-4 space-y-4">
       <h3 className="font-diablo text-d2gold text-xs tracking-widest">Gold</h3>
 
       {/* Stash gold */}
@@ -335,7 +333,7 @@ function GoldPanel({
             value={depositInput}
             onChange={(e) => setDepositInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleDeposit()}
-            className="flex-1 bg-d2bg-border/30 border border-d2bg-border text-slate-300 text-xs px-2 py-1.5 placeholder-slate-600 focus:outline-none focus:border-d2gold/50"
+            className="flex-1 bg-d2bg border border-d2bg-border text-slate-200 text-xs px-2 py-1.5 placeholder-slate-600 focus:outline-none focus:border-d2gold/50 transition-colors"
           />
           <button
             onClick={handleDeposit}
@@ -366,7 +364,7 @@ function GoldPanel({
             value={withdrawInput}
             onChange={(e) => setWithdrawInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleWithdraw()}
-            className="flex-1 bg-d2bg-border/30 border border-d2bg-border text-slate-300 text-xs px-2 py-1.5 placeholder-slate-600 focus:outline-none focus:border-d2gold/50"
+            className="flex-1 bg-d2bg border border-d2bg-border text-slate-200 text-xs px-2 py-1.5 placeholder-slate-600 focus:outline-none focus:border-d2gold/50 transition-colors"
           />
           <button
             onClick={handleWithdraw}
@@ -434,17 +432,14 @@ function ItemRow({
   return (
     <div className={`px-3 py-2 border ${colorBorder} bg-black/20`}>
       <div className="flex items-center gap-2">
-        {/* Quality badge */}
         <span className={`text-[9px] font-mono px-1 border shrink-0 leading-4 ${colorText} ${colorBorder}`}>
           {qualityLabel(item.quality)}
         </span>
 
-        {/* Primary name */}
         <span className={`flex-1 text-sm font-semibold leading-snug min-w-0 truncate ${colorText}`}>
           {displayName}
         </span>
 
-        {/* Flags + metadata */}
         {item.is_ethereal && (
           <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
         )}
@@ -467,7 +462,6 @@ function ItemRow({
         </button>
       </div>
 
-      {/* Secondary base type — only when name is the special name (catalog/rare/magic) */}
       {item.name && item.base_item && (
         <div className="text-slate-500 text-xs mt-0.5 ml-9">{item.base_item}</div>
       )}
@@ -494,7 +488,7 @@ function StashTabView({
   const tab = tabs[activeTab];
 
   return (
-    <div className="bg-d2bg-elevated border border-d2bg-border">
+    <div className="card-d2">
       {/* Tab selector */}
       <div className="flex border-b border-d2bg-border">
         {tabs.map((t, i) => (
@@ -515,10 +509,8 @@ function StashTabView({
         ))}
       </div>
 
-      {/* Quality summary */}
       {tab && tab.items.length > 0 && <QualitySummary items={tab.items} />}
 
-      {/* Item list */}
       <div className="p-3 min-h-[200px]">
         {!tab || tab.item_count === 0 ? (
           <p className="text-slate-700 text-xs text-center py-8">Empty tab</p>
@@ -558,14 +550,14 @@ function VaultSection({ mode }: { mode: Mode }) {
 
   if (isLoading) {
     return (
-      <div className="bg-d2bg-elevated border border-d2bg-border p-4">
+      <div className="card-d2 p-4">
         <p className="text-slate-600 text-xs">Loading vault…</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-d2bg-elevated border border-d2bg-border">
+    <div className="card-d2">
       <div className="px-4 py-3 border-b border-d2bg-border flex items-center justify-between">
         <h3 className="font-diablo text-d2gold text-xs tracking-widest">Item Vault</h3>
         <span className="text-slate-600 text-xs">{items?.length ?? 0} stored</span>
@@ -637,88 +629,27 @@ function VaultSection({ mode }: { mode: Mode }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Stash() {
-  const [mode, setMode] = useState<Mode>("sc");
+  const mode: Mode = "sc";
   const [activeTab, setActiveTab] = useState(0);
-  const [writeMachine, setWriteMachine] = useState<Machine>("pc");
-
-  const { data: preflight } = usePreflight();
-  const pcOnline = preflight ? preflight.pc_error === null : null;
-  const deckOnline = preflight ? preflight.deck_error === null : null;
 
   const {
     data: stash,
-    isFetching,
     error: stashError,
-    refetch,
   } = useStash(mode);
 
+  // Derive write target from the active snapshot's source machine.
+  // Since you always check in from the device you're playing on, this is always correct.
+  const writeMachine: Machine = (stash?.machine === "deck" ? "deck" : "pc") as Machine;
+
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fadeIn space-y-6">
       {/* Header */}
-      <div>
-        <h2 className="font-diablo text-d2gold text-lg tracking-widest">Item Vault</h2>
-        <p className="text-slate-500 text-xs mt-1">
-          Latest snapshot view, unlimited gold storage, and item archival
-        </p>
+      <div className="mb-1">
+        <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Item Vault</h1>
+        <p className="text-slate-500 text-sm mt-1">Latest snapshot view, unlimited gold storage, and item archival</p>
         <div className="mt-2">
           <SeasonBanner />
         </div>
-      </div>
-
-      {/* Controls */}
-      <div className="flex flex-wrap gap-4 items-center">
-        {/* Mode toggle */}
-        <div className="flex gap-1">
-          {(["sc", "hc"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`px-3 py-1.5 text-xs border transition-colors ${
-                mode === m
-                  ? "border-d2gold text-d2gold bg-d2gold/8"
-                  : "border-d2bg-border text-slate-500 hover:border-slate-500"
-              }`}
-            >
-              {m === "sc" ? "Softcore" : "Hardcore"}
-            </button>
-          ))}
-        </div>
-
-        {/* Write target */}
-        <div className="flex items-center gap-2">
-          <span className="text-slate-600 text-xs">Write to:</span>
-          <div className="flex gap-1">
-            {(["pc", "deck"] as const).map((m) => {
-              const online = m === "pc" ? pcOnline : deckOnline;
-              return (
-                <button
-                  key={m}
-                  onClick={() => setWriteMachine(m)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border transition-colors ${
-                    writeMachine === m
-                      ? "border-d2gold text-d2gold bg-d2gold/8"
-                      : "border-d2bg-border text-slate-500 hover:border-slate-500"
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      online === null ? "bg-slate-600" : online ? "bg-green-400" : "bg-red-600"
-                    }`}
-                  />
-                  {m === "pc" ? "Windows PC" : "Steam Deck"}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <button
-          onClick={() => refetch()}
-          disabled={isFetching}
-          className="btn-d2-ghost text-xs px-4 py-1.5"
-        >
-          {isFetching ? "Loading…" : "Refresh"}
-        </button>
       </div>
 
       {/* Snapshot source info */}
@@ -730,7 +661,7 @@ export default function Stash() {
 
       {/* Error */}
       {stashError && (
-        <div className="bg-red-950/30 border border-red-800/40 px-4 py-3">
+        <div className="bg-red-950/30 border border-red-800/50 px-4 py-3">
           <p className="text-red-400 text-xs">
             {(stashError as any).response?.data?.detail ?? (stashError as Error).message}
           </p>

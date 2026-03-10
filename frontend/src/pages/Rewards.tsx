@@ -54,9 +54,9 @@ function ValidatePanel({ onSave }: { onSave: (hex: string, parsed: ValidateRewar
   const qColor = qualityColor(result?.quality_name ?? null);
 
   return (
-    <div className="border border-d2bg-border p-4 space-y-3">
-      <h3 className="text-slate-300 text-sm font-medium">Paste Item Hex</h3>
-      <p className="text-slate-600 text-xs">
+    <div className="card-d2 p-4 space-y-3">
+      <h3 className="font-diablo text-d2gold text-xs tracking-widest">Paste Item Hex</h3>
+      <p className="text-slate-500 text-xs">
         Copy bytes from the <span className="text-slate-400">hex</span> button on any stash item, or from Hero Editor.
         Paste them here to validate before saving.
       </p>
@@ -66,14 +66,14 @@ function ValidatePanel({ onSave }: { onSave: (hex: string, parsed: ValidateRewar
         value={hex}
         onChange={(e) => { setHex(e.target.value); setResult(null); }}
         rows={3}
-        className="w-full bg-d2bg border border-d2bg-border text-slate-300 text-xs font-mono px-3 py-2 focus:outline-none focus:border-d2gold/50 resize-none"
+        className="w-full bg-d2bg border border-d2bg-border text-slate-300 text-xs font-mono px-3 py-2 focus:outline-none focus:border-d2gold/50 resize-none transition-colors"
       />
 
       <div className="flex items-center gap-3">
         <button
           onClick={handleValidate}
           disabled={validate.isPending || !hex.trim()}
-          className="px-4 py-2 text-sm border border-d2bg-border text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors disabled:opacity-40"
+          className="btn-d2-ghost text-sm"
         >
           {validate.isPending ? "Validating…" : "Validate"}
         </button>
@@ -102,7 +102,7 @@ function ValidatePanel({ onSave }: { onSave: (hex: string, parsed: ValidateRewar
           </div>
           <button
             onClick={() => onSave(hex.trim(), result)}
-            className="mt-1 px-4 py-1.5 text-sm font-medium bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30 transition-colors"
+            className="btn-d2 text-sm mt-1"
           >
             Save to Library →
           </button>
@@ -142,11 +142,10 @@ function SaveDialog({
   const qColor = qualityColor(parsed.quality_name ?? null);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-d2bg-elevated border border-d2bg-border p-6 max-w-md w-full mx-4 space-y-4">
-        <h3 className="text-d2gold font-semibold text-base">Save to Reward Library</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="card-d2 p-6 max-w-md w-full space-y-4 animate-fadeIn">
+        <h3 className="font-diablo text-d2gold text-sm tracking-widest">Save to Reward Library</h3>
 
-        {/* Item preview */}
         <div className={`border px-3 py-2 flex items-center gap-2 ${qColor}`}>
           <span className={`text-[10px] font-mono px-1.5 py-0.5 border ${qColor}`}>
             {qualityBadge(parsed.quality_name ?? null)}
@@ -155,42 +154,39 @@ function SaveDialog({
           {parsed.is_ethereal && <span className="text-[10px] text-sky-400 font-mono ml-1">ETH</span>}
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <label className="text-[10px] uppercase tracking-widest text-slate-500">Label</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Harlequin Crest, Enigma (Archon Plate)…"
-            className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-3 py-2 focus:outline-none focus:border-d2gold/50"
+            className="input-d2"
             autoFocus
           />
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <label className="text-[10px] uppercase tracking-widest text-slate-500">Notes (optional)</label>
           <input
             type="text"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="e.g. 40% MF, 15 all res…"
-            className="w-full bg-d2bg border border-d2bg-border text-slate-300 text-sm px-3 py-2 focus:outline-none focus:border-d2gold/50"
+            className="input-d2"
           />
         </div>
 
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+        {error && (
+          <p className="text-red-400 text-sm bg-red-950/30 border border-red-800/40 px-3 py-2">{error}</p>
+        )}
 
         <div className="flex gap-3 justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-400 border border-d2bg-border hover:border-slate-500 transition-colors"
-          >
-            Cancel
-          </button>
+          <button onClick={onClose} className="btn-d2-ghost text-sm">Cancel</button>
           <button
             onClick={handleSave}
             disabled={createReward.isPending || !name.trim()}
-            className="px-4 py-2 text-sm font-medium bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30 transition-colors disabled:opacity-50"
+            className="btn-d2 text-sm"
           >
             {createReward.isPending ? "Saving…" : "Save Reward"}
           </button>
@@ -238,12 +234,12 @@ function RewardRow({ reward }: { reward: RewardOut }) {
 
   if (editing) {
     return (
-      <div className={`px-4 py-3 border-b border-d2bg-border/30 space-y-2`}>
+      <div className="px-4 py-3 border-b border-d2bg-border/30 space-y-2">
         <input
           type="text"
           value={editName}
           onChange={(e) => setEditName(e.target.value)}
-          className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50"
+          className="input-d2 text-sm"
           autoFocus
         />
         <input
@@ -251,19 +247,15 @@ function RewardRow({ reward }: { reward: RewardOut }) {
           value={editNotes}
           onChange={(e) => setEditNotes(e.target.value)}
           placeholder="Notes (optional)"
-          className="w-full bg-d2bg border border-d2bg-border text-slate-400 text-xs px-2 py-1.5 focus:outline-none focus:border-d2gold/50"
+          className="input-d2 text-xs"
         />
         <div className="flex gap-2">
-          <button
-            onClick={handleSaveEdit}
-            disabled={updateReward.isPending}
-            className="px-3 py-1 text-xs text-d2gold border border-d2gold/40 hover:bg-d2gold/10 transition-colors"
-          >
+          <button onClick={handleSaveEdit} disabled={updateReward.isPending} className="btn-d2 text-xs px-3 py-1.5">
             Save
           </button>
           <button
             onClick={() => { setEditing(false); setEditName(reward.name); setEditNotes(reward.notes ?? ""); }}
-            className="px-3 py-1 text-xs text-slate-500 border border-d2bg-border hover:border-slate-500 transition-colors"
+            className="btn-d2-ghost text-xs px-3 py-1.5"
           >
             Cancel
           </button>
@@ -275,12 +267,10 @@ function RewardRow({ reward }: { reward: RewardOut }) {
   return (
     <div className="px-4 py-3 border-b border-d2bg-border/30 hover:bg-d2bg-elevated/20 transition-colors">
       <div className="flex items-center gap-3">
-        {/* Quality badge */}
         <span className={`text-[9px] font-mono px-1.5 py-0.5 border shrink-0 leading-4 ${qColor}`}>
           {qualityBadge(reward.quality_name)}
         </span>
 
-        {/* Names */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className={`text-sm font-semibold ${qColor.split(" ")[0]}`}>{reward.name}</span>
@@ -304,10 +294,8 @@ function RewardRow({ reward }: { reward: RewardOut }) {
           </div>
         </div>
 
-        {/* Byte count */}
         <span className="text-slate-700 text-[10px] shrink-0 tabular-nums">{reward.byte_len}b</span>
 
-        {/* Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={handleCopyHex}
@@ -388,21 +376,20 @@ function ExtractPanel({ onSaveItem }: { onSaveItem: (item: ExtractedD2IItem) => 
   const qColor = qualityColor(result?.quality_name ?? null);
 
   return (
-    <div className="border border-d2bg-border p-4 space-y-3">
+    <div className="card-d2 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-slate-300 text-sm font-medium">Import from Hero Editor (.d2i)</h3>
+        <h3 className="font-diablo text-d2gold text-xs tracking-widest">Import from Hero Editor (.d2i)</h3>
         {result && (
           <button onClick={() => setResult(null)} className="text-xs text-slate-600 hover:text-slate-400 transition-colors">
             ✕ clear
           </button>
         )}
       </div>
-      <p className="text-slate-600 text-xs">
+      <p className="text-slate-500 text-xs">
         In Hero Editor: right-click an item → <span className="text-slate-400">Export Item</span> → save as .d2i.
         Upload it here to add it to the reward library.
       </p>
 
-      {/* Drop zone — shown when no result yet */}
       {!result && (
         <div
           onDrop={handleDrop}
@@ -421,10 +408,11 @@ function ExtractPanel({ onSaveItem }: { onSaveItem: (item: ExtractedD2IItem) => 
       <input ref={fileRef} type="file" accept=".d2i" className="hidden" onChange={handlePick} />
 
       {extract.error && (
-        <p className="text-red-400 text-xs">{extract.error.message}</p>
+        <p className="text-red-400 text-xs bg-red-950/30 border border-red-800/40 px-3 py-2">
+          {extract.error.message}
+        </p>
       )}
 
-      {/* Parsed item preview */}
       {result && (
         <div className="space-y-2">
           {!result.valid ? (
@@ -451,15 +439,12 @@ function ExtractPanel({ onSaveItem }: { onSaveItem: (item: ExtractedD2IItem) => 
                 <span>{result.byte_len} bytes</span>
               </div>
               <div className="flex gap-3 pt-1">
-                <button
-                  onClick={() => onSaveItem(result)}
-                  className="px-4 py-1.5 text-sm font-medium bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30 transition-colors"
-                >
+                <button onClick={() => onSaveItem(result)} className="btn-d2 text-sm">
                   Save to Library →
                 </button>
                 <button
                   onClick={() => fileRef.current?.click()}
-                  className="text-xs text-slate-500 hover:text-slate-300 transition-colors self-center"
+                  className="btn-d2-ghost text-sm"
                 >
                   Load another →
                 </button>
@@ -492,39 +477,39 @@ export default function Rewards() {
   const sortedGroups = ORDER.filter((k) => grouped[k]);
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-8">
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn space-y-6">
       <div>
-        <h1 className="text-d2gold font-diablo text-xl tracking-widest">Reward Library</h1>
-        <p className="text-slate-500 text-xs mt-1">
+        <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Reward Library</h1>
+        <p className="text-slate-500 text-sm mt-1">
           Curate items to use as season milestone rewards. Paste hex bytes from the stash viewer or Hero Editor.
         </p>
       </div>
 
-      {/* Import from Hero Editor */}
       <ExtractPanel onSaveItem={handleSaveExtracted} />
 
-      {/* Add new reward via hex paste */}
       <ValidatePanel onSave={(hex, parsed) => setSaveTarget({ hex, parsed })} />
 
       {/* Library */}
       <section className="space-y-3">
-        <h2 className="text-slate-400 text-xs uppercase tracking-widest border-b border-d2bg-border pb-2">
+        <p className="text-slate-600 text-[10px] uppercase tracking-wider">
           Saved Rewards ({rewards?.length ?? 0})
-        </h2>
+        </p>
 
         {isLoading ? (
-          <p className="text-slate-600 text-sm">Loading…</p>
+          <div className="card-d2 px-4 py-6 text-center text-slate-600 text-sm">Loading…</div>
         ) : !rewards || rewards.length === 0 ? (
-          <p className="text-slate-600 text-sm">No rewards saved yet. Validate and save an item above.</p>
+          <div className="card-d2 px-4 py-6 text-center">
+            <p className="text-slate-600 text-sm">No rewards saved yet. Validate and save an item above.</p>
+          </div>
         ) : (
-          <div className="border border-d2bg-border divide-y divide-transparent">
+          <div className="card-d2">
             {sortedGroups.map((quality) => (
               <div key={quality}>
-                <div className="px-4 py-1.5 bg-black/20 border-b border-d2bg-border/50">
+                <div className="px-4 py-2 bg-black/20 border-b border-d2bg-border/50 flex items-center gap-2">
                   <span className={`text-[10px] uppercase tracking-widest font-medium ${qualityColor(quality).split(" ")[0]}`}>
                     {quality}
                   </span>
-                  <span className="text-slate-700 text-[10px] ml-2">({grouped[quality].length})</span>
+                  <span className="text-slate-700 text-[10px]">({grouped[quality].length})</span>
                 </div>
                 {grouped[quality].map((r) => (
                   <RewardRow key={r.id} reward={r} />
