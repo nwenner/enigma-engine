@@ -40,8 +40,9 @@ router = APIRouter(tags=["seasons"])
 
 class MilestoneIn(BaseModel):
     name: str
-    milestone_type: str          # "level" | "cleared_normal" | "cleared_nightmare"
+    milestone_type: str          # "level" | "cleared_normal" | "cleared_nightmare" | "gold_vault"
     level_target: Optional[int] = None
+    numeric_target: Optional[int] = None    # threshold for quantity-based types (e.g. gold_vault amount)
     sort_order: int = 0
     reward_item_hex: Optional[str] = None   # space-separated or continuous hex bytes
     reward_item_name: Optional[str] = None  # display name override
@@ -62,6 +63,7 @@ class MilestoneOut(BaseModel):
     name: str
     milestone_type: str
     level_target: Optional[int]
+    numeric_target: Optional[int]
     reward_item_name: Optional[str]
     reward_item_code: Optional[str]
     has_reward: bool
@@ -117,6 +119,7 @@ class MilestonePatch(BaseModel):
     name: Optional[str] = None
     milestone_type: Optional[str] = None
     level_target: Optional[int] = None          # explicit None clears the target
+    numeric_target: Optional[int] = None        # explicit None clears the target
     reward_item_hex: Optional[str] = None        # "" or None = clear reward; non-empty = replace
     reward_item_name: Optional[str] = None
     time_limit_hours: Optional[int] = None       # explicit None clears the limit
@@ -178,6 +181,7 @@ def _ms_out(ms: SeasonMilestone, season_started_at: datetime | None = None) -> M
         name=ms.name,
         milestone_type=ms.milestone_type,
         level_target=ms.level_target,
+        numeric_target=ms.numeric_target,
         reward_item_name=ms.reward_item_name,
         reward_item_code=ms.reward_item_code,
         has_reward=ms.reward_item_bytes is not None,
@@ -444,6 +448,7 @@ async def create_season(body: SeasonCreate, session: AsyncSession = Depends(get_
             name=ms_in.name,
             milestone_type=ms_in.milestone_type,
             level_target=ms_in.level_target,
+            numeric_target=ms_in.numeric_target,
             reward_item_bytes=reward_bytes,
             reward_item_name=ms_in.reward_item_name,
             reward_item_code=ms_in.reward_item_code,
@@ -659,6 +664,7 @@ async def add_milestone(
         name=body.name,
         milestone_type=body.milestone_type,
         level_target=body.level_target,
+        numeric_target=body.numeric_target,
         reward_item_bytes=reward_bytes,
         reward_item_name=body.reward_item_name,
         reward_item_code=body.reward_item_code,
@@ -700,6 +706,9 @@ async def patch_milestone(
 
     if "level_target" in fields:
         ms.level_target = body.level_target
+
+    if "numeric_target" in fields:
+        ms.numeric_target = body.numeric_target
 
     if "reward_item_hex" in fields:
         if not body.reward_item_hex:

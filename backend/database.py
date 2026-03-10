@@ -106,6 +106,12 @@ async def init_db() -> None:
         except Exception:
             pass
 
+        # season_milestones: numeric_target (for quantity-based milestones e.g. gold_vault)
+        try:
+            await conn.execute(text("ALTER TABLE season_milestones ADD COLUMN numeric_target INTEGER"))
+        except Exception:
+            pass
+
 
 async def get_session() -> AsyncSession:
     async with AsyncSessionLocal() as session:

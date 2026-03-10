@@ -52,6 +52,9 @@ async def check_season_milestones(session: AsyncSession, downloaded: list[dict])
 
         await _check_char_milestones(session, active_season, milestones, char)
 
+    # Also check season-wide milestones (gold vault etc.) on every check-in
+    await check_gold_milestones(session, active_season, milestones)
+
 
 async def _get_active_season(session: AsyncSession) -> Season | None:
     result = await session.execute(
@@ -75,13 +78,15 @@ async def _check_char_milestones(
     milestones: list[SeasonMilestone],
     char,
 ) -> None:
-    """Check all milestones for one character and record new achievements."""
+    """Check character-based milestones for one SC character and record new achievements."""
     now = datetime.now(timezone.utc)
     for ms in milestones:
-        if not _milestone_met(ms, char, season.started_at, now):
+        if ms.milestone_type == "gold_vault":
+            continue  # season-wide, handled separately
+
+        if not _milestone_met(ms, char=char, season_started_at=season.started_at, now=now):
             continue
 
-        # Check if already recorded
         existing = await session.execute(
             select(SeasonAchievement).where(
                 SeasonAchievement.milestone_id == ms.id,
@@ -108,20 +113,87 @@ async def _check_char_milestones(
     await session.commit()
 
 
+async def check_gold_milestones(
+    session: AsyncSession,
+    active_season: Season | None = None,
+    milestones: list[SeasonMilestone] | None = None,
+) -> None:
+    """
+    Check gold_vault milestones against the current SC vault balance.
+    Called after every deposit and at the end of every check-in.
+
+    Parameters are optional so callers that already have them can avoid re-fetching.
+    """
+    if active_season is None:
+        active_season = await _get_active_season(session)
+        if not active_season:
+            return
+
+    if milestones is None:
+        milestones = await _get_milestones(session, active_season.id)
+
+    gold_milestones = [m for m in milestones if m.milestone_type == "gold_vault"]
+    if not gold_milestones:
+        return
+
+    vault_result = await session.execute(
+        select(GoldVault).where(GoldVault.hardcore == False)
+    )
+    vault = vault_result.scalar_one_or_none()
+    vault_gold_sc = vault.amount if vault else 0
+
+    now = datetime.now(timezone.utc)
+    for ms in gold_milestones:
+        if not _milestone_met(ms, season_started_at=active_season.started_at, now=now, vault_gold_sc=vault_gold_sc):
+            continue
+
+        existing = await session.execute(
+            select(SeasonAchievement).where(
+                SeasonAchievement.milestone_id == ms.id,
+                SeasonAchievement.character_name == _SEASON_SENTINEL,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            continue
+
+        achievement = SeasonAchievement(
+            season_id=active_season.id,
+            milestone_id=ms.id,
+            character_name=_SEASON_SENTINEL,
+            character_class="",
+            character_level=0,
+            achieved_at=now,
+        )
+        session.add(achievement)
+        log.info(
+            "Season %d: gold vault milestone '%s' achieved (vault=%d, target=%d)",
+            active_season.id, ms.name, vault_gold_sc, ms.numeric_target or 0,
+        )
+
+    await session.commit()
+
+
+# Sentinel used for season-wide achievements that aren't tied to a specific character
+_SEASON_SENTINEL = "(Season)"
+
+
 def _milestone_met(
     ms: SeasonMilestone,
-    char,
+    char=None,
     season_started_at: datetime | None = None,
     now: datetime | None = None,
+    vault_gold_sc: int = 0,
 ) -> bool:
     """
-    Returns True if the character meets the milestone condition AND the time
-    window (if any) has not yet closed.
+    Returns True if the milestone condition is met AND the time window (if any)
+    has not closed.
+
+    char:          required for character-based milestone types
+    vault_gold_sc: required for gold_vault type
     """
-    # Check time window first — if expired, no new achievements are possible
+    # Time window guard — applies to all types
     if ms.time_limit_hours is not None and season_started_at is not None:
         _now = now or datetime.now(timezone.utc)
-        # Make started_at timezone-aware if stored naive
         started = season_started_at
         if started.tzinfo is None:
             started = started.replace(tzinfo=timezone.utc)
@@ -130,13 +202,15 @@ def _milestone_met(
             return False
 
     if ms.milestone_type == "level":
-        return ms.level_target is not None and char.level >= ms.level_target
+        return char is not None and ms.level_target is not None and char.level >= ms.level_target
     elif ms.milestone_type == "cleared_normal":
-        return char.cleared_normal
+        return char is not None and char.cleared_normal
     elif ms.milestone_type == "cleared_nightmare":
-        return char.cleared_nightmare
+        return char is not None and char.cleared_nightmare
     elif ms.milestone_type == "cleared_hell":
-        return char.cleared_hell
+        return char is not None and char.cleared_hell
+    elif ms.milestone_type == "gold_vault":
+        return ms.numeric_target is not None and vault_gold_sc >= ms.numeric_target
     return False
 
 

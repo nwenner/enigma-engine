@@ -53,7 +53,14 @@ function milestoneTypeLabel(type: string): string {
   if (type === "cleared_nightmare") return "Cleared NM";
   if (type === "cleared_hell") return "Cleared Hell";
   if (type === "level") return "Level";
+  if (type === "gold_vault") return "Gold Vault";
   return type;
+}
+
+function fmtGoldTarget(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return n.toLocaleString();
 }
 
 // ─── Confirm Dialog ───────────────────────────────────────────────────────────
@@ -137,7 +144,8 @@ function MilestoneRow({
           </span>
           <span className="text-[10px] uppercase tracking-widest text-slate-500 border border-d2bg-border px-1.5 py-0.5">
             {milestoneTypeLabel(ms.milestone_type)}
-            {ms.level_target ? ` ${ms.level_target}` : ""}
+            {ms.milestone_type === "level" && ms.level_target ? ` ${ms.level_target}` : ""}
+            {ms.milestone_type === "gold_vault" && ms.numeric_target != null ? ` ≥ ${fmtGoldTarget(ms.numeric_target)}` : ""}
           </span>
           {ms.time_limit_hours !== null && (
             <span className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
@@ -166,20 +174,29 @@ function MilestoneRow({
 
       {myAchs.length > 0 && (
         <div className="space-y-1 pt-1">
-          {myAchs.map((a) => (
-            <div key={a.id} className="flex items-center gap-2 text-xs text-slate-400">
-              <span className={a.claimed_at ? "text-green-400" : "text-slate-300"}>
-                {a.claimed_at ? "✓" : "○"}
-              </span>
-              <span>{a.character_name}</span>
-              <span className="text-slate-600">{a.character_class}</span>
-              <span className="text-slate-600">Lvl {a.character_level}</span>
-              <span className="text-slate-600">— {fmtDate(a.achieved_at)}</span>
-              {a.claimed_at && (
-                <span className="text-green-500/70">Claimed {fmtDate(a.claimed_at)}</span>
-              )}
-            </div>
-          ))}
+          {myAchs.map((a) => {
+            const isSeasonWide = a.character_name === "(Season)";
+            return (
+              <div key={a.id} className="flex items-center gap-2 text-xs text-slate-400">
+                <span className={a.claimed_at ? "text-green-400" : "text-slate-300"}>
+                  {a.claimed_at ? "✓" : "○"}
+                </span>
+                {isSeasonWide ? (
+                  <span className="text-slate-500 italic">Season milestone</span>
+                ) : (
+                  <>
+                    <span>{a.character_name}</span>
+                    <span className="text-slate-600">{a.character_class}</span>
+                    <span className="text-slate-600">Lvl {a.character_level}</span>
+                  </>
+                )}
+                <span className="text-slate-600">— {fmtDate(a.achieved_at)}</span>
+                {a.claimed_at && (
+                  <span className="text-green-500/70">Claimed {fmtDate(a.claimed_at)}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -222,6 +239,7 @@ function EditMilestoneModal({
   const [name, setName] = useState(ms.name);
   const [milestoneType, setMilestoneType] = useState(ms.milestone_type);
   const [levelTarget, setLevelTarget] = useState(String(ms.level_target ?? ""));
+  const [numericTarget, setNumericTarget] = useState(String(ms.numeric_target ?? ""));
   const [timeLimitDays, setTimeLimitDays] = useState(
     ms.time_limit_hours != null ? String(ms.time_limit_hours / 24) : ""
   );
@@ -262,6 +280,9 @@ function EditMilestoneModal({
 
     const newLevel = milestoneType === "level" ? (parseInt(levelTarget) || null) : null;
     if (newLevel !== ms.level_target) patchBody.level_target = newLevel;
+
+    const newNumericTarget = milestoneType === "gold_vault" ? (parseInt(numericTarget) || null) : null;
+    if (newNumericTarget !== ms.numeric_target) patchBody.numeric_target = newNumericTarget;
 
     const newHours = timeLimitDays.trim() ? Math.round(parseFloat(timeLimitDays) * 24) : null;
     if (newHours !== ms.time_limit_hours) patchBody.time_limit_hours = newHours;
@@ -306,6 +327,7 @@ function EditMilestoneModal({
               <option value="cleared_normal">Cleared Normal</option>
               <option value="cleared_nightmare">Cleared Nightmare</option>
               <option value="cleared_hell">Cleared Hell</option>
+              <option value="gold_vault">Gold Vault</option>
             </select>
           </div>
           {milestoneType === "level" && (
@@ -315,6 +337,18 @@ function EditMilestoneModal({
                 type="number" min={1} max={99}
                 value={levelTarget}
                 onChange={(e) => setLevelTarget(e.target.value)}
+                className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
+              />
+            </div>
+          )}
+          {milestoneType === "gold_vault" && (
+            <div className="w-36 space-y-1.5">
+              <label className="text-[10px] uppercase tracking-widest text-slate-500">Gold threshold</label>
+              <input
+                type="number" min={1}
+                placeholder="e.g. 1000000"
+                value={numericTarget}
+                onChange={(e) => setNumericTarget(e.target.value)}
                 className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
               />
             </div>
@@ -502,6 +536,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
           name: newMilestone.name,
           milestone_type: newMilestone.milestone_type,
           level_target: newMilestone.milestone_type === "level" ? (parseInt(newMilestone.level_target) || null) : null,
+          numeric_target: newMilestone.milestone_type === "gold_vault" ? (parseInt(newMilestone.numeric_target) || null) : null,
           sort_order: 999,
           reward_item_hex: hex,
           reward_item_name: newMilestone.reward_item_name.trim() || null,
@@ -616,7 +651,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
                 <button
                   onClick={() => {
                     setShowAddForm(true);
-                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "level", level_target: "50", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null });
+                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "level", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null });
                   }}
                   className="text-xs text-d2gold/70 hover:text-d2gold transition-colors"
                 >
@@ -702,8 +737,9 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
 type MilestoneFormRow = {
   id: number;
   name: string;
-  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell";
+  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
   level_target: string;
+  numeric_target: string;   // for gold_vault: gold threshold
   time_limit_days: string;
   reward_item_hex: string;
   reward_item_name: string;
@@ -750,7 +786,7 @@ function MilestoneFormRowUI({
 
   return (
     <div className="card-d2 p-3 space-y-2">
-      {/* Row 1: name + type + level + remove */}
+      {/* Row 1: name + type + target + remove */}
       <div className="flex items-center gap-2">
         <input
           type="text"
@@ -768,6 +804,7 @@ function MilestoneFormRowUI({
           <option value="cleared_normal">Cleared Normal</option>
           <option value="cleared_nightmare">Cleared Nightmare</option>
           <option value="cleared_hell">Cleared Hell</option>
+          <option value="gold_vault">Gold Vault</option>
         </select>
         {row.milestone_type === "level" && (
           <input
@@ -778,6 +815,16 @@ function MilestoneFormRowUI({
             value={row.level_target}
             onChange={(e) => onChange({ ...row, level_target: e.target.value })}
             className="w-16 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
+          />
+        )}
+        {row.milestone_type === "gold_vault" && (
+          <input
+            type="number"
+            placeholder="Gold"
+            min={1}
+            value={row.numeric_target}
+            onChange={(e) => onChange({ ...row, numeric_target: e.target.value })}
+            className="w-28 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
           />
         )}
         <button onClick={onRemove} className="text-slate-600 hover:text-red-400 text-sm px-2 py-1.5 transition-colors">
@@ -983,7 +1030,7 @@ function CreateSeasonPanel() {
   const addMilestone = () => {
     setMilestones((prev) => [
       ...prev,
-      { id: nextKey(), name: "", milestone_type: "level", level_target: "50", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null },
+      { id: nextKey(), name: "", milestone_type: "level", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null },
     ]);
   };
 
@@ -1023,6 +1070,7 @@ function CreateSeasonPanel() {
           name: m.name,
           milestone_type: m.milestone_type,
           level_target: m.milestone_type === "level" ? parseInt(m.level_target) || null : null,
+          numeric_target: m.milestone_type === "gold_vault" ? parseInt(m.numeric_target) || null : null,
           sort_order: i,
           reward_item_hex: hex || null,
           reward_item_name: m.reward_item_name.trim() || null,

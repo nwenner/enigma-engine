@@ -216,8 +216,9 @@ export interface SeasonMilestone {
   id: number;
   season_id: number;
   name: string;
-  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell";
+  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
   level_target: number | null;
+  numeric_target: number | null;
   reward_item_name: string | null;
   reward_item_code: string | null;
   has_reward: boolean;
@@ -266,8 +267,9 @@ export interface SeasonListItem {
 
 export interface MilestoneCreateInput {
   name: string;
-  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell";
+  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
   level_target?: number | null;
+  numeric_target?: number | null;
   sort_order: number;
   reward_item_hex?: string | null;
   reward_item_name?: string | null;
@@ -277,8 +279,9 @@ export interface MilestoneCreateInput {
 
 export interface MilestonePatch {
   name?: string;
-  milestone_type?: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell";
+  milestone_type?: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
   level_target?: number | null;
+  numeric_target?: number | null;
   reward_item_hex?: string | null;   // "" or null = clear; non-empty = replace
   reward_item_name?: string | null;
   time_limit_hours?: number | null;  // null = clear time limit

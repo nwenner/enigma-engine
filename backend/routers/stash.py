@@ -262,6 +262,13 @@ async def deposit_gold(
         log.error("Gold deposit failed: %s", e)
         raise HTTPException(500, str(e))
 
+    # Check if any gold_vault milestones are now met
+    try:
+        from backend.services.seasons_service import check_gold_milestones
+        await check_gold_milestones(session)
+    except Exception as e:
+        log.warning("Gold milestone check failed (non-fatal): %s", e)
+
     return {"success": True, "stash_gold": result["stash_gold"], "vault_gold": result["vault_gold"]}
 
 

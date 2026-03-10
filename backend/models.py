@@ -175,6 +175,7 @@ class SeasonMilestone(Base):
     reward_item_code = Column(String(4), nullable=True)         # 4-char type code for UI
     time_limit_hours = Column(Integer, nullable=True)           # null = no time limit; e.g. 48 = 2 days
     sort_order = Column(Integer, nullable=False, default=0)
+    numeric_target = Column(BigInteger, nullable=True)          # threshold for quantity-based types (e.g. gold_vault)
 
 
 class SeasonAchievement(Base):
