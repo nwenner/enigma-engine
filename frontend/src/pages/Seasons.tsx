@@ -7,7 +7,6 @@ import {
   useEndSeason,
   useDeleteSeason,
   useClaimAchievement,
-  useValidateRewardItem,
   useRewards,
   useAddMilestone,
   usePatchMilestone,
@@ -247,7 +246,6 @@ function EditMilestoneModal({
 }) {
   const patch = usePatchMilestone();
   const { data: rewards } = useRewards();
-  const validateItem = useValidateRewardItem();
 
   const [name, setName] = useState(ms.name);
   const [milestoneType, setMilestoneType] = useState(ms.milestone_type);
@@ -260,30 +258,11 @@ function EditMilestoneModal({
     ms.time_limit_hours != null ? String(ms.time_limit_hours / 24) : ""
   );
 
-  // "keep" = don't touch reward; "clear" = remove it; "replace" = set new hex
-  const [rewardMode, setRewardMode] = useState<"keep" | "clear" | "replace">("keep");
-  const [rewardHex, setRewardHex] = useState("");
+  // "keep" = don't touch reward; "library" = pick from library; "clear" = remove it
+  const [rewardMode, setRewardMode] = useState<"keep" | "library" | "clear">("keep");
   const [rewardName, setRewardName] = useState("");
   const [rewardLibraryId, setRewardLibraryId] = useState<number | null>(null);
-  const [showLibrary, setShowLibrary] = useState(false);
-  const [validating, setValidating] = useState(false);
-  const [validated, setValidated] = useState(false);
-  const [validateError, setValidateError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const handleValidate = async () => {
-    if (!rewardHex.trim()) return;
-    setValidating(true); setValidateError(null); setValidated(false);
-    try {
-      const result = await validateItem.mutateAsync(rewardHex);
-      setValidated(true);
-      if (result.item_name && !rewardName) setRewardName(result.item_name);
-    } catch (e: unknown) {
-      setValidateError(e instanceof Error ? e.message : "Validation failed");
-    } finally {
-      setValidating(false);
-    }
-  };
 
   const handleSave = async () => {
     if (!name.trim()) { setError("Name is required"); return; }
@@ -310,9 +289,17 @@ function EditMilestoneModal({
     if (rewardMode === "clear") {
       patchBody.reward_item_hex = null;
       patchBody.reward_item_name = null;
-    } else if (rewardMode === "replace" && rewardHex.trim()) {
-      patchBody.reward_item_hex = rewardHex.trim();
-      patchBody.reward_item_name = rewardName.trim() || null;
+    } else if (rewardMode === "library" && rewardLibraryId) {
+      try {
+        const resp = await fetch(`/api/rewards/${rewardLibraryId}/bytes`);
+        if (!resp.ok) throw new Error("Failed to load reward bytes from library");
+        const data = await resp.json();
+        patchBody.reward_item_hex = data.hex;
+        patchBody.reward_item_name = rewardName.trim() || null;
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Failed to load reward item");
+        return;
+      }
     }
 
     if (Object.keys(patchBody).length === 0) { onClose(); return; }
@@ -424,7 +411,7 @@ function EditMilestoneModal({
         <div className="space-y-2">
           <label className="text-[10px] uppercase tracking-widest text-slate-500">🎁 Reward Item</label>
 
-          {ms.has_reward && (
+          {ms.has_reward && rewardMode === "keep" && (
             <div className="flex items-center gap-2 p-2 bg-d2bg-elevated border border-d2bg-border text-xs">
               <span className="text-d2gold/60">Current:</span>
               <span className="text-slate-300">{ms.reward_item_name ?? ms.reward_item_code ?? "item"}</span>
@@ -432,10 +419,10 @@ function EditMilestoneModal({
           )}
 
           <div className="flex gap-2">
-            {(["keep", "replace", "clear"] as const).map((m) => (
+            {(["keep", "library", "clear"] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => { setRewardMode(m); setShowLibrary(false); }}
+                onClick={() => { setRewardMode(m); setRewardLibraryId(null); setRewardName(""); }}
                 className={`text-xs px-3 py-1.5 border transition-colors ${
                   rewardMode === m
                     ? m === "clear" ? "border-red-700 text-red-400 bg-red-950/30"
@@ -443,73 +430,41 @@ function EditMilestoneModal({
                     : "border-d2bg-border text-slate-500 hover:border-slate-500"
                 }`}
               >
-                {m === "keep" ? (ms.has_reward ? "Keep existing" : "No reward") : m === "replace" ? "Set new" : "Clear reward"}
+                {m === "keep" ? (ms.has_reward ? "Keep existing" : "No reward") : m === "library" ? "Pick from library" : "Clear reward"}
               </button>
             ))}
           </div>
 
-          {rewardMode === "replace" && (
+          {rewardMode === "library" && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-600">Hex paste or library</span>
-                <button onClick={() => setShowLibrary((v) => !v)} className="text-[10px] text-d2gold/70 hover:text-d2gold transition-colors">
-                  {showLibrary ? "▲ Hide library" : "📚 Pick from library"}
-                </button>
-              </div>
-              {showLibrary && (
-                <div className="border border-d2bg-border bg-black/30 max-h-40 overflow-y-auto divide-y divide-d2bg-border/30">
+              {rewardLibraryId && rewardName ? (
+                <div className="flex items-center gap-2 px-2 py-1.5 border border-d2gold/30 bg-d2gold/5">
+                  <span className="text-d2gold/80 text-xs">📚</span>
+                  <span className="text-d2gold text-sm font-medium flex-1">{rewardName}</span>
+                  <button onClick={() => { setRewardLibraryId(null); setRewardName(""); }} className="text-[10px] text-slate-600 hover:text-red-400 transition-colors">
+                    ✕ change
+                  </button>
+                </div>
+              ) : (
+                <div className="border border-d2bg-border bg-black/30 max-h-48 overflow-y-auto divide-y divide-d2bg-border/30">
                   {!rewards || rewards.length === 0 ? (
-                    <p className="text-slate-600 text-xs px-3 py-2">No rewards in library yet.</p>
+                    <p className="text-slate-600 text-xs px-3 py-2">No rewards in library yet. Add items in the Reward Library section first.</p>
                   ) : rewards.map((r) => (
                     <button
                       key={r.id}
-                      onClick={() => {
-                        setRewardLibraryId(r.id);
-                        setRewardName(r.name);
-                        setRewardHex(`[library:${r.id}]`);
-                        setValidated(true);
-                        setShowLibrary(false);
-                      }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-d2bg-elevated/40 transition-colors ${
-                        rewardLibraryId === r.id ? "bg-d2gold/5 border-l-2 border-d2gold" : ""
-                      }`}
+                      onClick={() => { setRewardLibraryId(r.id); setRewardName(r.name); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-d2bg-elevated/40 transition-colors"
                     >
                       <span className="text-[9px] font-mono text-slate-500 border border-slate-700 px-1 shrink-0">
                         {(r.quality_name ?? "NRM").slice(0, 3).toUpperCase()}
                       </span>
                       <span className="text-sm text-slate-200 truncate">{r.name}</span>
                       {r.is_ethereal && <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>}
+                      {r.notes && <span className="text-[10px] text-slate-600 truncate">{r.notes}</span>}
                     </button>
                   ))}
                 </div>
               )}
-              {!rewardLibraryId && (
-                <div className="flex gap-2">
-                  <textarea
-                    placeholder="10 0f 00 00 4a 4d ..."
-                    value={rewardHex}
-                    onChange={(e) => { setRewardHex(e.target.value); setValidated(false); setRewardLibraryId(null); }}
-                    rows={2}
-                    className="flex-1 bg-d2bg border border-d2bg-border text-slate-300 text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-d2gold/50 resize-none transition-colors"
-                  />
-                  <button onClick={handleValidate} disabled={validating || !rewardHex.trim()} className="btn-d2-ghost text-xs px-3">
-                    {validating ? "…" : "Validate"}
-                  </button>
-                </div>
-              )}
-              {rewardLibraryId && rewardName && (
-                <div className="flex items-center gap-2 px-2 py-1.5 border border-d2gold/30 bg-d2gold/5">
-                  <span className="text-d2gold/80 text-xs">📚</span>
-                  <span className="text-d2gold text-sm font-medium flex-1">{rewardName}</span>
-                  <button onClick={() => { setRewardHex(""); setRewardName(""); setRewardLibraryId(null); setValidated(false); }} className="text-[10px] text-slate-600 hover:text-red-400 transition-colors">
-                    ✕ clear
-                  </button>
-                </div>
-              )}
-              {validated && !rewardLibraryId && rewardName && (
-                <p className="text-xs text-green-400">✓ {rewardName}</p>
-              )}
-              {validateError && <p className="text-xs text-red-400">{validateError}</p>}
             </div>
           )}
         </div>
@@ -569,7 +524,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
     if (!newMilestone) return;
     setAddError(null);
     try {
-      let hex = newMilestone.reward_item_hex.trim() || null;
+      let hex: string | null = null;
       if (newMilestone.reward_library_id) {
         const resp = await fetch(`/api/rewards/${newMilestone.reward_library_id}/bytes`);
         if (!resp.ok) throw new Error("Failed to load reward bytes from library");
@@ -699,7 +654,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
                 <button
                   onClick={() => {
                     setShowAddForm(true);
-                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "level", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null });
+                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "level", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_name: "", reward_library_id: null });
                   }}
                   className="text-xs text-d2gold/70 hover:text-d2gold transition-colors"
                 >
@@ -790,12 +745,8 @@ type MilestoneFormRow = {
   level_target: string;
   numeric_target: string;   // for gold_vault: gold threshold
   time_limit_days: string;
-  reward_item_hex: string;
   reward_item_name: string;
   reward_library_id: number | null;
-  validated: boolean;
-  validating: boolean;
-  validateError: string | null;
 };
 
 function MilestoneFormRowUI({
@@ -807,31 +758,8 @@ function MilestoneFormRowUI({
   onChange: (updated: MilestoneFormRow) => void;
   onRemove: () => void;
 }) {
-  const validateItem = useValidateRewardItem();
   const { data: rewards } = useRewards();
   const [showLibrary, setShowLibrary] = useState(false);
-
-  const handleValidate = async () => {
-    if (!row.reward_item_hex.trim()) return;
-    onChange({ ...row, validating: true, validateError: null, validated: false });
-    try {
-      const result = await validateItem.mutateAsync(row.reward_item_hex);
-      onChange({
-        ...row,
-        validating: false,
-        validated: true,
-        validateError: null,
-        reward_item_name: result.item_name ?? row.reward_item_name,
-      });
-    } catch (e: unknown) {
-      onChange({
-        ...row,
-        validating: false,
-        validated: false,
-        validateError: e instanceof Error ? e.message : "Validation failed",
-      });
-    }
-  };
 
   return (
     <div className="card-d2 p-3 space-y-2">
@@ -931,89 +859,49 @@ function MilestoneFormRowUI({
           <label className="text-[10px] uppercase tracking-widest text-slate-500">
             🎁 Reward Item (optional)
           </label>
-          <button
-            onClick={() => setShowLibrary((v) => !v)}
-            className="text-[10px] text-d2gold/70 hover:text-d2gold transition-colors"
-          >
-            {showLibrary ? "▲ Hide library" : "📚 Pick from library"}
-          </button>
+          {!row.reward_library_id && (
+            <button
+              onClick={() => setShowLibrary((v) => !v)}
+              className="text-[10px] text-d2gold/70 hover:text-d2gold transition-colors"
+            >
+              {showLibrary ? "▲ Hide" : "📚 Pick from library"}
+            </button>
+          )}
         </div>
 
-        {showLibrary && (
-          <div className="border border-d2bg-border bg-black/30 max-h-48 overflow-y-auto divide-y divide-d2bg-border/30">
-            {!rewards || rewards.length === 0 ? (
-              <p className="text-slate-600 text-xs px-3 py-2">
-                No rewards saved. Go to <span className="text-slate-400">Reward Library</span> to add items first.
-              </p>
-            ) : (
-              rewards.map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() => {
-                    onChange({
-                      ...row,
-                      reward_item_name: r.name,
-                      reward_item_hex: `[library:${r.id}]`,
-                      reward_library_id: r.id,
-                      validated: true,
-                      validateError: null,
-                    });
-                    setShowLibrary(false);
-                  }}
-                  className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-d2bg-elevated/40 transition-colors ${
-                    row.reward_library_id === r.id ? "bg-d2gold/5 border-l-2 border-d2gold" : ""
-                  }`}
-                >
-                  <span className="text-[9px] font-mono text-slate-500 border border-slate-700 px-1 shrink-0">
-                    {(r.quality_name ?? "NRM").slice(0, 3).toUpperCase()}
-                  </span>
-                  <span className="text-sm text-slate-200 truncate">{r.name}</span>
-                  {r.is_ethereal && <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>}
-                  {r.notes && <span className="text-[10px] text-slate-600 truncate">{r.notes}</span>}
-                </button>
-              ))
-            )}
-          </div>
-        )}
-
-        {!row.reward_library_id && (
-          <div className="flex gap-2">
-            <textarea
-              placeholder="or paste hex bytes: 10 0f 00 00 4a 4d ..."
-              value={row.reward_item_hex}
-              onChange={(e) => onChange({ ...row, reward_item_hex: e.target.value, validated: false, reward_library_id: null })}
-              rows={2}
-              className="flex-1 bg-d2bg border border-d2bg-border text-slate-300 text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-d2gold/50 resize-none transition-colors"
-            />
-            <button
-              onClick={handleValidate}
-              disabled={row.validating || !row.reward_item_hex.trim()}
-              className="btn-d2-ghost text-xs px-3"
-            >
-              {row.validating ? "…" : "Validate"}
-            </button>
-          </div>
-        )}
-
-        {row.reward_library_id && row.reward_item_name && (
+        {row.reward_library_id && row.reward_item_name ? (
           <div className="flex items-center gap-2 px-2 py-1.5 border border-d2gold/30 bg-d2gold/5">
             <span className="text-d2gold/80 text-xs">📚</span>
             <span className="text-d2gold text-sm font-medium flex-1">{row.reward_item_name}</span>
             <button
-              onClick={() => onChange({ ...row, reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false })}
+              onClick={() => { onChange({ ...row, reward_item_name: "", reward_library_id: null }); setShowLibrary(false); }}
               className="text-[10px] text-slate-600 hover:text-red-400 transition-colors"
             >
               ✕ clear
             </button>
           </div>
-        )}
-
-        {row.validated && !row.reward_library_id && row.reward_item_name && (
-          <p className="text-xs text-green-400">✓ {row.reward_item_name}</p>
-        )}
-        {row.validateError && (
-          <p className="text-xs text-red-400">{row.validateError}</p>
-        )}
+        ) : showLibrary ? (
+          <div className="border border-d2bg-border bg-black/30 max-h-48 overflow-y-auto divide-y divide-d2bg-border/30">
+            {!rewards || rewards.length === 0 ? (
+              <p className="text-slate-600 text-xs px-3 py-2">
+                No rewards saved. Go to <span className="text-slate-400">Reward Library</span> to add items first.
+              </p>
+            ) : rewards.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => { onChange({ ...row, reward_item_name: r.name, reward_library_id: r.id }); setShowLibrary(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-d2bg-elevated/40 transition-colors"
+              >
+                <span className="text-[9px] font-mono text-slate-500 border border-slate-700 px-1 shrink-0">
+                  {(r.quality_name ?? "NRM").slice(0, 3).toUpperCase()}
+                </span>
+                <span className="text-sm text-slate-200 truncate">{r.name}</span>
+                {r.is_ethereal && <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>}
+                {r.notes && <span className="text-[10px] text-slate-600 truncate">{r.notes}</span>}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1106,7 +994,7 @@ function CreateSeasonPanel() {
   const addMilestone = () => {
     setMilestones((prev) => [
       ...prev,
-      { id: nextKey(), name: "", milestone_type: "level", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null },
+      { id: nextKey(), name: "", milestone_type: "level", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_name: "", reward_library_id: null },
     ]);
   };
 
@@ -1139,9 +1027,7 @@ function CreateSeasonPanel() {
 
       const msInputs: MilestoneCreateInput[] = milestones.map((m, i) => {
         const days = m.time_limit_days.trim() ? parseFloat(m.time_limit_days) : null;
-        const hex = m.reward_library_id
-          ? resolvedHexes[m.reward_library_id]
-          : m.reward_item_hex.trim() || null;
+        const hex = m.reward_library_id ? resolvedHexes[m.reward_library_id] : null;
         return {
           name: m.name,
           milestone_type: m.milestone_type,
