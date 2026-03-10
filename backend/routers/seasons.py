@@ -132,6 +132,7 @@ class SeasonStatsOut(BaseModel):
     season_name: str
     status: str
     started_at: Optional[str]
+    scheduled_end_at: Optional[str]
     days_elapsed: int
     highest_level_sc: Optional[int]
     highest_level_hc: Optional[int]
@@ -327,6 +328,7 @@ async def _live_stats_out(session: AsyncSession, season: Season) -> SeasonStatsO
         season_name=season.name,
         status=season.status,
         started_at=season.started_at.isoformat() if season.started_at else None,
+        scheduled_end_at=_scheduled_end_at(season),
         days_elapsed=days_elapsed,
         highest_level_sc=highest_level_sc,
         highest_level_hc=highest_level_hc,
@@ -381,6 +383,7 @@ async def get_season_stats(season_id: int, session: AsyncSession = Depends(get_s
         season_name=season.name,
         status=season.status,
         started_at=season.started_at.isoformat() if season.started_at else None,
+        scheduled_end_at=_scheduled_end_at(season),
         days_elapsed=days_elapsed,
         highest_level_sc=stats.highest_level_sc,
         highest_level_hc=stats.highest_level_hc,

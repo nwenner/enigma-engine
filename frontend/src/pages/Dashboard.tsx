@@ -13,6 +13,17 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import type { SeasonStatsResponse, SyncCompareResponse } from "../api/types";
 import { fmtUtc } from "../utils/dates";
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtTimeRemaining(endIso: string): string {
+  const ms = new Date(endIso).getTime() - Date.now();
+  if (ms <= 0) return "Ended";
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((ms % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  if (days > 0) return `${days}d ${hours}h remaining`;
+  return `${hours}h remaining`;
+}
+
 // ─── Season overview ──────────────────────────────────────────────────────────
 
 const CLASS_ICONS: Record<string, string> = {
@@ -44,6 +55,9 @@ function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
           Active
         </span>
         <span className="text-slate-500 text-xs ml-auto">Day {stats.days_elapsed}</span>
+        {stats.scheduled_end_at && (
+          <span className="text-amber-400/80 text-xs">{fmtTimeRemaining(stats.scheduled_end_at)}</span>
+        )}
       </div>
 
       <div className="grid grid-cols-3 divide-x divide-d2bg-border border-b border-d2bg-border">
@@ -338,6 +352,16 @@ export default function Dashboard() {
         <SeasonOverviewCard stats={seasonStats} />
       ) : (
         <NoSeasonCard />
+      )}
+
+      {/* Season expired banner */}
+      {seasonStats?.scheduled_end_at && new Date(seasonStats.scheduled_end_at) < new Date() && (
+        <div className="bg-amber-950/30 border border-amber-700/50 px-4 py-3 text-amber-300 text-sm mb-2 flex items-center justify-between gap-4">
+          <span>This season's time has elapsed.</span>
+          <NavLink to="/seasons" className="text-amber-400 hover:underline text-xs shrink-0">
+            End Season →
+          </NavLink>
+        </div>
       )}
 
       {/* Latest Snapshot */}

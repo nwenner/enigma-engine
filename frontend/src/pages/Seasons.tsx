@@ -232,6 +232,11 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
 
   return (
     <div className="space-y-4">
+      {isScheduledOver && (
+        <div className="bg-amber-950/30 border border-amber-700/50 px-4 py-3 text-amber-300 text-sm flex items-center justify-between gap-4">
+          <span>This season's time has elapsed. End it whenever you're ready to archive your results.</span>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-d2gold font-semibold text-lg">{season.name}</h2>
@@ -240,12 +245,10 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
             {season.duration_weeks !== null && season.scheduled_end_at && (
               <>
                 <span className="text-slate-700">·</span>
-                <span className={isScheduledOver ? "text-red-400" : "text-slate-400"}>
-                  {fmtDurationWeeks(season.duration_weeks)} season
-                </span>
+                <span className="text-slate-400">{fmtDurationWeeks(season.duration_weeks)} season</span>
                 <span className="text-slate-700">·</span>
                 {isScheduledOver ? (
-                  <span className="text-red-400 font-medium">Season time elapsed — end it when ready</span>
+                  <span className="text-amber-400/80">Time elapsed</span>
                 ) : (
                   <span className="text-amber-400/80">{fmtTimeRemaining(season.scheduled_end_at)}</span>
                 )}

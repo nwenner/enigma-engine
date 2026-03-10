@@ -301,6 +301,7 @@ export interface SeasonStatsResponse {
   season_name: string;
   status: string;
   started_at: string | null;
+  scheduled_end_at: string | null;
   days_elapsed: number;
   highest_level_sc: number | null;
   highest_level_hc: number | null;
