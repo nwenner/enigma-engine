@@ -112,6 +112,12 @@ async def init_db() -> None:
         except Exception:
             pass
 
+        # season_milestones: scope ("account" | "character") — default "character" for existing rows
+        try:
+            await conn.execute(text("ALTER TABLE season_milestones ADD COLUMN scope TEXT NOT NULL DEFAULT 'character'"))
+        except Exception:
+            pass
+
 
 async def get_session() -> AsyncSession:
     async with AsyncSessionLocal() as session:

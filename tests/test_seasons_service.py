@@ -50,6 +50,7 @@ def _ms(
     ms_id: int = 1,
     ms_name: str = "Test Milestone",
     time_limit_hours: int | None = None,
+    scope: str = "character",
 ) -> MagicMock:
     """Return a mock SeasonMilestone."""
     m = MagicMock()
@@ -58,6 +59,7 @@ def _ms(
     m.milestone_type = milestone_type
     m.level_target = level_target
     m.time_limit_hours = time_limit_hours
+    m.scope = scope
     return m
 
 
@@ -520,3 +522,160 @@ class TestCheckSeasonMilestones:
             )
 
         session.add.assert_not_called()
+
+
+# ─── Account-scope vs Character-scope milestones ──────────────────────────────
+
+class TestMilestoneScope:
+    """
+    Covers the scope field on SeasonMilestone.
+
+    Examples from spec:
+      - "I create a milestone that awards an item the first time I reach level 90
+         in a season" → scope="account"
+      - "I create a milestone that awards a Spirit for every character I create
+         that reaches level 45" → scope="character"
+      - Gold vault milestones are always account-scoped (out of scope for this class)
+    """
+
+    # ── account scope ──────────────────────────────────────────────────────────
+
+    async def test_account_scope_uses_season_sentinel(self) -> None:
+        """Account-scoped milestone: achievement character_name is '(Season)'."""
+        session = _session_no_existing()
+        char = _char(level=90, name="LadderHero")
+        ms = _ms("level", level_target=90, scope="account")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        session.add.assert_called_once()
+        added = session.add.call_args[0][0]
+        assert added.character_name == "(Season)"
+        assert added.character_class == ""
+        assert added.character_level == 0
+
+    async def test_account_scope_fires_only_once_across_characters(self) -> None:
+        """Second character meeting account-scoped milestone does NOT add another achievement."""
+        session = _session_no_existing()
+        char_a = _char(level=90, name="HeroA")
+        ms = _ms("level", level_target=90, scope="account")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char_a)
+        assert session.add.call_count == 1
+
+        # Simulate second character check — achievement now exists
+        session2 = _session_existing_achievement()
+        char_b = _char(level=90, name="HeroB")
+
+        await _check_char_milestones(session2, season, [ms], char_b)
+        session2.add.assert_not_called()
+
+    async def test_account_scope_level_90_first_in_season(self) -> None:
+        """Spec example: award item the first time anyone hits level 90 this season."""
+        session = _session_no_existing()
+        char = _char(level=90, name="FirstNinety")
+        ms = _ms("level", level_target=90, scope="account", ms_name="First 90 Reward")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        added = session.add.call_args[0][0]
+        assert added.character_name == "(Season)"
+
+    async def test_account_scope_cleared_hell(self) -> None:
+        """Account-scope Cleared Hell: one achievement for the whole season."""
+        session = _session_no_existing()
+        char = _char(hell_completed=True, name="Diablo Slayer")
+        ms = _ms("cleared_hell", scope="account")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        added = session.add.call_args[0][0]
+        assert added.character_name == "(Season)"
+
+    async def test_account_scope_cleared_normal(self) -> None:
+        """Account-scope Cleared Normal: sentinel used."""
+        session = _session_no_existing()
+        char = _char(difficulty_active=1, name="NoviceRunner")
+        ms = _ms("cleared_normal", scope="account")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        added = session.add.call_args[0][0]
+        assert added.character_name == "(Season)"
+
+    # ── character scope ────────────────────────────────────────────────────────
+
+    async def test_character_scope_uses_char_name(self) -> None:
+        """Character-scoped milestone: achievement character_name matches the char."""
+        session = _session_no_existing()
+        char = _char(level=45, name="SpiritPaladin")
+        ms = _ms("level", level_target=45, scope="character")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        added = session.add.call_args[0][0]
+        assert added.character_name == "SpiritPaladin"
+
+    async def test_character_scope_stores_class_and_level(self) -> None:
+        """Character-scoped: class and level at time of achievement are stored."""
+        session = _session_no_existing()
+        char = _char(level=45, name="SpiritPaladin", class_name="Paladin")
+        ms = _ms("level", level_target=45, scope="character")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        added = session.add.call_args[0][0]
+        assert added.character_class == "Paladin"
+        assert added.character_level == 45
+
+    async def test_character_scope_spirit_crystal_sword_per_character(self) -> None:
+        """Spec example: award Spirit for every character that reaches level 45."""
+        session = _session_no_existing()
+        char = _char(level=45, name="NewPaladin")
+        ms = _ms("level", level_target=45, scope="character", ms_name="Spirit Crystal Sword")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        added = session.add.call_args[0][0]
+        assert added.character_name == "NewPaladin"
+        assert added.character_name != "(Season)"
+
+    async def test_character_scope_cleared_normal(self) -> None:
+        """Character-scoped Cleared Normal: one achievement per character."""
+        session = _session_no_existing()
+        char = _char(difficulty_active=1, name="NightmareRunner")
+        ms = _ms("cleared_normal", scope="character")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        added = session.add.call_args[0][0]
+        assert added.character_name == "NightmareRunner"
+
+    # ── mixed scope on same season ─────────────────────────────────────────────
+
+    async def test_mixed_scope_both_achievements_created(self) -> None:
+        """One account-scope and one character-scope milestone → both achievements added."""
+        session = _session_no_existing()
+        char = _char(level=90, name="Completionist", difficulty_active=2)
+        milestones = [
+            _ms("level", level_target=90, ms_id=1, scope="account"),    # fires once per season
+            _ms("cleared_nightmare", ms_id=2, scope="character"),        # fires per character
+        ]
+        season = _season()
+
+        await _check_char_milestones(session, season, milestones, char)
+
+        assert session.add.call_count == 2
+        calls = [c[0][0] for c in session.add.call_args_list]
+        names = {a.character_name for a in calls}
+        assert "(Season)" in names
+        assert "Completionist" in names

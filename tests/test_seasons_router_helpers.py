@@ -63,6 +63,7 @@ def _make_milestone(
     season_id: int = 10,
     name: str = "Reach Level 30",
     milestone_type: str = "level",
+    scope: str = "character",
     level_target: int | None = 30,
     reward_item_bytes: bytes | None = b"\x10\x00\x00\x00",
     reward_item_name: str | None = "Horadric Cube",
@@ -75,6 +76,7 @@ def _make_milestone(
     ms.season_id = season_id
     ms.name = name
     ms.milestone_type = milestone_type
+    ms.scope = scope
     ms.level_target = level_target
     ms.reward_item_bytes = reward_item_bytes
     ms.reward_item_name = reward_item_name

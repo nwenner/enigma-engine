@@ -87,10 +87,22 @@ async def _check_char_milestones(
         if not _milestone_met(ms, char=char, season_started_at=season.started_at, now=now):
             continue
 
+        # Account-scoped: one achievement per season using the sentinel key.
+        # Character-scoped: one achievement per character.
+        scope = ms.scope if isinstance(ms.scope, str) else "character"
+        if scope == "account":
+            ach_char_name = _SEASON_SENTINEL
+            ach_char_class = ""
+            ach_char_level = 0
+        else:
+            ach_char_name = char.name
+            ach_char_class = char.class_name
+            ach_char_level = char.level
+
         existing = await session.execute(
             select(SeasonAchievement).where(
                 SeasonAchievement.milestone_id == ms.id,
-                SeasonAchievement.character_name == char.name,
+                SeasonAchievement.character_name == ach_char_name,
             )
         )
         if existing.scalar_one_or_none() is not None:
@@ -99,15 +111,15 @@ async def _check_char_milestones(
         achievement = SeasonAchievement(
             season_id=season.id,
             milestone_id=ms.id,
-            character_name=char.name,
-            character_class=char.class_name,
-            character_level=char.level,
+            character_name=ach_char_name,
+            character_class=ach_char_class,
+            character_level=ach_char_level,
             achieved_at=now,
         )
         session.add(achievement)
         log.info(
-            "Season %d: %s achieved milestone '%s' (char=%s lvl=%d)",
-            season.id, char.name, ms.name, char.class_name, char.level,
+            "Season %d: milestone '%s' achieved (scope=%s char=%s lvl=%d)",
+            season.id, ms.name, scope, char.class_name, char.level,
         )
 
     await session.commit()

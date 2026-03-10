@@ -156,6 +156,15 @@ function MilestoneRow({
               {ms.is_expired ? "Expired" : `⏱ ${fmtTimeLimitHours(ms.time_limit_hours)}`}
             </span>
           )}
+          {ms.milestone_type !== "gold_vault" && (
+            <span className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
+              ms.scope === "account"
+                ? "text-d2gold/50 border-d2gold/20"
+                : "text-slate-500 border-d2bg-border"
+            }`}>
+              {ms.scope === "account" ? "Account" : "Per Char"}
+            </span>
+          )}
           {ms.reward_item_name && (
             <span className="text-[10px] uppercase tracking-widest text-d2gold/70 border border-d2gold/30 px-1.5 py-0.5">
               🎁 {ms.reward_item_name}
@@ -182,7 +191,7 @@ function MilestoneRow({
                   {a.claimed_at ? "✓" : "○"}
                 </span>
                 {isSeasonWide ? (
-                  <span className="text-slate-500 italic">Season milestone</span>
+                  <span className="text-slate-500 italic">Account milestone</span>
                 ) : (
                   <>
                     <span>{a.character_name}</span>
@@ -202,7 +211,11 @@ function MilestoneRow({
 
       {myAchs.length === 0 && (
         <p className="text-slate-600 text-xs">
-          {ms.is_expired ? "Time window closed — milestone can no longer be earned." : "No characters have achieved this yet."}
+          {ms.is_expired
+            ? "Time window closed — milestone can no longer be earned."
+            : ms.scope === "account"
+              ? "Not yet achieved this season."
+              : "No characters have achieved this yet."}
         </p>
       )}
 
@@ -238,6 +251,7 @@ function EditMilestoneModal({
 
   const [name, setName] = useState(ms.name);
   const [milestoneType, setMilestoneType] = useState(ms.milestone_type);
+  const [scope, setScope] = useState<"account" | "character">(ms.scope ?? "character");
   const [levelTarget, setLevelTarget] = useState(String(ms.level_target ?? ""));
   const [numericTarget, setNumericTarget] = useState(
     ms.numeric_target != null ? String(ms.numeric_target / 1_000_000) : ""
@@ -279,6 +293,8 @@ function EditMilestoneModal({
 
     if (name !== ms.name) patchBody.name = name;
     if (milestoneType !== ms.milestone_type) patchBody.milestone_type = milestoneType;
+    const effectiveScope = milestoneType === "gold_vault" ? "account" : scope;
+    if (effectiveScope !== ms.scope) patchBody.scope = effectiveScope;
 
     const newLevel = milestoneType === "level" ? (parseInt(levelTarget) || null) : null;
     if (newLevel !== ms.level_target) patchBody.level_target = newLevel;
@@ -334,6 +350,27 @@ function EditMilestoneModal({
               <option value="gold_vault">Gold Vault</option>
             </select>
           </div>
+          {milestoneType !== "gold_vault" && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase tracking-widest text-slate-500">Scope</label>
+              <div className="flex gap-0.5">
+                {(["account", "character"] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setScope(s)}
+                    className={`text-[10px] uppercase tracking-widest px-2 py-1.5 border transition-colors ${
+                      scope === s
+                        ? "border-d2gold text-d2gold bg-d2gold/10"
+                        : "border-d2bg-border text-slate-500 hover:border-slate-500"
+                    }`}
+                  >
+                    {s === "account" ? "Account" : "Per Char"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {milestoneType === "level" && (
             <div className="w-24 space-y-1.5">
               <label className="text-[10px] uppercase tracking-widest text-slate-500">Level</label>
@@ -545,6 +582,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
         milestone: {
           name: newMilestone.name,
           milestone_type: newMilestone.milestone_type,
+          scope: newMilestone.milestone_type === "gold_vault" ? "account" : newMilestone.scope,
           level_target: newMilestone.milestone_type === "level" ? (parseInt(newMilestone.level_target) || null) : null,
           numeric_target: newMilestone.milestone_type === "gold_vault" ? (parseFloat(newMilestone.numeric_target) * 1_000_000 || null) : null,
           sort_order: 999,
@@ -661,7 +699,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
                 <button
                   onClick={() => {
                     setShowAddForm(true);
-                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "level", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null });
+                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "level", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null });
                   }}
                   className="text-xs text-d2gold/70 hover:text-d2gold transition-colors"
                 >
@@ -748,6 +786,7 @@ type MilestoneFormRow = {
   id: number;
   name: string;
   milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
+  scope: "account" | "character";
   level_target: string;
   numeric_target: string;   // for gold_vault: gold threshold
   time_limit_days: string;
@@ -816,6 +855,24 @@ function MilestoneFormRowUI({
           <option value="cleared_hell">Cleared Hell</option>
           <option value="gold_vault">Gold Vault</option>
         </select>
+        {row.milestone_type !== "gold_vault" && (
+          <div className="flex gap-0.5 shrink-0">
+            {(["account", "character"] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onChange({ ...row, scope: s })}
+                className={`text-[10px] uppercase tracking-widest px-2 py-1.5 border transition-colors ${
+                  row.scope === s
+                    ? "border-d2gold text-d2gold bg-d2gold/10"
+                    : "border-d2bg-border text-slate-500 hover:border-slate-500"
+                }`}
+              >
+                {s === "account" ? "Account" : "Per Char"}
+              </button>
+            ))}
+          </div>
+        )}
         {row.milestone_type === "level" && (
           <input
             type="number"
@@ -1049,7 +1106,7 @@ function CreateSeasonPanel() {
   const addMilestone = () => {
     setMilestones((prev) => [
       ...prev,
-      { id: nextKey(), name: "", milestone_type: "level", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null },
+      { id: nextKey(), name: "", milestone_type: "level", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_hex: "", reward_item_name: "", reward_library_id: null, validated: false, validating: false, validateError: null },
     ]);
   };
 
@@ -1088,6 +1145,7 @@ function CreateSeasonPanel() {
         return {
           name: m.name,
           milestone_type: m.milestone_type,
+          scope: m.milestone_type === "gold_vault" ? "account" : m.scope,
           level_target: m.milestone_type === "level" ? parseInt(m.level_target) || null : null,
           numeric_target: m.milestone_type === "gold_vault" ? (parseFloat(m.numeric_target) * 1_000_000 || null) : null,
           sort_order: i,

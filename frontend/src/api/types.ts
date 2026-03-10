@@ -217,6 +217,7 @@ export interface SeasonMilestone {
   season_id: number;
   name: string;
   milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
+  scope: "account" | "character";
   level_target: number | null;
   numeric_target: number | null;
   reward_item_name: string | null;
@@ -268,6 +269,7 @@ export interface SeasonListItem {
 export interface MilestoneCreateInput {
   name: string;
   milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
+  scope?: "account" | "character";
   level_target?: number | null;
   numeric_target?: number | null;
   sort_order: number;
@@ -280,6 +282,7 @@ export interface MilestoneCreateInput {
 export interface MilestonePatch {
   name?: string;
   milestone_type?: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
+  scope?: "account" | "character";
   level_target?: number | null;
   numeric_target?: number | null;
   reward_item_hex?: string | null;   // "" or null = clear; non-empty = replace

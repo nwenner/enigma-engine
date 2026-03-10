@@ -41,6 +41,7 @@ router = APIRouter(tags=["seasons"])
 class MilestoneIn(BaseModel):
     name: str
     milestone_type: str          # "level" | "cleared_normal" | "cleared_nightmare" | "gold_vault"
+    scope: str = "character"     # "account" | "character" (gold_vault is always account)
     level_target: Optional[int] = None
     numeric_target: Optional[int] = None    # threshold for quantity-based types (e.g. gold_vault amount)
     sort_order: int = 0
@@ -62,6 +63,7 @@ class MilestoneOut(BaseModel):
     season_id: int
     name: str
     milestone_type: str
+    scope: str          # "account" | "character"
     level_target: Optional[int]
     numeric_target: Optional[int]
     reward_item_name: Optional[str]
@@ -118,6 +120,7 @@ class MilestonePatch(BaseModel):
     """All fields optional — only provided fields are updated (model_fields_set)."""
     name: Optional[str] = None
     milestone_type: Optional[str] = None
+    scope: Optional[str] = None                  # "account" | "character"
     level_target: Optional[int] = None          # explicit None clears the target
     numeric_target: Optional[int] = None        # explicit None clears the target
     reward_item_hex: Optional[str] = None        # "" or None = clear reward; non-empty = replace
@@ -175,11 +178,15 @@ def _ms_out(ms: SeasonMilestone, season_started_at: datetime | None = None) -> M
         deadline = started + timedelta(hours=ms.time_limit_hours)
         is_expired = datetime.now(timezone.utc) > deadline
 
+    # gold_vault milestones are always account-scoped regardless of the stored value
+    scope = "account" if ms.milestone_type == "gold_vault" else (ms.scope or "character")
+
     return MilestoneOut(
         id=ms.id,
         season_id=ms.season_id,
         name=ms.name,
         milestone_type=ms.milestone_type,
+        scope=scope,
         level_target=ms.level_target,
         numeric_target=ms.numeric_target,
         reward_item_name=ms.reward_item_name,
@@ -443,10 +450,12 @@ async def create_season(body: SeasonCreate, session: AsyncSession = Depends(get_
             except ValueError as e:
                 raise HTTPException(400, f"Invalid hex for milestone '{ms_in.name}': {e}")
 
+        ms_scope = "account" if ms_in.milestone_type == "gold_vault" else ms_in.scope
         ms = SeasonMilestone(
             season_id=season.id,
             name=ms_in.name,
             milestone_type=ms_in.milestone_type,
+            scope=ms_scope,
             level_target=ms_in.level_target,
             numeric_target=ms_in.numeric_target,
             reward_item_bytes=reward_bytes,
@@ -659,10 +668,12 @@ async def add_milestone(
         except ValueError as e:
             raise HTTPException(400, f"Invalid hex: {e}")
 
+    ms_scope = "account" if body.milestone_type == "gold_vault" else body.scope
     ms = SeasonMilestone(
         season_id=season_id,
         name=body.name,
         milestone_type=body.milestone_type,
+        scope=ms_scope,
         level_target=body.level_target,
         numeric_target=body.numeric_target,
         reward_item_bytes=reward_bytes,
@@ -703,6 +714,11 @@ async def patch_milestone(
 
     if "milestone_type" in fields and body.milestone_type is not None:
         ms.milestone_type = body.milestone_type
+
+    if "scope" in fields and body.scope is not None:
+        # Enforce: gold_vault is always account-scoped
+        effective_type = body.milestone_type or ms.milestone_type
+        ms.scope = "account" if effective_type == "gold_vault" else body.scope
 
     if "level_target" in fields:
         ms.level_target = body.level_target

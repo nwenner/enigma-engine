@@ -53,7 +53,9 @@ def _milestone(
     season_id: int = 1,
     name: str = "First Blood",
     milestone_type: str = "level",
+    scope: str = "character",
     level_target: int | None = 30,
+    numeric_target: int | None = None,
     time_limit_hours: int | None = None,
     reward_item_bytes: bytes | None = None,
     reward_item_name: str | None = None,
@@ -64,7 +66,9 @@ def _milestone(
     ms.season_id = season_id
     ms.name = name
     ms.milestone_type = milestone_type
+    ms.scope = scope
     ms.level_target = level_target
+    ms.numeric_target = numeric_target
     ms.time_limit_hours = time_limit_hours
     ms.reward_item_bytes = reward_item_bytes
     ms.reward_item_name = reward_item_name
@@ -532,3 +536,68 @@ class TestDeleteMilestone:
         with pytest.raises(HTTPException) as exc:
             await delete_milestone(season_id=1, milestone_id=10, session=session)
         assert exc.value.status_code == 404
+
+
+# ─── Scope field on add/patch ─────────────────────────────────────────────────
+
+class TestMilestoneScopeRouterOps:
+    """Covers scope field handling in add_milestone and patch_milestone."""
+
+    async def test_add_milestone_default_scope_is_character(self) -> None:
+        """When scope is not provided, it defaults to 'character'."""
+        from backend.routers.seasons import add_milestone, MilestoneIn
+        season = _season()
+        session = _session_get(season)
+
+        await add_milestone(
+            season_id=1,
+            body=MilestoneIn(name="Hit 45", milestone_type="level", level_target=45),
+            session=session,
+        )
+
+        assert len(session._added) == 1
+        assert session._added[0].scope == "character"
+
+    async def test_add_milestone_account_scope_stored(self) -> None:
+        """Explicitly passing scope='account' stores account on the milestone."""
+        from backend.routers.seasons import add_milestone, MilestoneIn
+        season = _season()
+        session = _session_get(season)
+
+        await add_milestone(
+            season_id=1,
+            body=MilestoneIn(name="First 90", milestone_type="level", level_target=90, scope="account"),
+            session=session,
+        )
+
+        assert session._added[0].scope == "account"
+
+    async def test_add_milestone_gold_vault_always_account(self) -> None:
+        """Gold vault milestone is forced to account scope regardless of input."""
+        from backend.routers.seasons import add_milestone, MilestoneIn
+        season = _season()
+        session = _session_get(season)
+
+        await add_milestone(
+            season_id=1,
+            body=MilestoneIn(name="Gold Goal", milestone_type="gold_vault", numeric_target=2_000_000, scope="character"),
+            session=session,
+        )
+
+        assert session._added[0].scope == "account"
+
+    async def test_patch_milestone_scope_updated(self) -> None:
+        """Patching scope from 'character' to 'account' is applied."""
+        from backend.routers.seasons import patch_milestone, MilestonePatch
+        season = _season()
+        ms = _milestone(scope="character")
+        session = _session_get(season, ms)
+
+        await patch_milestone(
+            season_id=1,
+            milestone_id=10,
+            body=MilestonePatch(scope="account"),
+            session=session,
+        )
+
+        assert ms.scope == "account"
