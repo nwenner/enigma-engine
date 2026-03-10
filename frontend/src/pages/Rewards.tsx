@@ -5,8 +5,8 @@ import {
   useCreateReward,
   useUpdateReward,
   useDeleteReward,
-  useExtractFromD2I,
-  type ExtractedD2IItem,
+  useExtractFromStash,
+  type StashTabItem,
 } from "../api/hooks";
 import type { RewardOut, ValidateRewardResponse } from "../api/types";
 
@@ -344,20 +344,59 @@ function RewardRow({ reward }: { reward: RewardOut }) {
   );
 }
 
-// ─── .d2i single-item extractor ───────────────────────────────────────────────
+// ─── Shared stash extractor ───────────────────────────────────────────────────
 
-function ExtractPanel({ onSaveItem }: { onSaveItem: (item: ExtractedD2IItem) => void }) {
-  const extract = useExtractFromD2I();
+function StashTabRow({
+  tab,
+  onSave,
+}: {
+  tab: StashTabItem;
+  onSave: (tab: StashTabItem) => void;
+}) {
+  const qColor = qualityColor(tab.quality_name ?? null);
+  return (
+    <div className={`border px-4 py-3 space-y-2 ${qColor}`}>
+      <div className="flex items-center gap-3">
+        <span className="text-slate-600 text-[10px] font-mono shrink-0">Tab {tab.tab_index + 1}</span>
+        <span className={`text-[10px] font-mono px-1.5 py-0.5 border ${qColor}`}>
+          {qualityBadge(tab.quality_name)}
+        </span>
+        <span className="font-semibold text-sm flex-1">
+          {tab.item_name ?? tab.item_code ?? "Unknown item"}
+        </span>
+        {tab.is_ethereal && <span className="text-[10px] text-sky-400 font-mono">ETH</span>}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
+        {tab.item_code && <span>Type: <span className="font-mono text-slate-400">{tab.item_code}</span></span>}
+        {tab.item_level != null && <span>ilvl: {tab.item_level}</span>}
+        <span>{tab.byte_len} bytes</span>
+        {tab.jm_item_count > 1 && (
+          <span className="text-amber-500">{tab.jm_item_count} items in tab</span>
+        )}
+        {!tab.valid && <span className="text-red-400">{tab.error ?? "Parse error"}</span>}
+      </div>
+      <button onClick={() => onSave(tab)} className="btn-d2 text-sm">
+        Save to Library →
+      </button>
+    </div>
+  );
+}
+
+function ExtractPanel({ onSaveItem }: { onSaveItem: (hex: string, tab: StashTabItem) => void }) {
+  const extract = useExtractFromStash();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [result, setResult] = useState<ExtractedD2IItem | null>(null);
+  const [tabs, setTabs] = useState<StashTabItem[] | null>(null);
+  const [filename, setFilename] = useState<string | null>(null);
 
   const handleFile = async (file: File) => {
-    setResult(null);
+    setTabs(null);
+    setFilename(null);
     try {
       const res = await extract.mutateAsync(file);
-      setResult(res);
+      setTabs(res.tabs);
+      setFilename(res.filename);
     } catch {
-      setResult(null);
+      setTabs(null);
     }
   };
 
@@ -373,24 +412,26 @@ function ExtractPanel({ onSaveItem }: { onSaveItem: (item: ExtractedD2IItem) => 
     e.target.value = "";
   };
 
-  const qColor = qualityColor(result?.quality_name ?? null);
-
   return (
     <div className="card-d2 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="font-diablo text-d2gold text-xs tracking-widest">Import from Hero Editor (.d2i)</h3>
-        {result && (
-          <button onClick={() => setResult(null)} className="text-xs text-slate-600 hover:text-slate-400 transition-colors">
+        <h3 className="font-diablo text-d2gold text-xs tracking-widest">Import from Shared Stash (.d2i)</h3>
+        {tabs && (
+          <button
+            onClick={() => { setTabs(null); setFilename(null); }}
+            className="text-xs text-slate-600 hover:text-slate-400 transition-colors"
+          >
             ✕ clear
           </button>
         )}
       </div>
       <p className="text-slate-500 text-xs">
-        In Hero Editor: right-click an item → <span className="text-slate-400">Export Item</span> → save as .d2i.
-        Upload it here to add it to the reward library.
+        In Hero Editor: place your reward items in a <span className="text-slate-400">shared stash</span>,
+        save the stash, and upload the <span className="text-slate-400">ModernSharedStash*.d2i</span> file here.
+        Each tab with an item becomes a separate reward entry.
       </p>
 
-      {!result && (
+      {!tabs && (
         <div
           onDrop={handleDrop}
           onDragOver={(e) => e.preventDefault()}
@@ -400,9 +441,9 @@ function ExtractPanel({ onSaveItem }: { onSaveItem: (item: ExtractedD2IItem) => 
           }`}
         >
           <p className="text-slate-500 text-sm">
-            {extract.isPending ? "Parsing…" : "Drop .d2i file here or click to browse"}
+            {extract.isPending ? "Parsing…" : "Drop .d2i stash file here or click to browse"}
           </p>
-          <p className="text-slate-700 text-xs mt-1">.d2i only</p>
+          <p className="text-slate-700 text-xs mt-1">ModernSharedStash*.d2i</p>
         </div>
       )}
       <input ref={fileRef} type="file" accept=".d2i" className="hidden" onChange={handlePick} />
@@ -413,44 +454,22 @@ function ExtractPanel({ onSaveItem }: { onSaveItem: (item: ExtractedD2IItem) => 
         </p>
       )}
 
-      {result && (
+      {tabs && (
         <div className="space-y-2">
-          {!result.valid ? (
-            <div className="border border-red-800 bg-red-950/20 px-4 py-3 space-y-1">
-              <p className="text-red-400 text-sm">Could not parse item</p>
-              <p className="text-red-600 text-xs font-mono">{result.error}</p>
-              <p className="text-slate-600 text-xs">Make sure it&apos;s a valid Hero Editor .d2i export.</p>
-            </div>
-          ) : (
-            <div className={`border px-4 py-3 space-y-2 ${qColor}`}>
-              <div className="flex items-center gap-3">
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 border ${qColor}`}>
-                  {qualityBadge(result.quality_name)}
-                </span>
-                <span className="font-semibold text-sm">
-                  {result.item_name ?? result.item_code ?? "Unknown item"}
-                </span>
-                {result.is_ethereal && <span className="text-[10px] text-sky-400 font-mono">ETH</span>}
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
-                {result.item_code && <span>Type: <span className="font-mono text-slate-400">{result.item_code}</span></span>}
-                {result.item_level != null && <span>ilvl: {result.item_level}</span>}
-                <span className="font-mono">{result.filename}</span>
-                <span>{result.byte_len} bytes</span>
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => onSaveItem(result)} className="btn-d2 text-sm">
-                  Save to Library →
-                </button>
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  className="btn-d2-ghost text-sm"
-                >
-                  Load another →
-                </button>
-              </div>
-            </div>
-          )}
+          <p className="text-slate-600 text-[10px] font-mono">{filename} — {tabs.length} tab(s) with items</p>
+          {tabs.map((tab) => (
+            <StashTabRow
+              key={tab.tab_index}
+              tab={tab}
+              onSave={(t) => onSaveItem(t.hex, t)}
+            />
+          ))}
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="btn-d2-ghost text-sm w-full"
+          >
+            Load another stash →
+          </button>
         </div>
       )}
     </div>
@@ -463,8 +482,8 @@ export default function Rewards() {
   const { data: rewards, isLoading } = useRewards();
   const [saveTarget, setSaveTarget] = useState<{ hex: string; parsed: ValidateRewardResponse } | null>(null);
 
-  const handleSaveExtracted = (item: ExtractedD2IItem) => {
-    setSaveTarget({ hex: item.hex, parsed: item });
+  const handleSaveExtracted = (hex: string, item: StashTabItem) => {
+    setSaveTarget({ hex, parsed: item as unknown as ValidateRewardResponse });
   };
 
   const grouped = rewards?.reduce<Record<string, RewardOut[]>>((acc, r) => {
@@ -485,7 +504,7 @@ export default function Rewards() {
         </p>
       </div>
 
-      <ExtractPanel onSaveItem={handleSaveExtracted} />
+      <ExtractPanel onSaveItem={(hex, tab) => handleSaveExtracted(hex, tab)} />
 
       <ValidatePanel onSave={(hex, parsed) => setSaveTarget({ hex, parsed })} />
 

@@ -212,11 +212,20 @@ export interface GrailProgress {
 
 // ─── Seasons ──────────────────────────────────────────────────────────────────
 
+export type QuestMilestoneType =
+  | "cleared_act1_normal" | "cleared_act1_nightmare" | "cleared_act1_hell"
+  | "cleared_act2_normal" | "cleared_act2_nightmare" | "cleared_act2_hell"
+  | "cleared_act3_normal" | "cleared_act3_nightmare" | "cleared_act3_hell"
+  | "cleared_act4_normal" | "cleared_act4_nightmare" | "cleared_act4_hell"
+  | "cleared_act5_normal" | "cleared_act5_nightmare" | "cleared_act5_hell";
+
+export type MilestoneType = "level" | "gold_vault" | QuestMilestoneType;
+
 export interface SeasonMilestone {
   id: number;
   season_id: number;
   name: string;
-  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
+  milestone_type: MilestoneType;
   scope: "account" | "character";
   level_target: number | null;
   numeric_target: number | null;
@@ -268,7 +277,7 @@ export interface SeasonListItem {
 
 export interface MilestoneCreateInput {
   name: string;
-  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
+  milestone_type: MilestoneType;
   scope?: "account" | "character";
   level_target?: number | null;
   numeric_target?: number | null;
@@ -281,7 +290,7 @@ export interface MilestoneCreateInput {
 
 export interface MilestonePatch {
   name?: string;
-  milestone_type?: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
+  milestone_type?: MilestoneType;
   scope?: "account" | "character";
   level_target?: number | null;
   numeric_target?: number | null;

@@ -44,31 +44,48 @@ def _snap(id: int = 10, source_machine: str = "pc", path: str = "backups/pc/snap
     return s
 
 
+def _noop_result() -> MagicMock:
+    """A generic mock execute result that won't raise on any attribute access."""
+    r = MagicMock()
+    r.scalar_one_or_none.return_value = None
+    r.scalars.return_value.all.return_value = []
+    return r
+
+
 def _session(
     season: MagicMock | None,
     latest_snap: MagicMock | None,
     other_active: MagicMock | None = None,
+    stale_chars: list | None = None,
 ) -> AsyncMock:
     """
     Build a session where:
     - session.get(Season, id) → season
-    - execute() calls return: other_active check, latest_snap query
+    - execute() call order:
+        1. check for other active season
+        2. find latest manual/game_close snapshot
+        3. stale-chars select (returns empty list by default)
+        4+ anything else (noop)
     """
     session = AsyncMock()
-
-    # session.get returns the season
     session.get = AsyncMock(return_value=season)
 
-    # execute calls:
-    # 1st: check for other active season
-    # 2nd: find latest manual/game_close snapshot
     other_result = MagicMock()
     other_result.scalar_one_or_none.return_value = other_active
 
     snap_result = MagicMock()
     snap_result.scalar_one_or_none.return_value = latest_snap
 
-    session.execute = AsyncMock(side_effect=[other_result, snap_result])
+    stale_result = MagicMock()
+    stale_result.scalars.return_value.all.return_value = stale_chars or []
+
+    # Provide a generous tail of noop results so that the char archive UPDATE,
+    # stale delete, GrailEntry delete, VaultItem delete, and GoldVault update
+    # calls don't exhaust the side_effect list and raise StopIteration.
+    session.execute = AsyncMock(side_effect=[
+        other_result, snap_result, stale_result,
+        *(_noop_result() for _ in range(8)),
+    ])
 
     return session
 
@@ -327,3 +344,92 @@ class TestStartSeasonNoSsh:
 
         # ssh_client.get_sftp must never be invoked
         mock_sftp.assert_not_called()
+
+
+# ─── Stale archive cleanup ────────────────────────────────────────────────────
+
+class TestStartSeasonStaleCleanup:
+    """
+    If a setup-status season already has characters archived to it (stale rows
+    from a failed previous start attempt), start_season must remove them before
+    re-archiving the current active characters — otherwise the bulk UPDATE hits
+    a UNIQUE constraint on (filename, season_id).
+
+    Regression for: UNIQUE constraint failed: characters.filename, characters.season_id
+    """
+
+    async def test_stale_archives_are_deleted_before_archiving(self, tmp_path: Path) -> None:
+        """
+        When stale archived chars exist for the target season, delete them first
+        so the bulk UPDATE can proceed without a UNIQUE violation.
+        """
+        stale_char = MagicMock()
+        stale_char.filename = "Tald.d2s"
+
+        season = _season(id=4)
+        session = _session(season, latest_snap=None, stale_chars=[stale_char])
+
+        cfg = MagicMock()
+        cfg.data_dir = tmp_path
+        cfg.backups_dir = tmp_path / "backups"
+
+        with (
+            patch("backend.config.get_settings", return_value=cfg),
+            patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
+        ):
+            result = await start_season(session=session, season_id=4)
+
+        # Season should activate successfully
+        assert result.status == "active"
+
+        # A delete(Character) call must have fired for the stale rows.
+        # other_active(1) + snap(2) + stale_select(3) + stale_delete(4) + char_archive(5)
+        # + grail_delete(6) + vault_item_delete(7) + gold_update(8)
+        assert session.execute.call_count >= 5
+
+    async def test_no_stale_archives_skips_delete(self, tmp_path: Path) -> None:
+        """When no stale rows exist, no extra delete is issued."""
+        season = _season(id=4)
+        # stale_chars defaults to [] in _session
+        session = _session(season, latest_snap=None)
+
+        cfg = MagicMock()
+        cfg.data_dir = tmp_path
+        cfg.backups_dir = tmp_path / "backups"
+
+        with (
+            patch("backend.config.get_settings", return_value=cfg),
+            patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
+        ):
+            await start_season(session=session, season_id=4)
+
+        # With no stale chars the stale delete execute is NOT called:
+        # other_active(1) + snap(2) + stale_select(3) + char_archive(4) + grail_delete(5)
+        # + vault_item_delete(6) + gold_update(7) = 7 calls (no extra stale delete)
+        assert session.execute.call_count == 7
+
+    async def test_same_character_name_across_seasons_succeeds(self, tmp_path: Path) -> None:
+        """
+        A player using the same character filename every season (e.g. 'Tald.d2s')
+        must be able to start a new season without a constraint error, even if a
+        previous season already archived that character.
+        """
+        stale_tald = MagicMock()
+        stale_tald.filename = "Tald.d2s"
+        stale_talderaan = MagicMock()
+        stale_talderaan.filename = "Talderaan.d2s"
+
+        season = _season(id=5)
+        session = _session(season, latest_snap=None, stale_chars=[stale_tald, stale_talderaan])
+
+        cfg = MagicMock()
+        cfg.data_dir = tmp_path
+        cfg.backups_dir = tmp_path / "backups"
+
+        with (
+            patch("backend.config.get_settings", return_value=cfg),
+            patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
+        ):
+            result = await start_season(session=session, season_id=5)
+
+        assert result.status == "active"

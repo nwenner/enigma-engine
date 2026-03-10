@@ -631,10 +631,11 @@ export function useDeleteReward() {
   });
 }
 
-export interface ExtractedD2IItem {
-  filename: string;
-  hex: string;
+export interface StashTabItem {
+  tab_index: number;
+  jm_item_count: number;
   byte_len: number;
+  hex: string;
   item_name: string | null;
   item_code: string | null;
   quality: number | null;
@@ -645,12 +646,17 @@ export interface ExtractedD2IItem {
   error: string | null;
 }
 
-export function useExtractFromD2I() {
-  return useMutation<ExtractedD2IItem, Error, File>({
+export interface ExtractedStash {
+  filename: string;
+  tabs: StashTabItem[];
+}
+
+export function useExtractFromStash() {
+  return useMutation<ExtractedStash, Error, File>({
     mutationFn: (file) => {
       const form = new FormData();
       form.append("file", file);
-      return api.post("/rewards/extract-from-item", form, {
+      return api.post("/rewards/extract-from-stash", form, {
         headers: { "Content-Type": "multipart/form-data" },
       }).then((r) => r.data);
     },

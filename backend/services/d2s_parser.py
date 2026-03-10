@@ -20,7 +20,7 @@ v100+ (D2R 2.x patches — name moved out of main header):
   Offset 0x12B name      16s     null-padded latin-1
 """
 import struct
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 MAGIC = 0xAA55AA55
@@ -49,6 +49,11 @@ CLASS_NAMES = {
 }
 
 
+_ACT_BOSS_OFFSETS = {1: 12, 2: 28, 3: 44, 4: 54, 5: 82}
+_DIFF_NAMES = ["normal", "nightmare", "hell"]
+_DIFF_BLOCK_SIZE = 94  # bytes per difficulty block within quest section
+
+
 class D2SParseError(Exception):
     pass
 
@@ -64,25 +69,10 @@ class D2SCharacter:
     expansion: bool
     filename: str
     difficulty_active: int = 0  # 0=Normal, 1=Nightmare, 2=Hell
-    hell_completed: bool = False  # True if Baal killed in Hell (quests CompletedDifficulty)
-
-    @property
-    def cleared_normal(self) -> bool:
-        return self.difficulty_active >= 1
-
-    @property
-    def cleared_nightmare(self) -> bool:
-        return self.difficulty_active >= 2
-
-    @property
-    def cleared_hell(self) -> bool:
-        return self.hell_completed
+    acts_cleared: dict = field(default_factory=dict)  # e.g. {"cleared_act1_normal": True, ...}
 
     def to_dict(self) -> dict:
         d = asdict(self)
-        d["cleared_normal"] = self.cleared_normal
-        d["cleared_nightmare"] = self.cleared_nightmare
-        d["cleared_hell"] = self.cleared_hell
         return d
 
 
@@ -154,24 +144,13 @@ def parse_d2s(path: Path) -> D2SCharacter:
     # Quests section: "Woo!" header followed by 3 × QuestsDifficulty blocks.
     # Source: D2SLib-D2R Quests.cs
     #
-    # v96-99: quests at 0x014B; v100+: 0x013B (16 bytes earlier, no "Name old" field)
-    #
-    # Hell CompletedDifficulty byte offset from quests start:
-    #   header(10) + Normal(94) + Nightmare(94)
-    #   + Hell[ActI(14) + ActII(16) + ActIII(16) + ActIV(18)]
-    #   + Hell ActV[TraveledToAct(2) + NPC(2) + junk(4) + 6×quest(12) + ResetStats(1)]
-    #   = 10 + 94 + 94 + 64 + 21 = 283
-    # Bit 0x80 set → difficulty completed (Baal killed in Hell).
+    # Dynamic search for "Woo!" within the first 2048 bytes of the file.
+    # The hardcoded offset (0x013B for v100+, 0x014B for v96-99) was unreliable
+    # for some v100+ files (e.g. Tald.d2s has "Woo!" at 0x0193, not 0x013B).
     _WOO = b"Woo!"
-    _HELL_COMPLETED_FROM_QUESTS = 283
-    quests_offset = 0x013B if version >= 100 else 0x014B
-    hell_completed = False
-    if (
-        len(data) >= quests_offset + 4
-        and data[quests_offset: quests_offset + 4] == _WOO
-        and len(data) > quests_offset + _HELL_COMPLETED_FROM_QUESTS
-    ):
-        hell_completed = bool(data[quests_offset + _HELL_COMPLETED_FROM_QUESTS] & 0x80)
+    woo_pos = data.find(_WOO, 0, 2048)
+
+    acts_cleared = _parse_quest_completions(data, woo_pos)
 
     return D2SCharacter(
         name=name,
@@ -183,5 +162,34 @@ def parse_d2s(path: Path) -> D2SCharacter:
         expansion=expansion,
         filename=path.name,
         difficulty_active=difficulty_active,
-        hell_completed=hell_completed,
+        acts_cleared=acts_cleared,
     )
+
+
+def _parse_quest_completions(data: bytes, woo_pos: int) -> dict:
+    """
+    Parse act boss quest completions from the quest block.
+
+    Returns a dict with all 15 cleared_actN_diffname keys set to bool.
+    If "Woo!" is not found or the file is too short, all values are False.
+
+    Each difficulty block is _DIFF_BLOCK_SIZE bytes.  The block for difficulty
+    d starts at: woo_pos + 10 + d * _DIFF_BLOCK_SIZE
+
+    Within each block, the word at _ACT_BOSS_OFFSETS[act_num] has bit 0
+    (RewardGranted) set when the boss has been killed and the quest reward
+    was granted.
+    """
+    result: dict = {}
+    for diff_idx, diff_name in enumerate(_DIFF_NAMES):
+        for act_num, boss_offset in _ACT_BOSS_OFFSETS.items():
+            key = f"cleared_act{act_num}_{diff_name}"
+            cleared = False
+            if woo_pos >= 0:
+                block_start = woo_pos + 10 + diff_idx * _DIFF_BLOCK_SIZE
+                word_pos = block_start + boss_offset
+                if word_pos + 2 <= len(data):
+                    word = struct.unpack_from("<H", data, word_pos)[0]
+                    cleared = bool(word & 0x0001)
+            result[key] = cleared
+    return result

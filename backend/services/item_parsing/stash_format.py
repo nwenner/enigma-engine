@@ -180,17 +180,43 @@ def remove_items_from_page(page: ParsedPage, indices: list[int]) -> ParsedPage:
         if i not in idx_set:
             new_raw.extend(page.raw_bytes[item.byte_start : item.byte_end])
 
-    new_count = max(0, len(page.items) - len(idx_set))
-    new_items = _parse_page_items(new_raw, new_count)
-    return ParsedPage(items=new_items, gold=page.gold, raw_bytes=new_raw)
+    new_jm_count = max(0, page.jm_item_count - len(idx_set))
+    new_items = _parse_page_items(new_raw, new_jm_count)
+    return ParsedPage(items=new_items, gold=page.gold, raw_bytes=new_raw, jm_item_count=new_jm_count)
+
+
+def _set_item_grid_y(item_bytes: bytes, y: int) -> bytes:
+    """
+    Update the stash grid y-position (bits 46–49) of an item's byte block.
+
+    Position bits in the Modern stash item header (LSB-first):
+      pos_x: bits 42–45  (bits 2–5 of byte 5)
+      pos_y: bits 46–49  (bits 6–7 of byte 5, bits 0–1 of byte 6)
+
+    This only touches the leading item (the stash-level item at offset 0).
+    Socket sub-items that follow in the same byte block are left untouched.
+    """
+    if len(item_bytes) < 7:
+        return item_bytes
+    arr = bytearray(item_bytes)
+    # Clear existing pos_y bits without disturbing pos_x or other fields
+    arr[5] = (arr[5] & 0x3F) | ((y & 0x3) << 6)   # bits 6–7 of byte 5 = y[1:0]
+    arr[6] = (arr[6] & 0xFC) | ((y >> 2) & 0x3)    # bits 0–1 of byte 6 = y[3:2]
+    return bytes(arr)
 
 
 def insert_item_into_page(page: ParsedPage, item_bytes: bytes) -> ParsedPage:
-    """Append item bytes to the end of a page, incrementing item count."""
+    """Append item bytes to the end of a page, incrementing item count.
+
+    The incoming item bytes are assumed to encode grid position (0, 0).  Each
+    successive insertion assigns a unique row (y = current jm_item_count) so
+    that D2R does not collapse multiple items onto the same grid cell.
+    """
+    item_bytes = _set_item_grid_y(item_bytes, page.jm_item_count)
     new_raw = bytearray(page.raw_bytes) + bytearray(item_bytes)
-    new_count = len(page.items) + 1
-    new_items = _parse_page_items(new_raw, new_count)
-    return ParsedPage(items=new_items, gold=page.gold, raw_bytes=new_raw)
+    new_jm_count = page.jm_item_count + 1
+    new_items = _parse_page_items(new_raw, new_jm_count)
+    return ParsedPage(items=new_items, gold=page.gold, raw_bytes=new_raw, jm_item_count=new_jm_count)
 
 
 def validate_page_items(page: ParsedPage) -> bool:
@@ -300,7 +326,7 @@ def parse_stash(path_or_data: Path | bytes, hardcore: bool) -> ParsedStash:
             raw_separators.append(bytes(data[sep_start : jm_off]))
         # page 0 has no preceding separator
 
-        pages.append(ParsedPage(items=items, gold=0, raw_bytes=raw_bytes))
+        pages.append(ParsedPage(items=items, gold=0, raw_bytes=raw_bytes, jm_item_count=item_count))
 
     return ParsedStash(
         pages=pages,
@@ -338,7 +364,7 @@ def serialize_stash(stash: ParsedStash) -> bytes:
                 out += sep
 
         out += b"JM"
-        out += struct.pack("<H", len(page.items))
+        out += struct.pack("<H", page.jm_item_count)
         out += page.raw_bytes
 
     return bytes(out)

@@ -119,8 +119,8 @@ def _session_get(*get_returns, stamp_id: int | None = 42):
 
 def _ms_body(**kwargs) -> MilestoneIn:
     defaults = dict(
-        name="Reach Hell",
-        milestone_type="cleared_hell",
+        name="Kill Baal",
+        milestone_type="cleared_act5_hell",
         level_target=None,
         sort_order=0,
         reward_item_hex=None,
@@ -276,10 +276,10 @@ class TestPatchMilestone:
         ms = _milestone(milestone_type="level")
         session = _session_get(season, ms)
 
-        body = MilestonePatch(milestone_type="cleared_hell")
+        body = MilestonePatch(milestone_type="cleared_act5_hell")
         await patch_milestone(season_id=1, milestone_id=10, body=body, session=session)
 
-        assert ms.milestone_type == "cleared_hell"
+        assert ms.milestone_type == "cleared_act5_hell"
 
     async def test_clears_level_target_when_null_provided(self) -> None:
         season = _season()
@@ -601,3 +601,50 @@ class TestMilestoneScopeRouterOps:
         )
 
         assert ms.scope == "account"
+
+
+# ─── Quest Milestone Router Ops ──────────────────────────────────────────────
+
+class TestQuestMilestoneRouterOps:
+    """Tests for CRUD ops with cleared_actN_diffname milestone types."""
+
+    async def test_create_cleared_act2_normal_milestone(self) -> None:
+        season = _season(status="active")
+        session = _session_get(season)
+
+        await add_milestone(
+            season_id=1,
+            body=_ms_body(name="Kill Duriel", milestone_type="cleared_act2_normal"),
+            session=session,
+        )
+
+        assert len(session._added) == 1
+        assert session._added[0].milestone_type == "cleared_act2_normal"
+
+    async def test_patch_milestone_type_to_quest_type(self) -> None:
+        season = _season()
+        ms = _milestone(milestone_type="level", level_target=30)
+        session = _session_get(season, ms)
+
+        body = MilestonePatch(milestone_type="cleared_act3_hell")
+        await patch_milestone(season_id=1, milestone_id=10, body=body, session=session)
+
+        assert ms.milestone_type == "cleared_act3_hell"
+
+    async def test_create_all_15_quest_types_accepted(self) -> None:
+        """All 15 cleared_actN_diffname types can be created without error."""
+        bosses = [
+            f"cleared_act{act}_{diff}"
+            for act in range(1, 6)
+            for diff in ["normal", "nightmare", "hell"]
+        ]
+        assert len(bosses) == 15
+        for ms_type in bosses:
+            season = _season(status="active")
+            session = _session_get(season)
+            await add_milestone(
+                season_id=1,
+                body=_ms_body(name=f"Test {ms_type}", milestone_type=ms_type),
+                session=session,
+            )
+            assert session._added[0].milestone_type == ms_type

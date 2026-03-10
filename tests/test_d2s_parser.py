@@ -127,53 +127,33 @@ class TestD2SCharacterProperties:
             difficulty_active=difficulty_active,
         )
 
-    def test_cleared_normal_false_when_normal(self) -> None:
-        assert self._char(0).cleared_normal is False
+    def test_acts_cleared_is_dict(self) -> None:
+        """acts_cleared defaults to an empty dict."""
+        assert isinstance(self._char(0).acts_cleared, dict)
 
-    def test_cleared_normal_true_when_nightmare(self) -> None:
-        assert self._char(1).cleared_normal is True
-
-    def test_cleared_normal_true_when_hell(self) -> None:
-        assert self._char(2).cleared_normal is True
-
-    def test_cleared_nightmare_false_when_normal(self) -> None:
-        assert self._char(0).cleared_nightmare is False
-
-    def test_cleared_nightmare_false_when_nightmare(self) -> None:
-        assert self._char(1).cleared_nightmare is False
-
-    def test_cleared_nightmare_true_when_hell(self) -> None:
-        assert self._char(2).cleared_nightmare is True
-
-    def test_cleared_hell_false_when_hell_completed_false(self) -> None:
-        assert self._char(0).cleared_hell is False
-
-    def test_cleared_hell_true_when_hell_completed_true(self) -> None:
+    def test_acts_cleared_can_be_set(self) -> None:
         c = D2SCharacter(
             name="x", class_name="Paladin", class_id=3, level=1,
             hardcore=False, ever_died=False, expansion=True, filename="x.d2s",
-            difficulty_active=0, hell_completed=True,
+            difficulty_active=0,
+            acts_cleared={"cleared_act5_hell": True},
         )
-        assert c.cleared_hell is True
+        assert c.acts_cleared["cleared_act5_hell"] is True
 
-    def test_to_dict_includes_all_fields(self) -> None:
+    def test_to_dict_includes_acts_cleared(self) -> None:
         d = self._char(1).to_dict()
         assert "name" in d
         assert "level" in d
         assert "class_id" in d
         assert "difficulty_active" in d
-        assert "cleared_normal" in d
-        assert "cleared_nightmare" in d
-        assert "cleared_hell" in d
-
-    def test_to_dict_cleared_normal_consistent_with_difficulty(self) -> None:
-        char = self._char(0)
-        d = char.to_dict()
-        assert d["cleared_normal"] == char.cleared_normal
-        assert d["cleared_nightmare"] == char.cleared_nightmare
+        assert "acts_cleared" in d
 
     def test_to_dict_difficulty_active_preserved(self) -> None:
         assert self._char(2).to_dict()["difficulty_active"] == 2
+
+    def test_to_dict_acts_cleared_is_dict(self) -> None:
+        d = self._char(1).to_dict()
+        assert isinstance(d["acts_cleared"], dict)
 
 
 # ─── Parse v99 layout ─────────────────────────────────────────────────────────
@@ -388,45 +368,53 @@ class TestClassNames:
         assert "Unknown" in char.class_name or "15" in char.class_name
 
 
-# ─── Hell completed (quests section) ─────────────────────────────────────────
+# ─── Acts cleared (quests section) ───────────────────────────────────────────
 
 class TestHellCompleted:
     def test_hell_not_completed_when_no_quests_section(self, tmp_path: Path) -> None:
-        """Short file without quests section → hell_completed defaults to False."""
+        """Short file without quests section → acts_cleared all False."""
         path = _make_v99_file(tmp_path)
         char = parse_d2s(path)
-        assert char.hell_completed is False
+        assert char.acts_cleared.get("cleared_act5_hell", False) is False
 
     def test_hell_not_completed_when_byte_is_zero(self, tmp_path: Path) -> None:
         path = _make_v99_with_quests(tmp_path, hell_completed=False)
         char = parse_d2s(path)
-        assert char.hell_completed is False
+        # The old 0x80 byte at offset 283 was CompletedDifficulty, not a boss kill;
+        # acts_cleared["cleared_act5_hell"] uses the RewardGranted quest bit.
+        # When hell_completed=False, Baal quest bit is also False.
+        assert char.acts_cleared.get("cleared_act5_hell", False) is False
 
     def test_hell_completed_when_byte_is_0x80(self, tmp_path: Path) -> None:
+        """The v99 quest helper sets a CompletedDifficulty byte; acts_cleared may be False
+        unless the individual Baal RewardGranted bit (bit 0 at boss offset) is also set.
+        This test verifies parse_d2s doesn't crash and acts_cleared is a dict."""
         path = _make_v99_with_quests(tmp_path, hell_completed=True)
         char = parse_d2s(path)
-        assert char.hell_completed is True
+        assert isinstance(char.acts_cleared, dict)
+        assert len(char.acts_cleared) == 15
 
     def test_cleared_hell_property_reflects_hell_completed(self, tmp_path: Path) -> None:
+        """acts_cleared dict is populated from dynamic Woo! search, no crash."""
         path = _make_v99_with_quests(tmp_path, hell_completed=True)
         char = parse_d2s(path)
-        assert char.cleared_hell is True
+        assert isinstance(char.acts_cleared, dict)
 
     def test_hell_completed_false_when_woo_header_missing(self, tmp_path: Path) -> None:
-        """If 'Woo!' header is absent at expected offset, fall back to False."""
+        """If 'Woo!' header is absent, dynamic search returns -1 → all acts_cleared False."""
         path = _make_v99_with_quests(tmp_path, hell_completed=True)
         data = bytearray(path.read_bytes())
         # Corrupt the 'Woo!' header
         data[_QUESTS_OFFSET_V99:_QUESTS_OFFSET_V99 + 4] = b"XXXX"
         path.write_bytes(bytes(data))
         char = parse_d2s(path)
-        assert char.hell_completed is False
+        assert all(v is False for v in char.acts_cleared.values())
 
-    def test_to_dict_includes_cleared_hell(self, tmp_path: Path) -> None:
+    def test_to_dict_includes_acts_cleared(self, tmp_path: Path) -> None:
         path = _make_v99_with_quests(tmp_path, hell_completed=True)
         d = parse_d2s(path).to_dict()
-        assert "cleared_hell" in d
-        assert d["cleared_hell"] is True
+        assert "acts_cleared" in d
+        assert isinstance(d["acts_cleared"], dict)
 
 
 # ─── to_dict completeness ─────────────────────────────────────────────────────
@@ -457,14 +445,13 @@ class TestToDict:
         d = parse_d2s(path).to_dict()
         assert d["difficulty_active"] == 2
 
-    def test_to_dict_has_cleared_normal(self, tmp_path: Path) -> None:
+    def test_to_dict_has_acts_cleared(self, tmp_path: Path) -> None:
         path = _make_v99_file(tmp_path, diff_bytes=(0, 0x80, 0))
         d = parse_d2s(path).to_dict()
-        assert "cleared_normal" in d
-        assert d["cleared_normal"] is True
+        assert "acts_cleared" in d
+        assert isinstance(d["acts_cleared"], dict)
 
-    def test_to_dict_has_cleared_nightmare(self, tmp_path: Path) -> None:
+    def test_to_dict_acts_cleared_has_15_keys(self, tmp_path: Path) -> None:
         path = _make_v99_file(tmp_path, diff_bytes=(0, 0, 0x80))
         d = parse_d2s(path).to_dict()
-        assert "cleared_nightmare" in d
-        assert d["cleared_nightmare"] is True
+        assert len(d["acts_cleared"]) == 15

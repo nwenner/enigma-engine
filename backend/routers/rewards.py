@@ -105,24 +105,42 @@ def _reward_out(r: SeasonReward) -> RewardOut:
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
-@router.post("/rewards/extract-from-item")
-async def extract_from_item_file(file: UploadFile = File(...)):
+@router.post("/rewards/extract-from-stash")
+async def extract_from_stash_file(file: UploadFile = File(...)):
     """
-    Upload a single-item .d2i file exported by Hero Editor.
-    The file contains raw item bytes starting at offset 0 — no header, no JM wrapper.
-    Returns parsed item info + hex bytes ready to save to the rewards library.
+    Upload a shared stash .d2i file (from Hero Editor or the game).
+    Returns one entry per non-empty tab with item info and raw page bytes.
+    The raw bytes are in the exact format D2R expects — safe for reward insertion.
     """
+    from backend.services.item_parsing.stash_format import parse_stash
+
     data = await file.read()
     if not data:
         raise HTTPException(400, "Uploaded file is empty")
 
-    parsed = _parse_item_bytes(data)
-    return {
-        "filename": file.filename,
-        "hex": " ".join(f"{b:02x}" for b in data),
-        "byte_len": len(data),
-        **parsed,
-    }
+    try:
+        stash = parse_stash(data, hardcore=False)
+    except Exception as e:
+        raise HTTPException(400, f"Failed to parse stash file: {e}")
+
+    tabs = []
+    for i, page in enumerate(stash.pages):
+        if not page.raw_bytes or page.jm_item_count == 0:
+            continue
+        raw_bytes = bytes(page.raw_bytes)
+        parsed = _parse_item_bytes(raw_bytes)
+        tabs.append({
+            "tab_index": i,
+            "jm_item_count": page.jm_item_count,
+            "byte_len": len(raw_bytes),
+            "hex": " ".join(f"{b:02x}" for b in raw_bytes),
+            **parsed,
+        })
+
+    if not tabs:
+        raise HTTPException(400, "No items found in this stash file")
+
+    return {"filename": file.filename, "tabs": tabs}
 
 
 @router.post("/rewards/validate", response_model=ValidateResponse)

@@ -18,6 +18,7 @@ import type {
   SeasonMilestone,
   SeasonAchievement,
   MilestoneCreateInput,
+  MilestoneType,
 } from "../api/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -47,12 +48,23 @@ function fmtTimeRemaining(endIso: string): string {
   return `${hours}h remaining`;
 }
 
+const _ACT_BOSS_NAMES: Record<string, string> = {
+  "1": "Andariel",
+  "2": "Duriel",
+  "3": "Mephisto",
+  "4": "Diablo",
+  "5": "Baal",
+};
+
 function milestoneTypeLabel(type: string): string {
-  if (type === "cleared_normal") return "Cleared Normal";
-  if (type === "cleared_nightmare") return "Cleared NM";
-  if (type === "cleared_hell") return "Cleared Hell";
   if (type === "level") return "Level";
   if (type === "gold_vault") return "Gold Vault";
+  const m = type.match(/^cleared_act(\d)_(normal|nightmare|hell)$/);
+  if (m) {
+    const boss = _ACT_BOSS_NAMES[m[1]] ?? `Act ${m[1]}`;
+    const diff = m[2] === "nightmare" ? "NM" : m[2].charAt(0).toUpperCase() + m[2].slice(1);
+    return `${boss} (${diff})`;
+  }
   return type;
 }
 
@@ -327,14 +339,28 @@ function EditMilestoneModal({
             <label className="text-[10px] uppercase tracking-widest text-slate-500">Type</label>
             <select
               value={milestoneType}
-              onChange={(e) => setMilestoneType(e.target.value as SeasonMilestone["milestone_type"])}
+              onChange={(e) => setMilestoneType(e.target.value as MilestoneType)}
               className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
             >
               <option value="level">Level</option>
-              <option value="cleared_normal">Cleared Normal</option>
-              <option value="cleared_nightmare">Cleared Nightmare</option>
-              <option value="cleared_hell">Cleared Hell</option>
               <option value="gold_vault">Gold Vault</option>
+              <optgroup label="Act Boss Kill">
+                <option value="cleared_act1_normal">Andariel (Normal)</option>
+                <option value="cleared_act1_nightmare">Andariel (Nightmare)</option>
+                <option value="cleared_act1_hell">Andariel (Hell)</option>
+                <option value="cleared_act2_normal">Duriel (Normal)</option>
+                <option value="cleared_act2_nightmare">Duriel (Nightmare)</option>
+                <option value="cleared_act2_hell">Duriel (Hell)</option>
+                <option value="cleared_act3_normal">Mephisto (Normal)</option>
+                <option value="cleared_act3_nightmare">Mephisto (Nightmare)</option>
+                <option value="cleared_act3_hell">Mephisto (Hell)</option>
+                <option value="cleared_act4_normal">Diablo (Normal)</option>
+                <option value="cleared_act4_nightmare">Diablo (Nightmare)</option>
+                <option value="cleared_act4_hell">Diablo (Hell)</option>
+                <option value="cleared_act5_normal">Baal (Normal)</option>
+                <option value="cleared_act5_nightmare">Baal (Nightmare)</option>
+                <option value="cleared_act5_hell">Baal (Hell)</option>
+              </optgroup>
             </select>
           </div>
           {milestoneType !== "gold_vault" && (
@@ -654,7 +680,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
                 <button
                   onClick={() => {
                     setShowAddForm(true);
-                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "level", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_name: "", reward_library_id: null });
+                    setNewMilestone({ id: Date.now(), name: "", milestone_type: "cleared_act5_hell", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_name: "", reward_library_id: null });
                   }}
                   className="text-xs text-d2gold/70 hover:text-d2gold transition-colors"
                 >
@@ -740,7 +766,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
 type MilestoneFormRow = {
   id: number;
   name: string;
-  milestone_type: "level" | "cleared_normal" | "cleared_nightmare" | "cleared_hell" | "gold_vault";
+  milestone_type: MilestoneType;
   scope: "account" | "character";
   level_target: string;
   numeric_target: string;   // for gold_vault: gold threshold
@@ -774,14 +800,28 @@ function MilestoneFormRowUI({
         />
         <select
           value={row.milestone_type}
-          onChange={(e) => onChange({ ...row, milestone_type: e.target.value as MilestoneFormRow["milestone_type"] })}
+          onChange={(e) => onChange({ ...row, milestone_type: e.target.value as MilestoneType })}
           className="bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
         >
           <option value="level">Level</option>
-          <option value="cleared_normal">Cleared Normal</option>
-          <option value="cleared_nightmare">Cleared Nightmare</option>
-          <option value="cleared_hell">Cleared Hell</option>
           <option value="gold_vault">Gold Vault</option>
+          <optgroup label="Act Boss Kill">
+            <option value="cleared_act1_normal">Andariel (Normal)</option>
+            <option value="cleared_act1_nightmare">Andariel (Nightmare)</option>
+            <option value="cleared_act1_hell">Andariel (Hell)</option>
+            <option value="cleared_act2_normal">Duriel (Normal)</option>
+            <option value="cleared_act2_nightmare">Duriel (Nightmare)</option>
+            <option value="cleared_act2_hell">Duriel (Hell)</option>
+            <option value="cleared_act3_normal">Mephisto (Normal)</option>
+            <option value="cleared_act3_nightmare">Mephisto (Nightmare)</option>
+            <option value="cleared_act3_hell">Mephisto (Hell)</option>
+            <option value="cleared_act4_normal">Diablo (Normal)</option>
+            <option value="cleared_act4_nightmare">Diablo (Nightmare)</option>
+            <option value="cleared_act4_hell">Diablo (Hell)</option>
+            <option value="cleared_act5_normal">Baal (Normal)</option>
+            <option value="cleared_act5_nightmare">Baal (Nightmare)</option>
+            <option value="cleared_act5_hell">Baal (Hell)</option>
+          </optgroup>
         </select>
         {row.milestone_type !== "gold_vault" && (
           <div className="flex gap-0.5 shrink-0">

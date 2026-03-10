@@ -36,6 +36,10 @@ class ParsedPage:
     items: list[ParsedItem]
     gold: int                 # per-page gold (always 0 in Modern stash; header has gold)
     raw_bytes: bytearray      # raw item bytes for this page
+    # True top-level item count as recorded in the JM header. This is the
+    # authoritative count for serialization — do NOT use len(items), which
+    # only reflects what our byte-pattern scanner could detect.
+    jm_item_count: int = 0
 
 
 @dataclass

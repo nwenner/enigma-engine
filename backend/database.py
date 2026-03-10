@@ -118,6 +118,22 @@ async def init_db() -> None:
         except Exception:
             pass
 
+        # Data migration: replace coarse cleared_normal/nightmare/hell types with
+        # the per-act equivalents (cleared_actN_diffname).
+        # "Act 5 replaces cleared_*" — cleared_normal ≈ cleared_act5_normal, etc.
+        try:
+            await conn.execute(text("UPDATE season_milestones SET milestone_type='cleared_act5_normal' WHERE milestone_type='cleared_normal'"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("UPDATE season_milestones SET milestone_type='cleared_act5_nightmare' WHERE milestone_type='cleared_nightmare'"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("UPDATE season_milestones SET milestone_type='cleared_act5_hell' WHERE milestone_type='cleared_hell'"))
+        except Exception:
+            pass
+
 
 async def get_session() -> AsyncSession:
     async with AsyncSessionLocal() as session:

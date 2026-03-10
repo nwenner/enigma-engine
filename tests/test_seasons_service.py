@@ -30,6 +30,7 @@ def _char(
     name: str = "TestChar",
     class_name: str = "Paladin",
     hell_completed: bool = False,
+    acts_cleared: dict | None = None,
 ) -> MagicMock:
     """Return a mock object resembling a D2SCharacter."""
     c = MagicMock()
@@ -38,9 +39,22 @@ def _char(
     c.level = level
     c.hardcore = hardcore
     c.difficulty_active = difficulty_active
-    c.cleared_normal = difficulty_active >= 1
-    c.cleared_nightmare = difficulty_active >= 2
-    c.cleared_hell = hell_completed
+    # acts_cleared dict: default builds from difficulty_active / hell_completed
+    # for backward-compat with existing tests that don't pass acts_cleared
+    if acts_cleared is not None:
+        c.acts_cleared = acts_cleared
+    else:
+        # Synthesize a reasonable default from the old flags
+        ac: dict = {}
+        for diff_idx, diff_name in enumerate(["normal", "nightmare", "hell"]):
+            for act in range(1, 6):
+                if diff_name == "hell":
+                    ac[f"cleared_act{act}_hell"] = hell_completed and act == 5
+                elif difficulty_active >= diff_idx + 1:
+                    ac[f"cleared_act{act}_{diff_name}"] = True
+                else:
+                    ac[f"cleared_act{act}_{diff_name}"] = False
+        c.acts_cleared = ac
     return c
 
 
@@ -110,39 +124,42 @@ class TestMilestoneMet:
     def test_level_target_1_met_by_level_1(self) -> None:
         assert _milestone_met(_ms("level", level_target=1), _char(level=1)) is True
 
-    # --- cleared_normal milestones ---
+    # --- cleared_actN_diffname milestones ---
 
-    def test_cleared_normal_false_when_difficulty_active_0(self) -> None:
-        assert _milestone_met(_ms("cleared_normal"), _char(difficulty_active=0)) is False
+    def test_cleared_act5_normal_false_when_not_cleared(self) -> None:
+        char = _char(acts_cleared={"cleared_act5_normal": False})
+        assert _milestone_met(_ms("cleared_act5_normal"), char) is False
 
-    def test_cleared_normal_true_when_difficulty_active_1(self) -> None:
-        assert _milestone_met(_ms("cleared_normal"), _char(difficulty_active=1)) is True
+    def test_cleared_act5_normal_true_when_cleared(self) -> None:
+        char = _char(acts_cleared={"cleared_act5_normal": True})
+        assert _milestone_met(_ms("cleared_act5_normal"), char) is True
 
-    def test_cleared_normal_true_when_difficulty_active_2(self) -> None:
-        assert _milestone_met(_ms("cleared_normal"), _char(difficulty_active=2)) is True
+    def test_cleared_act1_normal_true_when_cleared(self) -> None:
+        char = _char(acts_cleared={"cleared_act1_normal": True})
+        assert _milestone_met(_ms("cleared_act1_normal"), char) is True
 
-    # --- cleared_nightmare milestones ---
+    def test_cleared_act5_hell_true_when_cleared(self) -> None:
+        char = _char(acts_cleared={"cleared_act5_hell": True})
+        assert _milestone_met(_ms("cleared_act5_hell"), char) is True
 
-    def test_cleared_nightmare_false_when_difficulty_active_0(self) -> None:
-        assert _milestone_met(_ms("cleared_nightmare"), _char(difficulty_active=0)) is False
+    def test_cleared_act5_hell_false_when_not_cleared(self) -> None:
+        char = _char(acts_cleared={"cleared_act5_hell": False})
+        assert _milestone_met(_ms("cleared_act5_hell"), char) is False
 
-    def test_cleared_nightmare_false_when_difficulty_active_1(self) -> None:
-        assert _milestone_met(_ms("cleared_nightmare"), _char(difficulty_active=1)) is False
+    def test_acts_cleared_dict_missing_key_returns_false(self) -> None:
+        """Graceful fallback: missing key in acts_cleared → False."""
+        char = _char(acts_cleared={})
+        assert _milestone_met(_ms("cleared_act3_nightmare"), char) is False
 
-    def test_cleared_nightmare_true_when_difficulty_active_2(self) -> None:
-        assert _milestone_met(_ms("cleared_nightmare"), _char(difficulty_active=2)) is True
+    def test_old_cleared_normal_type_returns_false(self) -> None:
+        """Old milestone types are no longer recognized → False."""
+        char = _char(difficulty_active=2)
+        assert _milestone_met(_ms("cleared_normal"), char) is False
 
-    # --- cleared_hell milestones ---
-
-    def test_cleared_hell_false_when_not_completed(self) -> None:
-        assert _milestone_met(_ms("cleared_hell"), _char(hell_completed=False)) is False
-
-    def test_cleared_hell_true_when_completed(self) -> None:
-        assert _milestone_met(_ms("cleared_hell"), _char(hell_completed=True)) is True
-
-    def test_cleared_hell_true_regardless_of_difficulty_active(self) -> None:
-        """hell_completed flag is independent of difficulty_active."""
-        assert _milestone_met(_ms("cleared_hell"), _char(difficulty_active=0, hell_completed=True)) is True
+    def test_old_cleared_hell_type_returns_false(self) -> None:
+        """Old cleared_hell type is no longer recognized → False."""
+        char = _char(acts_cleared={"cleared_act5_hell": True})
+        assert _milestone_met(_ms("cleared_hell"), char) is False
 
     # --- time limit ---
 
@@ -231,12 +248,16 @@ class TestCheckCharMilestones:
 
     async def test_multiple_milestones_all_met(self) -> None:
         session = _session_no_existing()
-        char = _char(level=50, difficulty_active=2, hell_completed=True)
+        char = _char(level=50, acts_cleared={
+            "cleared_act5_normal": True,
+            "cleared_act5_nightmare": True,
+            "cleared_act5_hell": True,
+        })
         milestones = [
             _ms("level", level_target=30, ms_id=1),
-            _ms("cleared_normal", ms_id=2),
-            _ms("cleared_nightmare", ms_id=3),
-            _ms("cleared_hell", ms_id=4),
+            _ms("cleared_act5_normal", ms_id=2),
+            _ms("cleared_act5_nightmare", ms_id=3),
+            _ms("cleared_act5_hell", ms_id=4),
         ]
         season = _season()
 
@@ -244,10 +265,10 @@ class TestCheckCharMilestones:
 
         assert session.add.call_count == 4
 
-    async def test_cleared_hell_achievement_added(self) -> None:
+    async def test_cleared_act5_hell_achievement_added(self) -> None:
         session = _session_no_existing()
-        char = _char(hell_completed=True)
-        milestones = [_ms("cleared_hell")]
+        char = _char(acts_cleared={"cleared_act5_hell": True})
+        milestones = [_ms("cleared_act5_hell")]
         season = _season()
 
         await _check_char_milestones(session, season, milestones, char)
@@ -274,10 +295,10 @@ class TestCheckCharMilestones:
 
         session.add.assert_not_called()
 
-    async def test_cleared_normal_achievement_added(self) -> None:
+    async def test_cleared_act1_normal_achievement_added(self) -> None:
         session = _session_no_existing()
-        char = _char(difficulty_active=1)
-        milestones = [_ms("cleared_normal")]
+        char = _char(acts_cleared={"cleared_act1_normal": True})
+        milestones = [_ms("cleared_act1_normal")]
         season = _season()
 
         await _check_char_milestones(session, season, milestones, char)
@@ -414,10 +435,10 @@ class TestCheckSeasonMilestones:
 
         session.add.assert_called_once()
 
-    async def test_sc_char_cleared_normal_creates_achievement(
+    async def test_sc_char_cleared_act1_normal_creates_achievement(
         self, tmp_path: Path
     ) -> None:
-        sc_char = _char(hardcore=False, difficulty_active=1)
+        sc_char = _char(hardcore=False, acts_cleared={"cleared_act1_normal": True})
         session = _session_no_existing()
 
         with (
@@ -429,7 +450,7 @@ class TestCheckSeasonMilestones:
             patch(
                 "backend.services.seasons_service._get_milestones",
                 new_callable=AsyncMock,
-                return_value=[_ms("cleared_normal")],
+                return_value=[_ms("cleared_act1_normal")],
             ),
             patch(
                 "backend.services.seasons_service.parse_d2s",
@@ -584,11 +605,11 @@ class TestMilestoneScope:
         added = session.add.call_args[0][0]
         assert added.character_name == "(Season)"
 
-    async def test_account_scope_cleared_hell(self) -> None:
-        """Account-scope Cleared Hell: one achievement for the whole season."""
+    async def test_account_scope_cleared_act5_hell(self) -> None:
+        """Account-scope Baal Hell: one achievement for the whole season."""
         session = _session_no_existing()
-        char = _char(hell_completed=True, name="Diablo Slayer")
-        ms = _ms("cleared_hell", scope="account")
+        char = _char(acts_cleared={"cleared_act5_hell": True}, name="Diablo Slayer")
+        ms = _ms("cleared_act5_hell", scope="account")
         season = _season()
 
         await _check_char_milestones(session, season, [ms], char)
@@ -596,11 +617,11 @@ class TestMilestoneScope:
         added = session.add.call_args[0][0]
         assert added.character_name == "(Season)"
 
-    async def test_account_scope_cleared_normal(self) -> None:
-        """Account-scope Cleared Normal: sentinel used."""
+    async def test_account_scope_cleared_act1_normal(self) -> None:
+        """Account-scope Andariel Normal: sentinel used."""
         session = _session_no_existing()
-        char = _char(difficulty_active=1, name="NoviceRunner")
-        ms = _ms("cleared_normal", scope="account")
+        char = _char(acts_cleared={"cleared_act1_normal": True}, name="NoviceRunner")
+        ms = _ms("cleared_act1_normal", scope="account")
         season = _season()
 
         await _check_char_milestones(session, season, [ms], char)
@@ -648,11 +669,11 @@ class TestMilestoneScope:
         assert added.character_name == "NewPaladin"
         assert added.character_name != "(Season)"
 
-    async def test_character_scope_cleared_normal(self) -> None:
-        """Character-scoped Cleared Normal: one achievement per character."""
+    async def test_character_scope_cleared_act1_normal(self) -> None:
+        """Character-scoped Andariel Normal: one achievement per character."""
         session = _session_no_existing()
-        char = _char(difficulty_active=1, name="NightmareRunner")
-        ms = _ms("cleared_normal", scope="character")
+        char = _char(acts_cleared={"cleared_act1_normal": True}, name="NightmareRunner")
+        ms = _ms("cleared_act1_normal", scope="character")
         season = _season()
 
         await _check_char_milestones(session, season, [ms], char)
@@ -665,10 +686,12 @@ class TestMilestoneScope:
     async def test_mixed_scope_both_achievements_created(self) -> None:
         """One account-scope and one character-scope milestone → both achievements added."""
         session = _session_no_existing()
-        char = _char(level=90, name="Completionist", difficulty_active=2)
+        char = _char(level=90, name="Completionist", acts_cleared={
+            "cleared_act5_nightmare": True,
+        })
         milestones = [
-            _ms("level", level_target=90, ms_id=1, scope="account"),    # fires once per season
-            _ms("cleared_nightmare", ms_id=2, scope="character"),        # fires per character
+            _ms("level", level_target=90, ms_id=1, scope="account"),         # fires once per season
+            _ms("cleared_act5_nightmare", ms_id=2, scope="character"),        # fires per character
         ]
         season = _season()
 
@@ -679,3 +702,94 @@ class TestMilestoneScope:
         names = {a.character_name for a in calls}
         assert "(Season)" in names
         assert "Completionist" in names
+
+
+# ─── Quest Milestone Tests ────────────────────────────────────────────────────
+
+class TestQuestMilestones:
+    """
+    Tests for cleared_actN_diffname milestone types.
+    """
+
+    def test_cleared_act1_normal_met_when_boss_killed(self) -> None:
+        char = _char(acts_cleared={"cleared_act1_normal": True})
+        assert _milestone_met(_ms("cleared_act1_normal"), char) is True
+
+    def test_cleared_act1_normal_not_met_when_boss_not_killed(self) -> None:
+        char = _char(acts_cleared={"cleared_act1_normal": False})
+        assert _milestone_met(_ms("cleared_act1_normal"), char) is False
+
+    def test_cleared_act5_hell_replaces_cleared_hell(self) -> None:
+        """Old 'cleared_hell' type no longer works; new 'cleared_act5_hell' does."""
+        char = _char(acts_cleared={"cleared_act5_hell": True})
+        # old type returns False
+        assert _milestone_met(_ms("cleared_hell"), char) is False
+        # new type returns True
+        assert _milestone_met(_ms("cleared_act5_hell"), char) is True
+
+    async def test_account_scope_quest_milestone_fires_once_across_chars(self) -> None:
+        """Account-scoped quest milestone: achievement added on first char, skipped on second."""
+        session = _session_no_existing()
+        char_a = _char(acts_cleared={"cleared_act4_hell": True}, name="CharA")
+        ms = _ms("cleared_act4_hell", scope="account")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char_a)
+        assert session.add.call_count == 1
+
+        # Second character → dedup by sentinel
+        session2 = _session_existing_achievement()
+        char_b = _char(acts_cleared={"cleared_act4_hell": True}, name="CharB")
+        await _check_char_milestones(session2, season, [ms], char_b)
+        session2.add.assert_not_called()
+
+    async def test_character_scope_quest_milestone_fires_per_char(self) -> None:
+        """Character-scoped quest milestone: achievement uses character name."""
+        session = _session_no_existing()
+        char = _char(acts_cleared={"cleared_act3_normal": True}, name="Mephistos_Bane")
+        ms = _ms("cleared_act3_normal", scope="character")
+        season = _season()
+
+        await _check_char_milestones(session, season, [ms], char)
+
+        added = session.add.call_args[0][0]
+        assert added.character_name == "Mephistos_Bane"
+        assert added.character_name != "(Season)"
+
+    def test_quest_milestone_respects_time_limit(self) -> None:
+        from datetime import datetime, timedelta, timezone
+        started = datetime.now(timezone.utc) - timedelta(hours=1)
+        ms = _ms("cleared_act2_normal", time_limit_hours=48)
+        char = _char(acts_cleared={"cleared_act2_normal": True})
+        assert _milestone_met(ms, char, season_started_at=started) is True
+
+    def test_quest_milestone_does_not_fire_after_deadline(self) -> None:
+        from datetime import datetime, timedelta, timezone
+        started = datetime.now(timezone.utc) - timedelta(hours=73)
+        ms = _ms("cleared_act2_normal", time_limit_hours=48)
+        char = _char(acts_cleared={"cleared_act2_normal": True})
+        assert _milestone_met(ms, char, season_started_at=started) is False
+
+    def test_acts_cleared_dict_missing_key_returns_false(self) -> None:
+        """Graceful fallback: key not present → False, no KeyError."""
+        char = _char(acts_cleared={})
+        assert _milestone_met(_ms("cleared_act3_nightmare"), char) is False
+
+    def test_all_5_acts_normal_can_each_trigger_own_milestone(self) -> None:
+        bosses = ["cleared_act1_normal", "cleared_act2_normal", "cleared_act3_normal",
+                  "cleared_act4_normal", "cleared_act5_normal"]
+        acts_cleared = {k: True for k in bosses}
+        char = _char(acts_cleared=acts_cleared)
+        for key in bosses:
+            assert _milestone_met(_ms(key), char) is True
+
+    def test_mixed_act_difficulty_combos_independent(self) -> None:
+        """act3_normal and act3_nightmare are tracked independently."""
+        char_normal = _char(acts_cleared={"cleared_act3_normal": True, "cleared_act3_nightmare": False})
+        char_nm = _char(acts_cleared={"cleared_act3_normal": False, "cleared_act3_nightmare": True})
+
+        assert _milestone_met(_ms("cleared_act3_normal"), char_normal) is True
+        assert _milestone_met(_ms("cleared_act3_nightmare"), char_normal) is False
+
+        assert _milestone_met(_ms("cleared_act3_normal"), char_nm) is False
+        assert _milestone_met(_ms("cleared_act3_nightmare"), char_nm) is True

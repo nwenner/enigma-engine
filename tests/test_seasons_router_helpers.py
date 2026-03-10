@@ -171,6 +171,18 @@ class TestMsOut:
         out = _ms_out(_make_milestone(milestone_type="cleared_hell"))
         assert out.milestone_type == "cleared_hell"
 
+    def test_cleared_act5_hell_milestone_type_passed_through(self) -> None:
+        out = _ms_out(_make_milestone(milestone_type="cleared_act5_hell"))
+        assert out.milestone_type == "cleared_act5_hell"
+
+    def test_cleared_act1_normal_milestone_type_passed_through(self) -> None:
+        out = _ms_out(_make_milestone(milestone_type="cleared_act1_normal"))
+        assert out.milestone_type == "cleared_act1_normal"
+
+    def test_cleared_act3_nightmare_milestone_type_passed_through(self) -> None:
+        out = _ms_out(_make_milestone(milestone_type="cleared_act3_nightmare"))
+        assert out.milestone_type == "cleared_act3_nightmare"
+
 
 # ─── _ach_out ─────────────────────────────────────────────────────────────────
 

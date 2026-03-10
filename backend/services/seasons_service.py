@@ -3,6 +3,7 @@ from __future__ import annotations
 """
 Seasons service: milestone detection, season start (wipe), and reward claim.
 """
+import asyncio
 import logging
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -215,12 +216,8 @@ def _milestone_met(
 
     if ms.milestone_type == "level":
         return char is not None and ms.level_target is not None and char.level >= ms.level_target
-    elif ms.milestone_type == "cleared_normal":
-        return char is not None and char.cleared_normal
-    elif ms.milestone_type == "cleared_nightmare":
-        return char is not None and char.cleared_nightmare
-    elif ms.milestone_type == "cleared_hell":
-        return char is not None and char.cleared_hell
+    elif ms.milestone_type.startswith("cleared_act"):
+        return char is not None and char.acts_cleared.get(ms.milestone_type, False)
     elif ms.milestone_type == "gold_vault":
         return ms.numeric_target is not None and vault_gold_sc >= ms.numeric_target
     return False
@@ -388,6 +385,19 @@ async def start_season(
     else:
         log.info("Season start: no manual/game_close snapshot found, season archive will be empty")
 
+    # Remove any stale character archives for this season (can occur if a previous
+    # start attempt failed mid-transaction and left orphaned rows).
+    stale_result = await session.execute(
+        select(Character).where(Character.season_id == season_id)
+    )
+    stale = stale_result.scalars().all()
+    if stale:
+        log.warning(
+            "Season %d: found %d stale archived characters from a failed previous start — removing before re-archiving",
+            season_id, len(stale),
+        )
+        await session.execute(delete(Character).where(Character.season_id == season_id))
+
     # Archive current characters to this season (soft delete — preserves history)
     await session.execute(
         sa_update(Character)
@@ -418,18 +428,16 @@ async def start_season(
 async def claim_reward(
     session: AsyncSession,
     achievement_id: int,
-    machine: str,
-    conn: dict,
-    save_dir: str,
-    is_windows: bool = True,
 ) -> SeasonAchievement:
     """
-    Write the milestone reward item to tab 5 of the SC stash on the target machine.
+    Insert the milestone reward item into tab 5 of the Mothership (latest local snapshot).
+    No SSH required — the vault is the source of truth. Sync to Device will push it to
+    whatever machine the player is on.
     """
-    from backend.services import ssh_client as ssh_mod
-    from backend.services.backup_manager import create_snapshot
+    from backend.config import get_settings
     from backend.services.item_parsing import parse_stash, serialize_stash
     from backend.services.item_parsing.stash_format import insert_item_into_page
+    from backend.models import BackupSnapshot
 
     achievement = await session.get(SeasonAchievement, achievement_id)
     if achievement is None:
@@ -441,50 +449,30 @@ async def claim_reward(
     if milestone is None or milestone.reward_item_bytes is None:
         raise ValueError("No reward item configured for this milestone")
 
-    # Check D2R not running
-    def _check_running():
-        with ssh_mod.get_sftp(**conn) as (ssh, _sftp):
-            if ssh_mod.check_d2r_running(ssh, is_windows):
-                raise RuntimeError(f"D2R.exe is running on {machine.upper()}. Close the game first.")
-
-    await asyncio.to_thread(_check_running)
-
-    # Create safety snapshot before modifying
-    await create_snapshot(
-        session=session,
-        machine=machine,
-        conn_kwargs=conn,
-        save_dir=save_dir,
-        label="pre_season_reward",
+    # Find the latest Mothership snapshot
+    snap_result = await session.execute(
+        select(BackupSnapshot)
+        .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+        .order_by(BackupSnapshot.created_at.desc())
+        .limit(1)
     )
+    snap = snap_result.scalar_one_or_none()
+    if snap is None:
+        raise ValueError("No snapshot available. Check In from a device first.")
 
-    STASH_FILENAME = "ModernSharedStashSoftCoreV2.d2i"
+    cfg = get_settings()
+    snap_dir = cfg.data_dir / snap.snapshot_path
+    stash_path = snap_dir / "ModernSharedStashSoftCoreV2.d2i"
 
-    # Download stash, insert item, re-upload
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmpdir:
-        local_stash = Path(tmpdir) / STASH_FILENAME
-        remote_stash = ssh_mod.normalize_path(f"{save_dir}/{STASH_FILENAME}")
+    if not stash_path.exists():
+        raise ValueError("Stash file not found in snapshot. Check In from a device first.")
 
-        def _download():
-            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
-                sftp.get(remote_stash, str(local_stash))
+    stash = parse_stash(stash_path, hardcore=False)
+    if len(stash.pages) <= 4:
+        raise RuntimeError("Stash has fewer than 5 tabs; cannot write to tab 5")
 
-        await asyncio.to_thread(_download)
-
-        stash = parse_stash(local_stash, hardcore=False)
-        if len(stash.pages) <= 4:
-            raise RuntimeError("Stash has fewer than 5 tabs; cannot write to tab 5")
-
-        insert_item_into_page(stash.pages[4], milestone.reward_item_bytes)
-        out_bytes = serialize_stash(stash)
-        local_stash.write_bytes(out_bytes)
-
-        def _upload():
-            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
-                sftp.put(str(local_stash), remote_stash)
-
-        await asyncio.to_thread(_upload)
+    stash.pages[4] = insert_item_into_page(stash.pages[4], milestone.reward_item_bytes)
+    stash_path.write_bytes(serialize_stash(stash))
 
     achievement.claimed_at = datetime.now(timezone.utc)
     await session.commit()

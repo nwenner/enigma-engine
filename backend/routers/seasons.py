@@ -581,36 +581,8 @@ async def claim_achievement(
 ):
     from backend.services.seasons_service import claim_reward
 
-    # Determine target machine — prefer PC if online, else Deck
-    machine = "pc"
     try:
-        conn = await _get_conn_kwargs(session, machine)
-        save_dir = await _get_setting(session, f"{machine}_save_path") or ""
-
-        def _check_online():
-            with ssh_mod.get_sftp(**conn) as (_ssh, _sftp):
-                pass
-        import asyncio
-        await asyncio.to_thread(_check_online)
-    except Exception:
-        machine = "deck"
-        try:
-            conn = await _get_conn_kwargs(session, machine)
-            save_dir = await _get_setting(session, f"{machine}_save_path") or ""
-        except Exception as e:
-            raise HTTPException(400, f"Cannot connect to any machine: {e}")
-
-    is_windows = machine == "pc"
-
-    try:
-        achievement = await claim_reward(
-            session=session,
-            achievement_id=achievement_id,
-            machine=machine,
-            conn=conn,
-            save_dir=save_dir,
-            is_windows=is_windows,
-        )
+        achievement = await claim_reward(session=session, achievement_id=achievement_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except RuntimeError as e:

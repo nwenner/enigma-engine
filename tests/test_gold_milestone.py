@@ -130,12 +130,10 @@ class TestMilestoneMetGoldVault:
 class TestMilestoneMetExistingTypes:
     """Ensure existing character-based types still work after the refactor."""
 
-    def _char(self, level=1, cleared_normal=False, cleared_nightmare=False, cleared_hell=False):
+    def _char(self, level=1, acts_cleared=None):
         c = MagicMock()
         c.level = level
-        c.cleared_normal = cleared_normal
-        c.cleared_nightmare = cleared_nightmare
-        c.cleared_hell = cleared_hell
+        c.acts_cleared = acts_cleared or {}
         return c
 
     def test_level_still_works(self) -> None:
@@ -143,10 +141,10 @@ class TestMilestoneMetExistingTypes:
         assert _milestone_met(ms, char=self._char(level=30)) is True
         assert _milestone_met(ms, char=self._char(level=29)) is False
 
-    def test_cleared_normal_still_works(self) -> None:
-        ms = _ms(milestone_type="cleared_normal", numeric_target=None)
-        assert _milestone_met(ms, char=self._char(cleared_normal=True)) is True
-        assert _milestone_met(ms, char=self._char(cleared_normal=False)) is False
+    def test_cleared_act5_normal_works(self) -> None:
+        ms = _ms(milestone_type="cleared_act5_normal", numeric_target=None)
+        assert _milestone_met(ms, char=self._char(acts_cleared={"cleared_act5_normal": True})) is True
+        assert _milestone_met(ms, char=self._char(acts_cleared={"cleared_act5_normal": False})) is False
 
     def test_char_none_returns_false_for_char_based(self) -> None:
         ms = _ms(milestone_type="level", numeric_target=None, level_target=10)
