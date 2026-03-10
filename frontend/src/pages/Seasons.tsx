@@ -239,7 +239,9 @@ function EditMilestoneModal({
   const [name, setName] = useState(ms.name);
   const [milestoneType, setMilestoneType] = useState(ms.milestone_type);
   const [levelTarget, setLevelTarget] = useState(String(ms.level_target ?? ""));
-  const [numericTarget, setNumericTarget] = useState(String(ms.numeric_target ?? ""));
+  const [numericTarget, setNumericTarget] = useState(
+    ms.numeric_target != null ? String(ms.numeric_target / 1_000_000) : ""
+  );
   const [timeLimitDays, setTimeLimitDays] = useState(
     ms.time_limit_hours != null ? String(ms.time_limit_hours / 24) : ""
   );
@@ -281,7 +283,9 @@ function EditMilestoneModal({
     const newLevel = milestoneType === "level" ? (parseInt(levelTarget) || null) : null;
     if (newLevel !== ms.level_target) patchBody.level_target = newLevel;
 
-    const newNumericTarget = milestoneType === "gold_vault" ? (parseInt(numericTarget) || null) : null;
+    const newNumericTarget = milestoneType === "gold_vault"
+      ? (parseFloat(numericTarget) * 1_000_000 || null)
+      : null;
     if (newNumericTarget !== ms.numeric_target) patchBody.numeric_target = newNumericTarget;
 
     const newHours = timeLimitDays.trim() ? Math.round(parseFloat(timeLimitDays) * 24) : null;
@@ -342,15 +346,21 @@ function EditMilestoneModal({
             </div>
           )}
           {milestoneType === "gold_vault" && (
-            <div className="w-36 space-y-1.5">
-              <label className="text-[10px] uppercase tracking-widest text-slate-500">Gold threshold</label>
-              <input
-                type="number" min={1}
-                placeholder="e.g. 1000000"
-                value={numericTarget}
-                onChange={(e) => setNumericTarget(e.target.value)}
-                className="w-full bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
-              />
+            <div className="w-44 space-y-1.5">
+              <label className="text-[10px] uppercase tracking-widest text-slate-500">Gold threshold (millions)</label>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number" min={0} step={0.1}
+                  placeholder="e.g. 1.5"
+                  value={numericTarget}
+                  onChange={(e) => setNumericTarget(e.target.value)}
+                  className="flex-1 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
+                />
+                <span className="text-slate-500 text-xs shrink-0">M</span>
+              </div>
+              {numericTarget && parseFloat(numericTarget) > 0 && (
+                <p className="text-[10px] text-slate-500">= {(parseFloat(numericTarget) * 1_000_000).toLocaleString()} gold</p>
+              )}
             </div>
           )}
         </div>
@@ -536,7 +546,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
           name: newMilestone.name,
           milestone_type: newMilestone.milestone_type,
           level_target: newMilestone.milestone_type === "level" ? (parseInt(newMilestone.level_target) || null) : null,
-          numeric_target: newMilestone.milestone_type === "gold_vault" ? (parseInt(newMilestone.numeric_target) || null) : null,
+          numeric_target: newMilestone.milestone_type === "gold_vault" ? (parseFloat(newMilestone.numeric_target) * 1_000_000 || null) : null,
           sort_order: 999,
           reward_item_hex: hex,
           reward_item_name: newMilestone.reward_item_name.trim() || null,
@@ -818,14 +828,23 @@ function MilestoneFormRowUI({
           />
         )}
         {row.milestone_type === "gold_vault" && (
-          <input
-            type="number"
-            placeholder="Gold"
-            min={1}
-            value={row.numeric_target}
-            onChange={(e) => onChange({ ...row, numeric_target: e.target.value })}
-            className="w-28 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
-          />
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                placeholder="e.g. 1.5"
+                min={0}
+                step={0.1}
+                value={row.numeric_target}
+                onChange={(e) => onChange({ ...row, numeric_target: e.target.value })}
+                className="w-24 bg-d2bg border border-d2bg-border text-slate-200 text-sm px-2 py-1.5 focus:outline-none focus:border-d2gold/50 transition-colors"
+              />
+              <span className="text-slate-500 text-xs shrink-0">M gold</span>
+            </div>
+            {row.numeric_target && parseFloat(row.numeric_target) > 0 && (
+              <p className="text-[10px] text-slate-500">= {(parseFloat(row.numeric_target) * 1_000_000).toLocaleString()} gold</p>
+            )}
+          </div>
         )}
         <button onClick={onRemove} className="text-slate-600 hover:text-red-400 text-sm px-2 py-1.5 transition-colors">
           ✕
@@ -1070,7 +1089,7 @@ function CreateSeasonPanel() {
           name: m.name,
           milestone_type: m.milestone_type,
           level_target: m.milestone_type === "level" ? parseInt(m.level_target) || null : null,
-          numeric_target: m.milestone_type === "gold_vault" ? parseInt(m.numeric_target) || null : null,
+          numeric_target: m.milestone_type === "gold_vault" ? (parseFloat(m.numeric_target) * 1_000_000 || null) : null,
           sort_order: i,
           reward_item_hex: hex || null,
           reward_item_name: m.reward_item_name.trim() || null,
