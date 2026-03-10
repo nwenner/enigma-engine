@@ -276,7 +276,7 @@ async def get_active_season(session: AsyncSession = Depends(get_session)):
 
 async def _live_stats_out(session: AsyncSession, season: Season) -> SeasonStatsOut:
     """Compute live season stats from current DB data."""
-    chars_result = await session.execute(select(Character))
+    chars_result = await session.execute(select(Character).where(Character.season_id == None))
     all_chars = list(chars_result.scalars().all())
     sc_chars = [c for c in all_chars if not c.hardcore]
     hc_chars = [c for c in all_chars if c.hardcore]
@@ -475,33 +475,9 @@ async def start_season(
     from backend.services.seasons_service import start_season as _start_season
 
     try:
-        pc_conn = await _get_conn_kwargs(session, "pc")
-        deck_conn = await _get_conn_kwargs(session, "deck")
-        pc_save_dir = await _get_setting(session, "pc_save_path") or ""
-        deck_save_dir = await _get_setting(session, "deck_save_path") or ""
-    except Exception as e:
-        raise HTTPException(400, f"Config error: {e}")
-
-    if not pc_conn.get("host") or not deck_conn.get("host"):
-        raise HTTPException(400, "Both PC and Deck must be configured to start a season")
-    if not pc_save_dir or not deck_save_dir:
-        raise HTTPException(400, "Save paths must be configured for both machines")
-
-    try:
-        season = await _start_season(
-            session=session,
-            season_id=season_id,
-            pc_conn=pc_conn,
-            deck_conn=deck_conn,
-            pc_save_dir=pc_save_dir,
-            deck_save_dir=deck_save_dir,
-            pc_is_windows=True,
-            deck_is_windows=False,
-        )
+        season = await _start_season(session=session, season_id=season_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except RuntimeError as e:
-        raise HTTPException(409, str(e))
 
     return await _season_out(session, season)
 

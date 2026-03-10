@@ -3,6 +3,7 @@ import api from "./client";
 import type {
   CharacterInfo,
   SyncStatusResponse,
+  SyncCompareResponse,
   PreflightResponse,
   SnapshotResponse,
   HistoryResponse,
@@ -85,6 +86,32 @@ export function useStartSync() {
       qc.invalidateQueries({ queryKey: ["sync", "last"] });
       qc.invalidateQueries({ queryKey: ["autosync"] });
     },
+  });
+}
+
+export function useCheckIn() {
+  const qc = useQueryClient();
+  return useMutation<SyncStatusResponse, Error, "pc" | "deck">({
+    mutationFn: (machine) => api.post("/checkin", { machine }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["characters"] });
+      qc.invalidateQueries({ queryKey: ["grail"] });
+      qc.invalidateQueries({ queryKey: ["stash"] });
+      qc.invalidateQueries({ queryKey: ["seasons", "active", "stats"] });
+    },
+  });
+}
+
+export function usePushToDevice() {
+  return useMutation<SyncStatusResponse, Error, "pc" | "deck">({
+    mutationFn: (machine) => api.post("/sync/push", { machine }).then((r) => r.data),
+  });
+}
+
+export function useSyncCompare() {
+  return useMutation<SyncCompareResponse, Error, "pc" | "deck">({
+    mutationFn: (machine) =>
+      api.get(`/sync/compare?machine=${machine}`).then((r) => r.data),
   });
 }
 
@@ -440,17 +467,25 @@ export function useSeasons() {
 }
 
 export function useActiveSeason() {
-  return useQuery<SeasonDetail>({
+  return useQuery<SeasonDetail | null>({
     queryKey: ["seasons", "active"],
-    queryFn: () => api.get("/seasons/active").then((r) => r.data),
+    queryFn: () =>
+      api.get("/seasons/active").then((r) => r.data).catch((e) => {
+        if (e?.response?.status === 404) return null;
+        throw e;
+      }),
     retry: false,
   });
 }
 
 export function useActiveSeasonStats(refetchMs?: number) {
-  return useQuery<SeasonStatsResponse>({
+  return useQuery<SeasonStatsResponse | null>({
     queryKey: ["seasons", "active", "stats"],
-    queryFn: () => api.get("/seasons/active/stats").then((r) => r.data),
+    queryFn: () =>
+      api.get("/seasons/active/stats").then((r) => r.data).catch((e) => {
+        if (e?.response?.status === 404) return null;
+        throw e;
+      }),
     retry: false,
     refetchInterval: refetchMs,
   });
@@ -489,7 +524,11 @@ export function useEndSeason() {
   const qc = useQueryClient();
   return useMutation<SeasonDetail, Error, number>({
     mutationFn: (id) => api.post(`/seasons/${id}/end`).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["seasons"] });
+      qc.invalidateQueries({ queryKey: ["seasons", "active"] });
+      qc.invalidateQueries({ queryKey: ["seasons", "active", "stats"] });
+    },
   });
 }
 

@@ -1,5 +1,6 @@
+import uuid as _uuid
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, BigInteger, Float, ForeignKey, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, BigInteger, Float, ForeignKey, LargeBinary, UniqueConstraint, Index, text
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -51,7 +52,10 @@ class Character(Base):
     __tablename__ = "characters"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    filename = Column(String, unique=True, nullable=False, index=True)
+    uuid = Column(String, nullable=False, unique=True, default=lambda: str(_uuid.uuid4()))
+    filename = Column(String, nullable=False, index=True)
+    # null = currently active character; set to season.id when season ends/new season starts
+    season_id = Column(Integer, ForeignKey("seasons.id"), nullable=True, index=True)
     name = Column(String, nullable=False)
     class_id = Column(Integer, nullable=False)
     class_name = Column(String, nullable=False)
@@ -62,6 +66,15 @@ class Character(Base):
     difficulty_active = Column(Integer, nullable=False, default=0)  # 0=Normal, 1=Nightmare, 2=Hell
     modified_at = Column(Float, nullable=False)
     last_updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        # Active chars: unique filename per slot (season_id IS NULL)
+        Index("uq_active_character_filename", "filename", unique=True,
+              sqlite_where=text("season_id IS NULL")),
+        # Archived chars: unique filename within a season
+        Index("uq_archived_character_filename_season", "filename", "season_id", unique=True,
+              sqlite_where=text("season_id IS NOT NULL")),
+    )
 
 
 class Settings(Base):

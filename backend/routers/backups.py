@@ -162,6 +162,7 @@ async def create_manual_snapshot(
             conn_kwargs=conn_kwargs,
             save_dir=save_dir,
             label="manual",
+            update_characters=False,
         )
     except SSHConnectionError as e:
         raise HTTPException(502, f"SSH error: {e}")

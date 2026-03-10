@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
-from backend.models import Character, SyncFileRecord
+from backend.models import Character, SyncFileRecord, Season
 from backend.routers.settings import _get_conn_kwargs, _get_setting
 from backend.services.d2s_parser import D2SParseError, parse_d2s
 from backend.services.ssh_client import (
@@ -107,7 +107,7 @@ async def upsert_characters(session: AsyncSession, chars: list[dict]) -> None:
             continue
 
         result = await session.execute(
-            select(Character).where(Character.filename == filename)
+            select(Character).where(Character.filename == filename, Character.season_id == None)
         )
         existing = result.scalar_one_or_none()
         incoming_mtime = float(char_dict.get("modified_at", 0.0))
@@ -152,12 +152,20 @@ async def upsert_characters(session: AsyncSession, chars: list[dict]) -> None:
 
 @router.get("/characters", response_model=list[CharacterInfo])
 async def get_characters(session: AsyncSession = Depends(get_session)):
-    count = (await session.execute(select(func.count()).select_from(Character))).scalar_one()
-    if count == 0:
-        await _backfill_from_sync_records(session)
+    active_count = (await session.execute(
+        select(func.count()).select_from(Character).where(Character.season_id == None)
+    )).scalar_one()
+    if active_count == 0:
+        # Only backfill from legacy sync records when there is no active season.
+        # An empty Character table during an active season means fresh start — not a migration gap.
+        active_season = (await session.execute(
+            select(Season).where(Season.status == "active")
+        )).scalar_one_or_none()
+        if active_season is None:
+            await _backfill_from_sync_records(session)
 
     result = await session.execute(
-        select(Character).order_by(Character.modified_at.desc())
+        select(Character).where(Character.season_id == None).order_by(Character.modified_at.desc())
     )
     return [_char_to_info(c) for c in result.scalars().all()]
 
@@ -211,7 +219,7 @@ async def refresh_characters(session: AsyncSession = Depends(get_session)):
     await upsert_characters(session, all_chars)
 
     result = await session.execute(
-        select(Character).order_by(Character.modified_at.desc())
+        select(Character).where(Character.season_id == None).order_by(Character.modified_at.desc())
     )
     return [_char_to_info(c) for c in result.scalars().all()]
 

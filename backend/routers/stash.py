@@ -23,7 +23,7 @@ from sqlalchemy import select
 
 from backend.config import get_settings
 from backend.database import get_session
-from backend.models import VaultItem, GoldVault, BackupSnapshot
+from backend.models import VaultItem, GoldVault, BackupSnapshot, Season
 from backend.services.stash_service import QUALITY_NAMES
 
 log = logging.getLogger(__name__)
@@ -156,19 +156,32 @@ async def get_stash(
     from pathlib import Path
     from backend.services.stash_service import fetch_stash_local
 
-    result = await session.execute(
+    # Only show snapshots from the current active season (after season.started_at).
+    # This prevents pre-season saves from appearing in a fresh season before any Check In.
+    active_season_result = await session.execute(
+        select(Season).where(Season.status == "active")
+    )
+    active_season = active_season_result.scalar_one_or_none()
+
+    snap_query = (
         select(BackupSnapshot)
         .where(BackupSnapshot.label.in_(["manual", "game_close"]))
         .order_by(BackupSnapshot.created_at.desc())
         .limit(1)
     )
+    if active_season and active_season.started_at:
+        snap_query = snap_query.where(BackupSnapshot.created_at >= active_season.started_at)
+
+    result = await session.execute(snap_query)
     snap = result.scalar_one_or_none()
 
     if snap is None:
-        raise HTTPException(
-            404,
-            "No snapshot available. Take a manual snapshot or wait for auto-sync.",
+        no_snap_msg = (
+            "No snapshot for the current season yet. Check In from a device first."
+            if active_season else
+            "No snapshot available. Take a manual snapshot or check in from a device."
         )
+        raise HTTPException(404, no_snap_msg)
 
     local_dir = get_settings().data_dir / snap.snapshot_path
     if not local_dir.exists():

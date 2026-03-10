@@ -13,12 +13,33 @@ export interface CharacterInfo {
 
 export interface SyncStatusResponse {
   id: number;
-  direction: "pc_to_deck" | "deck_to_pc";
+  direction:
+    | "pc_to_deck"
+    | "deck_to_pc"
+    | "checkin_pc"
+    | "checkin_deck"
+    | "app_to_pc"
+    | "app_to_deck";
   status: "pending" | "running" | "success" | "failed";
   error_message: string | null;
   started_at: string;
   completed_at: string | null;
   file_count: number;
+}
+
+export interface FileCompareEntry {
+  filename: string;
+  device_mtime: number | null;
+  app_mtime: number | null;
+}
+
+export interface SyncCompareResponse {
+  device_older: FileCompareEntry[];
+  device_newer: FileCompareEntry[];
+  device_only: FileCompareEntry[];
+  app_only: FileCompareEntry[];
+  has_app_data: boolean;
+  pushed_since_season_start: boolean;
 }
 
 export interface PreflightResponse {

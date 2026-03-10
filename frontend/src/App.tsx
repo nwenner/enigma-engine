@@ -9,7 +9,7 @@ import Grail from "./pages/Grail";
 import Stash from "./pages/Stash";
 import Seasons from "./pages/Seasons";
 import Rewards from "./pages/Rewards";
-import { usePreflight, useAutoSyncStatus } from "./api/hooks";
+import { usePreflight } from "./api/hooks";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "⚔️" },
@@ -38,9 +38,7 @@ function StatusDot({ online }: { online: boolean | null }) {
 }
 
 function ConnectionStatus() {
-  const { data: autoSyncStatus } = useAutoSyncStatus();
-  const refetchMs = autoSyncStatus?.poll_interval ? autoSyncStatus.poll_interval * 1000 : undefined;
-  const { data, isLoading } = usePreflight(refetchMs);
+  const { data, isLoading } = usePreflight(60_000);
   const pcOnline = data ? data.pc_error === null : null;
   const deckOnline = data ? data.deck_error === null : null;
 

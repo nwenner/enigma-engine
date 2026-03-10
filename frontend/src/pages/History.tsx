@@ -4,6 +4,18 @@ import Collapsible from "../components/Collapsible";
 import type { SyncOperationResponse } from "../api/types";
 import { fmtUtc, parseUtc } from "../utils/dates";
 
+function formatDirection(direction: string): string {
+  switch (direction) {
+    case "checkin_pc":   return "PC → Vault";
+    case "checkin_deck": return "Steam Deck → Vault";
+    case "app_to_pc":   return "Vault → PC";
+    case "app_to_deck": return "Vault → Steam Deck";
+    case "pc_to_deck":  return "PC → Steam Deck";
+    case "deck_to_pc":  return "Steam Deck → PC";
+    default:            return direction;
+  }
+}
+
 const STATUS_STYLES: Record<string, string> = {
   success: "bg-green-950/40 text-green-400 border-green-900/60",
   failed: "bg-red-950/40 text-red-400 border-red-900/60",
@@ -69,8 +81,7 @@ export default function History() {
 
 function OperationRow({ operation }: { operation: SyncOperationResponse }) {
   const [expanded, setExpanded] = useState(false);
-  const dirLabel =
-    operation.direction === "pc_to_deck" ? "PC → Steam Deck" : "Steam Deck → PC";
+  const dirLabel = formatDirection(operation.direction);
 
   const duration =
     operation.completed_at

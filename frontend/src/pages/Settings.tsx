@@ -525,13 +525,15 @@ function MachineForm({ machine, label, icon, getValue, setForm, onTest, testLoad
 
 // ─── Auto-Sync Section ────────────────────────────────────────────────────────
 
+// ─── Auto-Sync Section ────────────────────────────────────────────────────────
+
 function AutoSyncSection() {
   const { data: autoSync } = useAutoSyncStatus();
-  const updateAutoSync = useUpdateAutoSyncConfig();
+  useUpdateAutoSyncConfig(); // retained for future re-enable
   const [showInfo, setShowInfo] = useState(false);
 
   return (
-    <div className="card-d2 p-5">
+    <div className="card-d2 p-5 opacity-60">
       <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-1 flex items-center gap-2">
         <span>🔄</span> Auto-Sync
         <button
@@ -542,9 +544,13 @@ function AutoSyncSection() {
           ?
         </button>
       </h2>
-      <p className="text-slate-500 text-xs mb-5 leading-relaxed">
+      <p className="text-slate-500 text-xs mb-4 leading-relaxed">
         When enabled, automatically syncs saves when D2R closes. Both machines must be reachable.
       </p>
+
+      <div className="bg-slate-900/60 border border-slate-700/50 px-3 py-2 text-slate-500 text-xs mb-5">
+        Auto-sync is temporarily disabled while the new Check In / Sync to Device workflow settles in.
+      </div>
 
       {showInfo && (
         <InfoModal title="Auto-Sync" onClose={() => setShowInfo(false)}>
@@ -577,28 +583,14 @@ function AutoSyncSection() {
         </InfoModal>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-4 pointer-events-none">
         <div className="flex items-center justify-between">
           <span className="text-sm text-slate-300">Enable auto-sync</span>
           <button
-            onClick={() =>
-              updateAutoSync.mutate({
-                enabled: !(autoSync?.enabled ?? false),
-                poll_interval_seconds: autoSync?.poll_interval ?? 30,
-              })
-            }
-            disabled={updateAutoSync.isPending}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
-              autoSync?.enabled
-                ? "bg-d2gold"
-                : "bg-d2bg-elevated border border-d2bg-border"
-            }`}
+            disabled
+            className="relative inline-flex h-6 w-11 items-center rounded-full bg-d2bg-elevated border border-d2bg-border opacity-50 cursor-not-allowed"
           >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 shadow-sm ${
-                autoSync?.enabled ? "translate-x-6" : "translate-x-1"
-              }`}
-            />
+            <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-1 shadow-sm" />
           </button>
         </div>
 
@@ -608,14 +600,8 @@ function AutoSyncSection() {
           </label>
           <select
             value={autoSync?.poll_interval ?? 30}
-            onChange={(e) =>
-              updateAutoSync.mutate({
-                enabled: autoSync?.enabled ?? false,
-                poll_interval_seconds: Number(e.target.value),
-              })
-            }
-            disabled={updateAutoSync.isPending}
-            className="bg-d2bg border border-d2bg-border px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-d2gold/50 disabled:opacity-50 transition-colors"
+            disabled
+            className="bg-d2bg border border-d2bg-border px-3 py-1.5 text-sm text-slate-200 opacity-50 cursor-not-allowed transition-colors"
           >
             {POLL_INTERVAL_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>

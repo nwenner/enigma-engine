@@ -43,6 +43,57 @@ async def init_db() -> None:
         except Exception:
             pass
 
+        # characters: uuid + season_id (table recreation required to drop old unique index on filename)
+        needs_char_migration = False
+        try:
+            await conn.execute(text("SELECT uuid FROM characters LIMIT 1"))
+        except Exception:
+            needs_char_migration = True
+
+        if needs_char_migration:
+            await conn.execute(text("""
+                CREATE TABLE characters_new (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    uuid        TEXT NOT NULL DEFAULT '',
+                    filename    TEXT NOT NULL,
+                    season_id   INTEGER REFERENCES seasons(id),
+                    name        TEXT NOT NULL,
+                    class_id    INTEGER NOT NULL,
+                    class_name  TEXT NOT NULL,
+                    level       INTEGER NOT NULL,
+                    hardcore    BOOLEAN DEFAULT 0,
+                    ever_died   BOOLEAN DEFAULT 0,
+                    expansion   BOOLEAN DEFAULT 1,
+                    difficulty_active INTEGER NOT NULL DEFAULT 0,
+                    modified_at REAL NOT NULL,
+                    last_updated_at DATETIME
+                )
+            """))
+            await conn.execute(text("""
+                INSERT INTO characters_new
+                    (id, uuid, filename, season_id, name, class_id, class_name, level,
+                     hardcore, ever_died, expansion, difficulty_active, modified_at, last_updated_at)
+                SELECT
+                    id,
+                    lower(hex(randomblob(16))),
+                    filename, NULL, name, class_id, class_name, level,
+                    hardcore, ever_died, expansion, difficulty_active, modified_at, last_updated_at
+                FROM characters
+            """))
+            await conn.execute(text("DROP TABLE characters"))
+            await conn.execute(text("ALTER TABLE characters_new RENAME TO characters"))
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX uq_active_character_filename "
+                "ON characters(filename) WHERE season_id IS NULL"
+            ))
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX uq_archived_character_filename_season "
+                "ON characters(filename, season_id) WHERE season_id IS NOT NULL"
+            ))
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX uq_character_uuid ON characters(uuid)"
+            ))
+
         # seasons: duration_weeks
         try:
             await conn.execute(text("ALTER TABLE seasons ADD COLUMN duration_weeks INTEGER"))

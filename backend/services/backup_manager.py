@@ -54,6 +54,7 @@ async def create_snapshot(
     save_dir: str,
     label: str = "manual",
     sync_operation_id: int | None = None,
+    update_characters: bool = True,
 ) -> BackupSnapshot:
     """
     Download all files from save_dir on machine and create a BackupSnapshot record.
@@ -112,11 +113,84 @@ async def create_snapshot(
 
     await _prune_backups(session, cfg, label)
 
-    if label in ("manual", "game_close") and char_list:
+    if update_characters and label in ("manual", "game_close") and char_list:
         from backend.routers.characters import upsert_characters
         await upsert_characters(session, char_list)
 
     return snapshot
+
+
+async def push_snapshot_to_machine(
+    session: AsyncSession,
+    machine: str,
+    conn_kwargs: dict,
+    save_dir: str,
+    is_windows: bool,
+) -> tuple[int, int]:
+    """
+    Push the latest manual/game_close snapshot to the target machine.
+
+    Full mirror: delete all .d2s/.d2i on target, then upload all snapshot files.
+    If no snapshot exists (empty season state), device ends up with no saves.
+
+    Returns (files_removed, files_uploaded).
+    """
+    cfg = get_settings()
+
+    # Only push snapshots from the current active season (after season.started_at).
+    # This prevents pre-season saves from being pushed to the device after a season wipe.
+    from backend.models import Season as _Season
+    active_season_result = await session.execute(
+        select(_Season).where(_Season.status == "active")
+    )
+    active_season = active_season_result.scalar_one_or_none()
+
+    snap_query = (
+        select(BackupSnapshot)
+        .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+        .order_by(BackupSnapshot.created_at.desc())
+        .limit(1)
+    )
+    if active_season and active_season.started_at:
+        snap_query = snap_query.where(BackupSnapshot.created_at >= active_season.started_at)
+
+    result = await session.execute(snap_query)
+    snapshot = result.scalar_one_or_none()
+
+    snapshot_dir: Path | None = None
+    if snapshot:
+        candidate = cfg.data_dir / snapshot.snapshot_path
+        if candidate.exists():
+            snapshot_dir = candidate
+
+    def _push() -> tuple[int, int]:
+        with ssh_mod.get_sftp(**conn_kwargs) as (ssh, sftp):
+            if ssh_mod.check_d2r_running(ssh, is_windows):
+                raise RuntimeError(
+                    f"D2R.exe is currently running on {machine.upper()}. "
+                    "Please close the game before syncing."
+                )
+
+            all_remote = ssh_mod.list_all_files(sftp, save_dir)
+            removed = 0
+            for f in all_remote:
+                if f["filename"].endswith(".d2s") or f["filename"].endswith(".d2i"):
+                    sftp.remove(ssh_mod.normalize_path(f["path"]))
+                    removed += 1
+
+            uploaded = 0
+            if snapshot_dir:
+                for local_file in sorted(snapshot_dir.iterdir()):
+                    if local_file.is_file():
+                        remote = ssh_mod.normalize_path(f"{save_dir}/{local_file.name}")
+                        sftp.put(str(local_file), remote)
+                        uploaded += 1
+
+        return removed, uploaded
+
+    removed, uploaded = await asyncio.to_thread(_push)
+    log.info("push_snapshot: removed=%d uploaded=%d on %s", removed, uploaded, machine)
+    return removed, uploaded
 
 
 async def run_sync(

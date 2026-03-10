@@ -255,7 +255,8 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
         </div>
         <button
           onClick={() => setShowEnd(true)}
-          className="shrink-0 px-3 py-1.5 text-xs text-slate-400 border border-slate-700 hover:border-red-700 hover:text-red-400 transition-colors"
+          disabled={endSeason.isPending || endSeason.isSuccess}
+          className="shrink-0 px-3 py-1.5 text-xs text-slate-400 border border-slate-700 hover:border-red-700 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
         >
           End Season
         </button>
@@ -504,6 +505,74 @@ function MilestoneFormRowUI({
   );
 }
 
+// ─── Start Season Panel (shared) ─────────────────────────────────────────────
+
+const START_SEASON_WARNING = `WARNING: This will:\n• Archive the latest local snapshot\n• Clear Characters, Grail, Item Vault, and Gold Vault data\n\nYour devices are NOT touched — use Sync to Device after starting to push the empty state. This cannot be undone (the archive is kept as a backup).`;
+
+function StartSeasonPanel({
+  seasonId,
+  seasonName,
+  durationWeeks,
+  dismissButton,
+}: {
+  seasonId: number;
+  seasonName: string;
+  durationWeeks: number | null;
+  dismissButton: React.ReactNode;
+}) {
+  const startSeason = useStartSeason();
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const durationNote = durationWeeks
+    ? ` It will run for ${fmtDurationWeeks(durationWeeks)}.`
+    : "";
+
+  const handleStart = async () => {
+    setStartError(null);
+    try {
+      await startSeason.mutateAsync(seasonId);
+      setShowConfirm(false);
+    } catch (e: unknown) {
+      setStartError(e instanceof Error ? e.message : "Failed to start season");
+    }
+  };
+
+  return (
+    <div className="space-y-4 border border-d2gold/30 bg-d2gold/5 p-4">
+      <div>
+        <p className="text-d2gold font-medium">Season "{seasonName}" created in setup mode.</p>
+        <p className="text-slate-400 text-sm mt-1">
+          Ready to start? Starting will archive the latest local snapshot, then clear
+          Characters, Grail, Item Vault, and Gold Vault data. Use Sync to Device afterwards
+          to push the empty state to your machines.{durationNote}
+        </p>
+      </div>
+      <div className="flex gap-3">
+        <button
+          onClick={() => { setShowConfirm(true); setStartError(null); }}
+          className="px-4 py-2 text-sm font-medium bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30 transition-colors"
+        >
+          Start Season →
+        </button>
+        {dismissButton}
+      </div>
+      {startError && <p className="text-red-400 text-xs">{startError}</p>}
+      {showConfirm && (
+        <ConfirmDialog
+          title="Start Season"
+          message={START_SEASON_WARNING}
+          confirmLabel="Start Season"
+          dangerous
+          onConfirm={handleStart}
+          onCancel={() => { setShowConfirm(false); setStartError(null); }}
+          loading={startSeason.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── Create Season Panel ──────────────────────────────────────────────────────
 
 let _msKey = 0;
@@ -511,15 +580,12 @@ function nextKey() { return ++_msKey; }
 
 function CreateSeasonPanel() {
   const createSeason = useCreateSeason();
-  const startSeason = useStartSeason();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [durationWeeks, setDurationWeeks] = useState("");  // "" = no limit
   const [milestones, setMilestones] = useState<MilestoneFormRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<SeasonDetail | null>(null);
-  const [showStart, setShowStart] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
 
   const addMilestone = () => {
     setMilestones((prev) => [
@@ -587,57 +653,21 @@ function CreateSeasonPanel() {
     }
   };
 
-  const handleStart = async () => {
-    if (!created) return;
-    setStartError(null);
-    try {
-      await startSeason.mutateAsync(created.id);
-      setShowStart(false);
-      setCreated(null);
-    } catch (e: unknown) {
-      setStartError(e instanceof Error ? e.message : "Failed to start season");
-    }
-  };
-
   if (created) {
-    const durationNote = created.duration_weeks
-      ? ` It will run for ${fmtDurationWeeks(created.duration_weeks)}.`
-      : "";
     return (
-      <div className="space-y-4 border border-d2gold/30 bg-d2gold/5 p-4">
-        <div>
-          <p className="text-d2gold font-medium">Season "{created.name}" created in setup mode.</p>
-          <p className="text-slate-400 text-sm mt-1">
-            Ready to start? Starting will archive current saves on both machines, wipe all .d2s/.d2i files, and clear Characters/Grail/Vault data.{durationNote}
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowStart(true)}
-            className="px-4 py-2 text-sm font-medium bg-d2gold/20 text-d2gold border border-d2gold/40 hover:bg-d2gold/30 transition-colors"
-          >
-            Start Season →
-          </button>
+      <StartSeasonPanel
+        seasonId={created.id}
+        seasonName={created.name}
+        durationWeeks={created.duration_weeks}
+        dismissButton={
           <button
             onClick={() => setCreated(null)}
             className="px-4 py-2 text-sm text-slate-400 border border-d2bg-border hover:border-slate-500 transition-colors"
           >
             Not yet
           </button>
-        </div>
-        {showStart && (
-          <ConfirmDialog
-            title="Start Season"
-            message={`WARNING: This will:\n• Archive both machines' saves\n• Delete all .d2s and .d2i files on PC and Deck\n• Clear Characters, Grail, Item Vault, and Gold Vault data\n\nMake sure D2R is NOT running on either machine. This cannot be undone (archives are kept as backups).`}
-            confirmLabel="Start Season"
-            dangerous
-            onConfirm={handleStart}
-            onCancel={() => { setShowStart(false); setStartError(null); }}
-            loading={startSeason.isPending}
-            error={startError}
-          />
-        )}
-      </div>
+        }
+      />
     );
   }
 
@@ -765,25 +795,45 @@ function PastSeason({ item }: { item: SeasonListItem }) {
       </button>
 
       {open && (
-        <div className="px-4 pb-4 space-y-2 border-t border-d2bg-border">
-          <div className="pt-3 flex justify-end">
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="text-xs text-slate-600 hover:text-red-400 transition-colors"
-            >
-              Delete record
-            </button>
-          </div>
+        <div className="border-t border-d2bg-border">
+          {item.status === "setup" ? (
+            <div className="p-4">
+              <StartSeasonPanel
+                seasonId={item.id}
+                seasonName={item.name}
+                durationWeeks={item.duration_weeks}
+                dismissButton={
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="px-4 py-2 text-sm text-red-400 border border-red-900/50 hover:border-red-700 hover:bg-red-950/30 transition-colors"
+                  >
+                    Delete Season
+                  </button>
+                }
+              />
+            </div>
+          ) : (
+            <div className="px-4 pb-4 pt-3 flex justify-end">
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="text-xs text-slate-600 hover:text-red-400 transition-colors"
+              >
+                Delete record
+              </button>
+            </div>
+          )}
           {confirmDelete && (
-            <ConfirmDialog
-              title="Delete Season"
-              message={`Delete "${item.name}"? This removes the season record and milestones. Archive snapshots are kept.`}
-              confirmLabel="Delete"
-              dangerous
-              onConfirm={handleDelete}
-              onCancel={() => setConfirmDelete(false)}
-              loading={deleteSeason.isPending}
-            />
+            <div className="px-4 pb-4">
+              <ConfirmDialog
+                title="Delete Season"
+                message={`Delete "${item.name}"? This removes the season record and milestones. Archive snapshots are kept.`}
+                confirmLabel="Delete"
+                dangerous
+                onConfirm={handleDelete}
+                onCancel={() => setConfirmDelete(false)}
+                loading={deleteSeason.isPending}
+              />
+            </div>
           )}
         </div>
       )}

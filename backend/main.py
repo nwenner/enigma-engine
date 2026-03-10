@@ -1,4 +1,3 @@
-import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -15,8 +14,6 @@ from backend.routers import grail as grail_router
 from backend.routers import stash as stash_router
 from backend.routers import seasons as seasons_router
 from backend.routers import rewards as rewards_router
-from backend.services.auto_sync import run_auto_sync_watcher
-
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
@@ -30,13 +27,7 @@ async def lifespan(app: FastAPI):
     cfg.keys_dir.mkdir(parents=True, exist_ok=True)
     cfg.tmp_dir.mkdir(parents=True, exist_ok=True)
     await init_db()
-    watcher_task = asyncio.create_task(run_auto_sync_watcher())
     yield
-    watcher_task.cancel()
-    try:
-        await watcher_task
-    except asyncio.CancelledError:
-        pass
 
 
 app = FastAPI(title="Enigma Engine", lifespan=lifespan)

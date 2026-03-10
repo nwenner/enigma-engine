@@ -1,128 +1,17 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
-  useStartSync,
   usePreflight,
-  useLastSync,
-  useAutoSyncStatus,
-  useDismissAutoSync,
-  useTriggerAutoSync,
   useActiveSeasonStats,
+  useCheckIn,
+  usePushToDevice,
+  useSyncCompare,
+  useBackups,
 } from "../api/hooks";
 import SyncStatusModal from "../components/SyncStatusModal";
 import ConfirmDialog from "../components/ConfirmDialog";
-import type { CharacterInfo, SeasonStatsResponse, SyncStatusResponse } from "../api/types";
-import { parseUtc } from "../utils/dates";
-
-// ─── Stale check ──────────────────────────────────────────────────────────────
-
-const SYNC_THRESHOLD_SECONDS = 60;
-
-function isStale(chars: CharacterInfo[], lastSync: SyncStatusResponse | null): boolean {
-  if (!lastSync?.completed_at) return false;
-  const syncTime = parseUtc(lastSync.completed_at).getTime() / 1000;
-  return chars.some((c) => c.modified_at > syncTime + SYNC_THRESHOLD_SECONDS);
-}
-
-// ─── Auto-sync status line ────────────────────────────────────────────────────
-
-function AutoSyncStatusLine({
-  onDismiss,
-  dismissPending,
-  onSyncNow,
-  syncNowPending,
-}: {
-  onDismiss: () => void;
-  dismissPending: boolean;
-  onSyncNow: () => void;
-  syncNowPending: boolean;
-}) {
-  const { data: autosync } = useAutoSyncStatus();
-
-  if (!autosync?.enabled) return null;
-
-  const state = autosync.state;
-
-  if (!state || state.status === "idle") {
-    return (
-      <p className="text-slate-600 text-xs mt-3 text-center tracking-wide">
-        Auto-sync: monitoring
-      </p>
-    );
-  }
-
-  if (state.status === "pending") {
-    const source = state.direction === "pc_to_deck" ? "PC" : "Steam Deck";
-    const dest = state.direction === "pc_to_deck" ? "Steam Deck" : "PC";
-    const count = state.staged_file_count;
-    const hasStaged = !!state.staged_path;
-
-    return (
-      <div className="mt-4 bg-d2bg-elevated border border-d2gold/25 p-4 animate-fadeIn">
-        <div className="flex items-start gap-3 mb-4">
-          <span className="text-d2gold text-lg leading-none mt-0.5">⏳</span>
-          <div>
-            <p className="text-d2gold font-semibold text-sm tracking-wide">Auto-sync pending</p>
-            {hasStaged ? (
-              <p className="text-slate-400 text-xs mt-1 leading-relaxed">
-                {count} save{count === 1 ? "" : "s"} captured from {source} and held locally —
-                will push to {dest} automatically when it comes online.
-              </p>
-            ) : (
-              <p className="text-slate-400 text-xs mt-1 leading-relaxed">
-                Waiting for {dest} to come online to sync {source} → {dest}.
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onDismiss}
-            disabled={dismissPending || syncNowPending}
-            className="btn-d2-ghost text-xs px-3 py-1.5"
-          >
-            Discard
-          </button>
-          <button
-            onClick={onSyncNow}
-            disabled={syncNowPending || dismissPending}
-            className="btn-d2 text-xs px-3 py-1.5"
-          >
-            {syncNowPending ? "Starting…" : "Sync now"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.status === "conflict") {
-    return (
-      <div className="mt-4 bg-red-950/20 border border-red-800/40 p-4 animate-fadeIn">
-        <div className="flex items-start gap-3 mb-4">
-          <span className="text-red-400 text-lg leading-none mt-0.5">⚠️</span>
-          <div>
-            <p className="text-red-400 font-semibold text-sm tracking-wide">Auto-sync conflict</p>
-            <p className="text-slate-400 text-xs mt-1 leading-relaxed">
-              Both machines have played since the last sync. Choose a direction manually
-              using the buttons above, then dismiss this notice.
-            </p>
-          </div>
-        </div>
-        <div className="flex justify-end">
-          <button
-            onClick={onDismiss}
-            disabled={dismissPending}
-            className="btn-d2-ghost text-xs px-3 py-1.5"
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
-}
+import type { SeasonStatsResponse, SyncCompareResponse } from "../api/types";
+import { fmtUtc } from "../utils/dates";
 
 // ─── Season overview ──────────────────────────────────────────────────────────
 
@@ -149,7 +38,6 @@ function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
 
   return (
     <div className="card-d2 mb-6">
-      {/* Header */}
       <div className="px-4 py-3 border-b border-d2bg-border flex items-center gap-3 flex-wrap">
         <h2 className="font-diablo text-d2gold text-sm tracking-widest">{stats.season_name}</h2>
         <span className="text-[10px] px-2 py-0.5 border bg-green-950/40 text-green-400 border-green-900/60 tracking-wide">
@@ -158,9 +46,7 @@ function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
         <span className="text-slate-500 text-xs ml-auto">Day {stats.days_elapsed}</span>
       </div>
 
-      {/* Metrics row */}
       <div className="grid grid-cols-3 divide-x divide-d2bg-border border-b border-d2bg-border">
-        {/* Highest Level */}
         <div className="px-4 py-4 text-center">
           <p className="text-slate-500 text-[10px] tracking-widest uppercase mb-1">Highest Level</p>
           {stats.highest_level_sc != null ? (
@@ -175,7 +61,6 @@ function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
           )}
         </div>
 
-        {/* Gold Vault */}
         <div className="px-4 py-4 text-center">
           <p className="text-slate-500 text-[10px] tracking-widest uppercase mb-1">Gold Vault</p>
           <p className="text-d2gold font-diablo text-2xl leading-none">
@@ -184,7 +69,6 @@ function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
           <p className="text-slate-500 text-xs mt-1">SC</p>
         </div>
 
-        {/* Grail Progress */}
         <div className="px-4 py-4 text-center">
           <p className="text-slate-500 text-[10px] tracking-widest uppercase mb-1">Grail</p>
           <p className="text-d2gold font-diablo text-2xl leading-none">{stats.grail_progress_pct}%</p>
@@ -194,7 +78,6 @@ function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
         </div>
       </div>
 
-      {/* Characters */}
       {stats.characters_sc.length > 0 && (
         <div className="px-4 py-3">
           <div className="flex flex-wrap gap-1.5">
@@ -249,72 +132,202 @@ function NoSeasonCard() {
   );
 }
 
+// ─── Latest Snapshot ──────────────────────────────────────────────────────────
+
+function LatestSnapshotCard() {
+  const { data: backups, isLoading } = useBackups();
+  const latestSnapshot = (backups ?? []).find(
+    (s) => s.label === "manual" || s.label === "game_close"
+  );
+
+  return (
+    <div className="card-d2 p-4 border-l-2 border-l-d2gold/40 mb-6">
+      <p className="text-slate-600 text-[10px] uppercase tracking-wider mb-3">Latest Snapshot</p>
+      {isLoading ? (
+        <div className="text-slate-600 text-sm">Loading…</div>
+      ) : latestSnapshot ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${
+            latestSnapshot.source_machine === "pc"
+              ? "bg-violet-950/40 text-violet-400 border-violet-900/60"
+              : "bg-cyan-950/40 text-cyan-400 border-cyan-900/60"
+          }`}>
+            {latestSnapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
+          </span>
+          <span className="text-slate-200 text-sm font-medium">{fmtUtc(latestSnapshot.created_at)}</span>
+          <span className="text-slate-500 text-xs">
+            {latestSnapshot.file_count} file{latestSnapshot.file_count !== 1 ? "s" : ""}
+          </span>
+          {(latestSnapshot.characters ?? []).length > 0 && (
+            <span className="text-slate-500 text-xs">
+              · {latestSnapshot.characters!.length} character{latestSnapshot.characters!.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+      ) : (
+        <p className="text-slate-600 text-sm">No snapshot yet — Check In from a device to create one</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Warning dialog helpers ───────────────────────────────────────────────────
+
+function buildCheckInBlocker(compare: SyncCompareResponse, machine: string): string | null {
+  if (!compare.pushed_since_season_start) {
+    const label = machine === "pc" ? "PC" : "Steam Deck";
+    return `Sync to ${label} first — the new season hasn't been pushed to this device yet. Checking in now would import pre-season saves.`;
+  }
+  return null;
+}
+
+function buildCheckInWarning(compare: SyncCompareResponse, machine: string): string | null {
+  if (!compare.has_app_data || compare.device_older.length === 0) return null;
+  const label = machine === "pc" ? "PC" : "Steam Deck";
+  const files = compare.device_older.map((f) => f.filename).join(", ");
+  return `${label} save files are older than the app's last snapshot: ${files}.\n\nChecking in will overwrite the app's newer data. Continue?`;
+}
+
+function buildPushWarning(compare: SyncCompareResponse, machine: string): string | null {
+  if (!compare.has_app_data) return null;
+  const label = machine === "pc" ? "PC" : "Steam Deck";
+  const warnings: string[] = [];
+  if (compare.device_newer.length > 0) {
+    const files = compare.device_newer.map((f) => f.filename).join(", ");
+    warnings.push(`${label} has newer saves than the app's snapshot: ${files}`);
+  }
+  if (compare.device_only.length > 0) {
+    const files = compare.device_only.map((f) => f.filename).join(", ");
+    warnings.push(`${label} has unseen characters (${files}) that will be deleted by the full mirror`);
+  }
+  if (warnings.length === 0) return null;
+  return warnings.join("\n\n") + "\n\nSyncing will overwrite these files. Continue?";
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-type Direction = "pc_to_deck" | "deck_to_pc";
+type ComparingKey = "checkin_pc" | "checkin_deck" | "push_pc" | "push_deck";
 
 export default function Dashboard() {
-  const { data: autoSyncStatus } = useAutoSyncStatus();
-  const refetchMs = autoSyncStatus?.poll_interval ? autoSyncStatus.poll_interval * 1000 : undefined;
+  const { data: seasonStats, isLoading: statsLoading } = useActiveSeasonStats();
+  const { data: preflight } = usePreflight();
 
-  const { data: preflight } = usePreflight(refetchMs);
-  const { data: lastSync } = useLastSync(refetchMs);
-  const { data: seasonStats, isLoading: statsLoading } = useActiveSeasonStats(refetchMs);
+  const checkIn = useCheckIn();
+  const pushToDevice = usePushToDevice();
+  const syncCompare = useSyncCompare();
 
-  // For stale check we need chars — use lastSync + preflight
-  const startSync = useStartSync();
-  const dismissAutoSync = useDismissAutoSync();
-  const triggerAutoSync = useTriggerAutoSync();
   const [activeSyncId, setActiveSyncId] = useState<number | null>(null);
-  const [pendingDirection, setPendingDirection] = useState<Direction | null>(null);
+  const [comparing, setComparing] = useState<ComparingKey | null>(null);
+  const [blockError, setBlockError] = useState<string | null>(null);
+
+  // Warning dialog state (check-in or push with concerning compare result)
+  const [warningDialog, setWarningDialog] = useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  // Push confirm dialog (overwrite device saves — always shown before push)
+  const [pushConfirm, setPushConfirm] = useState<{ machine: "pc" | "deck" } | null>(null);
 
   const pcOnline = preflight?.pc_error === null;
   const deckOnline = preflight?.deck_error === null;
-  const bothOnline = pcOnline && deckOnline;
 
-  const offlineMessage = !preflight
-    ? null
-    : !pcOnline && !deckOnline
-    ? "Both devices must be online to sync"
-    : !pcOnline
-    ? "PC is offline"
-    : !deckOnline
-    ? "Steam Deck is offline"
-    : null;
+  const d2rWarning =
+    preflight && !preflight.safe_to_sync && (preflight.pc_running || preflight.deck_running);
 
-  // Stale-save banner: if no season active, fall back to checking lastSync against an empty chars list
-  const staleChars: CharacterInfo[] = [];
-  const showStaleBanner = isStale(staleChars, lastSync ?? null);
+  // ── Check In flow ─────────────────────────────────────────────────────────
 
-  const handleSync = async (direction: Direction) => {
-    setPendingDirection(null);
-    const result = await startSync.mutateAsync(direction);
-    setActiveSyncId(result.id);
+  const handleCheckIn = async (machine: "pc" | "deck") => {
+    setBlockError(null);
+    setComparing(`checkin_${machine}` as ComparingKey);
+    let compare: SyncCompareResponse | null = null;
+    try {
+      compare = await syncCompare.mutateAsync(machine);
+    } catch {
+      // compare failed — proceed without guard
+    }
+    setComparing(null);
+
+    if (compare) {
+      const blocker = buildCheckInBlocker(compare, machine);
+      if (blocker) {
+        setBlockError(blocker);
+        return;
+      }
+
+      const warning = buildCheckInWarning(compare, machine);
+      if (warning) {
+        setWarningDialog({
+          message: warning,
+          onConfirm: () => {
+            setWarningDialog(null);
+            doCheckIn(machine);
+          },
+        });
+        return;
+      }
+    }
+
+    doCheckIn(machine);
   };
+
+  const doCheckIn = async (machine: "pc" | "deck") => {
+    try {
+      const result = await checkIn.mutateAsync(machine);
+      setActiveSyncId(result.id);
+    } catch {
+      // error shown via checkIn.error
+    }
+  };
+
+  // ── Push flow ─────────────────────────────────────────────────────────────
+
+  const handlePush = async (machine: "pc" | "deck") => {
+    setComparing(`push_${machine}` as ComparingKey);
+    let compare: SyncCompareResponse | null = null;
+    try {
+      compare = await syncCompare.mutateAsync(machine);
+    } catch {
+      // proceed
+    }
+    setComparing(null);
+
+    const warning = compare ? buildPushWarning(compare, machine) : null;
+    if (warning) {
+      setWarningDialog({
+        message: warning,
+        onConfirm: () => {
+          setWarningDialog(null);
+          setPushConfirm({ machine });
+        },
+      });
+      return;
+    }
+
+    setPushConfirm({ machine });
+  };
+
+  const doPush = async (machine: "pc" | "deck") => {
+    setPushConfirm(null);
+    try {
+      const result = await pushToDevice.mutateAsync(machine);
+      setActiveSyncId(result.id);
+    } catch {
+      // error shown via pushToDevice.error
+    }
+  };
+
+  const anyPending = checkIn.isPending || pushToDevice.isPending;
+  const anyError = checkIn.error || pushToDevice.error || syncCompare.error;
+  const hasActiveSeason = !statsLoading && !!seasonStats;
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fadeIn">
       {/* Header */}
       <div className="mb-7">
         <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Dashboard</h1>
-        <p className="text-slate-500 text-sm mt-1">Sync save files between your PC and Steam Deck</p>
+        <p className="text-slate-500 text-sm mt-1">Manage your save files</p>
       </div>
-
-      {/* Stale save banner */}
-      {showStaleBanner && lastSync?.completed_at && (
-        <div className="bg-d2gold/8 border border-d2gold/30 px-4 py-3 text-d2gold text-sm mb-6 flex items-center gap-2">
-          <span>⚠️</span>
-          <span>Saves modified since last sync — choose a direction above</span>
-        </div>
-      )}
-
-      {/* In-sync banner */}
-      {!showStaleBanner && lastSync?.completed_at && (
-        <div className="bg-green-950/25 border border-green-800/40 px-4 py-3 text-green-400 text-sm mb-6 flex items-center gap-2">
-          <span>✓</span>
-          <span>Save files are in sync</span>
-        </div>
-      )}
 
       {/* Season Overview */}
       {statsLoading ? (
@@ -327,66 +340,112 @@ export default function Dashboard() {
         <NoSeasonCard />
       )}
 
-      {/* Sync buttons */}
-      <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
-        <button
-          onClick={() => setPendingDirection("pc_to_deck")}
-          disabled={startSync.isPending || !bothOnline}
-          className="btn-d2 w-full sm:w-auto"
-        >
-          PC → Steam Deck
-        </button>
-        <button
-          onClick={() => setPendingDirection("deck_to_pc")}
-          disabled={startSync.isPending || !bothOnline}
-          className="btn-d2 w-full sm:w-auto"
-        >
-          Steam Deck → PC
-        </button>
-      </div>
-
-      {/* Offline warning */}
-      {offlineMessage && (
-        <div className="bg-slate-900/60 border border-slate-700/50 px-4 py-2 text-slate-400 text-sm mb-4 text-center">
-          {offlineMessage}
-        </div>
-      )}
+      {/* Latest Snapshot */}
+      <LatestSnapshotCard />
 
       {/* D2R running warning */}
-      {preflight && !preflight.safe_to_sync && (preflight.pc_running || preflight.deck_running) && (
+      {d2rWarning && (
         <div className="bg-red-950/30 border border-red-800/50 px-4 py-3 text-red-400 text-sm mb-4 text-center">
-          ⚠️ D2R is running — close the game before syncing
+          ⚠️ D2R is running on a device — close the game before syncing
         </div>
       )}
 
-      {startSync.error && (
+      {/* Error */}
+      {blockError && (
         <div className="bg-red-950/30 border border-red-800/50 p-3 text-red-400 text-sm mb-4">
-          {startSync.error.message}
+          {blockError}
+        </div>
+      )}
+      {anyError && (
+        <div className="bg-red-950/30 border border-red-800/50 p-3 text-red-400 text-sm mb-4">
+          {(anyError as Error).message}
         </div>
       )}
 
-      {/* Auto-sync status */}
-      <div className="mb-6">
-        <AutoSyncStatusLine
-          onDismiss={() => dismissAutoSync.mutate()}
-          dismissPending={dismissAutoSync.isPending}
-          onSyncNow={() =>
-            triggerAutoSync.mutateAsync().then((r) => setActiveSyncId(r.operation_id))
-          }
-          syncNowPending={triggerAutoSync.isPending}
-        />
+      <div className="grid sm:grid-cols-2 gap-4">
+        {/* Check In section */}
+        <div className="card-d2 p-4">
+          <h3 className="font-diablo text-d2gold text-xs tracking-widest mb-1">Seasonal Check In</h3>
+          <p className="text-slate-500 text-xs mb-4">Pull saves from a device to update the app.</p>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => handleCheckIn("pc")}
+              disabled={anyPending || comparing !== null || !pcOnline || !hasActiveSeason}
+              className="btn-d2 text-sm"
+            >
+              {comparing === "checkin_pc" ? "Checking…" : "📥 Check In from PC"}
+            </button>
+            <button
+              onClick={() => handleCheckIn("deck")}
+              disabled={anyPending || comparing !== null || !deckOnline || !hasActiveSeason}
+              className="btn-d2 text-sm"
+            >
+              {comparing === "checkin_deck" ? "Checking…" : "📥 Check In from Deck"}
+            </button>
+          </div>
+          {!hasActiveSeason && !statsLoading && (
+            <p className="text-slate-600 text-xs mt-2">No active season — start one on the Seasons page</p>
+          )}
+          {hasActiveSeason && !pcOnline && preflight && (
+            <p className="text-slate-600 text-xs mt-2">PC offline</p>
+          )}
+          {hasActiveSeason && !deckOnline && preflight && (
+            <p className="text-slate-600 text-xs mt-1">Steam Deck offline</p>
+          )}
+        </div>
+
+        {/* Sync to Device section */}
+        <div className="card-d2 p-4">
+          <h3 className="font-diablo text-d2gold text-xs tracking-widest mb-1">Sync to Device</h3>
+          <p className="text-slate-500 text-xs mb-4">Push the latest app snapshot to a device.</p>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => handlePush("pc")}
+              disabled={anyPending || comparing !== null || !pcOnline || d2rWarning === true}
+              className="btn-d2 text-sm"
+            >
+              {comparing === "push_pc" ? "Checking…" : "📤 Sync to PC"}
+            </button>
+            <button
+              onClick={() => handlePush("deck")}
+              disabled={anyPending || comparing !== null || !deckOnline || d2rWarning === true}
+              className="btn-d2 text-sm"
+            >
+              {comparing === "push_deck" ? "Checking…" : "📤 Sync to Deck"}
+            </button>
+          </div>
+          {!pcOnline && preflight && (
+            <p className="text-slate-600 text-xs mt-2">PC offline</p>
+          )}
+          {!deckOnline && preflight && (
+            <p className="text-slate-600 text-xs mt-1">Steam Deck offline</p>
+          )}
+        </div>
       </div>
 
-      {pendingDirection !== null && (
+      {/* Warning dialog (stale/conflict detected by compare) */}
+      {warningDialog && (
         <ConfirmDialog
-          title={pendingDirection === "pc_to_deck" ? "PC → Steam Deck" : "Steam Deck → PC"}
-          message="A safety backup of the destination will be created before any files are overwritten. If anything goes wrong, you can restore from the Backups page."
-          confirmLabel="Sync"
-          onConfirm={() => handleSync(pendingDirection)}
-          onCancel={() => setPendingDirection(null)}
+          title="Warning"
+          message={warningDialog.message}
+          confirmLabel="Continue"
+          onConfirm={warningDialog.onConfirm}
+          onCancel={() => setWarningDialog(null)}
         />
       )}
 
+      {/* Push confirm dialog */}
+      {pushConfirm && (
+        <ConfirmDialog
+          title={`Sync to ${pushConfirm.machine === "pc" ? "PC" : "Steam Deck"}`}
+          message="This will delete all save files on the device and replace them with the app's latest snapshot. A backup is recommended before proceeding."
+          confirmLabel="Sync"
+          onConfirm={() => doPush(pushConfirm.machine)}
+          onCancel={() => setPushConfirm(null)}
+        />
+      )}
+
+      {/* Sync status modal */}
       {activeSyncId !== null && (
         <SyncStatusModal
           syncId={activeSyncId}

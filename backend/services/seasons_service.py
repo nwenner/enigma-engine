@@ -3,8 +3,8 @@ from __future__ import annotations
 """
 Seasons service: milestone detection, season start (wipe), and reward claim.
 """
-import asyncio
 import logging
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,6 +16,7 @@ from backend.models import (
     Season, SeasonMilestone, SeasonAchievement,
     Character, GrailEntry, GrailCatalog, VaultItem, GoldVault, SeasonStats,
 )
+from sqlalchemy import update as sa_update
 from backend.services.d2s_parser import parse_d2s, D2SParseError
 
 log = logging.getLogger(__name__)
@@ -147,7 +148,7 @@ async def compute_and_save_season_stats(session: AsyncSession, season: Season) -
     Call this before wiping data (start_season) or when ending a season.
     """
     # Characters
-    chars_result = await session.execute(select(Character))
+    chars_result = await session.execute(select(Character).where(Character.season_id == None))
     all_chars = list(chars_result.scalars().all())
     sc_chars = [c for c in all_chars if not c.hardcore]
     hc_chars = [c for c in all_chars if c.hardcore]
@@ -239,23 +240,18 @@ async def compute_and_save_season_stats(session: AsyncSession, season: Season) -
 async def start_season(
     session: AsyncSession,
     season_id: int,
-    pc_conn: dict,
-    deck_conn: dict,
-    pc_save_dir: str,
-    deck_save_dir: str,
-    pc_is_windows: bool = True,
-    deck_is_windows: bool = False,
 ) -> Season:
     """
     1. Verify no other active season
-    2. Check D2R not running on either machine
-    3. Archive snapshots for both machines
-    4. Delete all .d2s and .d2i files on both machines
-    5. Clear DB tables (characters, grail_entries, vault_items, gold_vaults)
-    6. Set season.status = "active"
+    2. Copy latest local snapshot to a season_archive dir
+    3. Snapshot season metrics
+    4. Clear DB tables (characters, grail_entries, vault_items, gold_vaults)
+    5. Set season.status = "active"
+
+    No SSH required — archive is built entirely from local snapshot data.
     """
-    from backend.services import ssh_client as ssh_mod
-    from backend.services.backup_manager import create_snapshot
+    from backend.config import get_settings
+    from backend.models import BackupSnapshot
 
     season = await session.get(Season, season_id)
     if season is None:
@@ -265,62 +261,55 @@ async def start_season(
     if season.status == "completed":
         raise ValueError("Cannot start a completed season")
 
-    # Check no other active season
     other = await session.execute(
         select(Season).where(Season.status == "active", Season.id != season_id)
     )
     if other.scalar_one_or_none():
         raise ValueError("Another season is already active")
 
-    # Preflight: check D2R not running
-    def _preflight():
-        with ssh_mod.get_sftp(**pc_conn) as (ssh, _sftp):
-            if ssh_mod.check_d2r_running(ssh, pc_is_windows):
-                raise RuntimeError("D2R.exe is running on PC. Close the game first.")
-        with ssh_mod.get_sftp(**deck_conn) as (ssh, _sftp):
-            if ssh_mod.check_d2r_running(ssh, deck_is_windows):
-                raise RuntimeError("D2R.exe is running on Steam Deck. Close the game first.")
+    cfg = get_settings()
 
-    await asyncio.to_thread(_preflight)
-
-    # Archive snapshots for both machines
-    pc_snap = await create_snapshot(
-        session=session,
-        machine="pc",
-        conn_kwargs=pc_conn,
-        save_dir=pc_save_dir,
-        label="season_archive",
+    # Find latest manual/game_close snapshot to archive
+    snap_result = await session.execute(
+        select(BackupSnapshot)
+        .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+        .order_by(BackupSnapshot.created_at.desc())
+        .limit(1)
     )
-    await create_snapshot(
-        session=session,
-        machine="deck",
-        conn_kwargs=deck_conn,
-        save_dir=deck_save_dir,
-        label="season_archive",
+    latest_snap = snap_result.scalar_one_or_none()
+
+    archive_snap: BackupSnapshot | None = None
+
+    if latest_snap:
+        src_dir = cfg.data_dir / latest_snap.snapshot_path
+        if src_dir.exists():
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            archive_dir = cfg.backups_dir / latest_snap.source_machine / f"{timestamp}_season_archive"
+            shutil.copytree(str(src_dir), str(archive_dir))
+
+            archive_snap = BackupSnapshot(
+                source_machine=latest_snap.source_machine,
+                snapshot_path=str(archive_dir.relative_to(cfg.data_dir)),
+                file_count=latest_snap.file_count,
+                characters=latest_snap.characters,
+                label="season_archive",
+            )
+            session.add(archive_snap)
+            await session.flush()
+            log.info("Season start: archived snapshot from %s to %s", src_dir, archive_dir)
+        else:
+            log.warning("Season start: latest snapshot dir missing (%s), skipping archive", src_dir)
+    else:
+        log.info("Season start: no manual/game_close snapshot found, season archive will be empty")
+
+    # Archive current characters to this season (soft delete — preserves history)
+    await session.execute(
+        sa_update(Character)
+        .where(Character.season_id == None)
+        .values(season_id=season_id)
     )
-
-    # Wipe save files on both machines
-    def _wipe_machine(conn: dict, save_dir: str) -> int:
-        removed = 0
-        with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
-            all_files = ssh_mod.list_all_files(sftp, save_dir)
-            for f in all_files:
-                fname = f["filename"]
-                if fname.endswith(".d2s") or fname.endswith(".d2i"):
-                    remote = ssh_mod.normalize_path(f["path"])
-                    sftp.remove(remote)
-                    removed += 1
-        return removed
-
-    pc_removed = await asyncio.to_thread(_wipe_machine, pc_conn, pc_save_dir)
-    deck_removed = await asyncio.to_thread(_wipe_machine, deck_conn, deck_save_dir)
-    log.info("Season start: wiped %d PC files, %d Deck files", pc_removed, deck_removed)
-
-    # Snapshot metrics before wipe
-    await compute_and_save_season_stats(session, season)
 
     # Reset DB tables
-    await session.execute(delete(Character))
     await session.execute(delete(GrailEntry))
     await session.execute(delete(VaultItem))
     await session.execute(update(GoldVault).values(amount=0))
@@ -328,7 +317,11 @@ async def start_season(
     # Activate season
     season.status = "active"
     season.started_at = datetime.now(timezone.utc)
-    season.archive_snapshot_id = pc_snap.id
+    season.archive_snapshot_id = archive_snap.id if archive_snap else None
+
+    # Initialize season stats at zero — correctly reflects fresh start state
+    await compute_and_save_season_stats(session, season)
+
     await session.commit()
 
     return season
