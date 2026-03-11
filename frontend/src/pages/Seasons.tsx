@@ -344,22 +344,26 @@ function EditMilestoneModal({
             >
               <option value="level">Level</option>
               <option value="gold_vault">Gold Vault</option>
-              <optgroup label="Act Boss Kill">
-                <option value="cleared_act1_normal">Andariel (Normal)</option>
-                <option value="cleared_act1_nightmare">Andariel (Nightmare)</option>
-                <option value="cleared_act1_hell">Andariel (Hell)</option>
-                <option value="cleared_act2_normal">Duriel (Normal)</option>
-                <option value="cleared_act2_nightmare">Duriel (Nightmare)</option>
-                <option value="cleared_act2_hell">Duriel (Hell)</option>
-                <option value="cleared_act3_normal">Mephisto (Normal)</option>
-                <option value="cleared_act3_nightmare">Mephisto (Nightmare)</option>
-                <option value="cleared_act3_hell">Mephisto (Hell)</option>
-                <option value="cleared_act4_normal">Diablo (Normal)</option>
-                <option value="cleared_act4_nightmare">Diablo (Nightmare)</option>
-                <option value="cleared_act4_hell">Diablo (Hell)</option>
-                <option value="cleared_act5_normal">Baal (Normal)</option>
-                <option value="cleared_act5_nightmare">Baal (Nightmare)</option>
-                <option value="cleared_act5_hell">Baal (Hell)</option>
+              <optgroup label="Normal">
+                <option value="cleared_act1_normal">Andariel</option>
+                <option value="cleared_act2_normal">Duriel</option>
+                <option value="cleared_act3_normal">Mephisto</option>
+                <option value="cleared_act4_normal">Diablo</option>
+                <option value="cleared_act5_normal">Baal</option>
+              </optgroup>
+              <optgroup label="Nightmare">
+                <option value="cleared_act1_nightmare">Andariel</option>
+                <option value="cleared_act2_nightmare">Duriel</option>
+                <option value="cleared_act3_nightmare">Mephisto</option>
+                <option value="cleared_act4_nightmare">Diablo</option>
+                <option value="cleared_act5_nightmare">Baal</option>
+              </optgroup>
+              <optgroup label="Hell">
+                <option value="cleared_act1_hell">Andariel</option>
+                <option value="cleared_act2_hell">Duriel</option>
+                <option value="cleared_act3_hell">Mephisto</option>
+                <option value="cleared_act4_hell">Diablo</option>
+                <option value="cleared_act5_hell">Baal</option>
               </optgroup>
             </select>
           </div>
@@ -805,22 +809,26 @@ function MilestoneFormRowUI({
         >
           <option value="level">Level</option>
           <option value="gold_vault">Gold Vault</option>
-          <optgroup label="Act Boss Kill">
-            <option value="cleared_act1_normal">Andariel (Normal)</option>
-            <option value="cleared_act1_nightmare">Andariel (Nightmare)</option>
-            <option value="cleared_act1_hell">Andariel (Hell)</option>
-            <option value="cleared_act2_normal">Duriel (Normal)</option>
-            <option value="cleared_act2_nightmare">Duriel (Nightmare)</option>
-            <option value="cleared_act2_hell">Duriel (Hell)</option>
-            <option value="cleared_act3_normal">Mephisto (Normal)</option>
-            <option value="cleared_act3_nightmare">Mephisto (Nightmare)</option>
-            <option value="cleared_act3_hell">Mephisto (Hell)</option>
-            <option value="cleared_act4_normal">Diablo (Normal)</option>
-            <option value="cleared_act4_nightmare">Diablo (Nightmare)</option>
-            <option value="cleared_act4_hell">Diablo (Hell)</option>
-            <option value="cleared_act5_normal">Baal (Normal)</option>
-            <option value="cleared_act5_nightmare">Baal (Nightmare)</option>
-            <option value="cleared_act5_hell">Baal (Hell)</option>
+          <optgroup label="Normal">
+            <option value="cleared_act1_normal">Andariel</option>
+            <option value="cleared_act2_normal">Duriel</option>
+            <option value="cleared_act3_normal">Mephisto</option>
+            <option value="cleared_act4_normal">Diablo</option>
+            <option value="cleared_act5_normal">Baal</option>
+          </optgroup>
+          <optgroup label="Nightmare">
+            <option value="cleared_act1_nightmare">Andariel</option>
+            <option value="cleared_act2_nightmare">Duriel</option>
+            <option value="cleared_act3_nightmare">Mephisto</option>
+            <option value="cleared_act4_nightmare">Diablo</option>
+            <option value="cleared_act5_nightmare">Baal</option>
+          </optgroup>
+          <optgroup label="Hell">
+            <option value="cleared_act1_hell">Andariel</option>
+            <option value="cleared_act2_hell">Duriel</option>
+            <option value="cleared_act3_hell">Mephisto</option>
+            <option value="cleared_act4_hell">Diablo</option>
+            <option value="cleared_act5_hell">Baal</option>
           </optgroup>
         </select>
         {row.milestone_type !== "gold_vault" && (
