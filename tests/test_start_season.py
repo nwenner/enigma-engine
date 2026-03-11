@@ -136,6 +136,8 @@ class TestStartSeasonValidation:
 class TestStartSeasonArchive:
     async def test_copies_snapshot_dir_to_archive(self, tmp_path: Path) -> None:
         """Latest snapshot dir is copied to a new season_archive subdir."""
+        from backend.models import BackupSnapshot
+
         snap_dir = tmp_path / "backups" / "pc" / "snap_10"
         snap_dir.mkdir(parents=True)
         (snap_dir / "Hero.d2s").write_bytes(b"\xaa" * 8)
@@ -150,30 +152,26 @@ class TestStartSeasonArchive:
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot") as MockSnap,
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
         ):
-            mock_archive_snap = MagicMock()
-            mock_archive_snap.id = 99
-            MockSnap.return_value = mock_archive_snap
-
             await start_season(session=session, season_id=1)
 
-        # A new BackupSnapshot with label="season_archive" was created
-        MockSnap.assert_called_once()
-        kwargs = MockSnap.call_args.kwargs
-        assert kwargs["label"] == "season_archive"
-        assert kwargs["source_machine"] == "pc"
+        # A BackupSnapshot with label="season_archive" was added to the session
+        added = [c.args[0] for c in session.add.call_args_list]
+        archive_snaps = [o for o in added if isinstance(o, BackupSnapshot) and o.label == "season_archive"]
+        assert len(archive_snaps) == 1
+        assert archive_snaps[0].source_machine == "pc"
 
         # The archive dir was actually created on disk
-        archive_dirs = list((tmp_path / "backups" / "pc").iterdir())
-        archive_dirs = [d for d in archive_dirs if "season_archive" in d.name]
+        archive_dirs = [d for d in (tmp_path / "backups" / "pc").iterdir() if "season_archive" in d.name]
         assert len(archive_dirs) == 1
         assert (archive_dirs[0] / "Hero.d2s").exists()
 
     async def test_no_snapshot_proceeds_without_archive(self, tmp_path: Path) -> None:
         """If no manual/game_close snapshot exists, season starts with archive_snapshot_id=None."""
+        from backend.models import BackupSnapshot
+
         season = _season()
         session = _session(season, latest_snap=None)
 
@@ -182,18 +180,21 @@ class TestStartSeasonArchive:
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot") as MockSnap,
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
         ):
             await start_season(session=session, season_id=1)
 
-        # No BackupSnapshot created (no snapshot to archive)
-        MockSnap.assert_not_called()
+        # No BackupSnapshot added to session
+        added = [c.args[0] for c in session.add.call_args_list]
+        archive_snaps = [o for o in added if isinstance(o, BackupSnapshot)]
+        assert len(archive_snaps) == 0
         assert season.archive_snapshot_id is None
 
     async def test_missing_snapshot_dir_on_disk_proceeds(self, tmp_path: Path) -> None:
         """Snapshot in DB but dir deleted → skip archive, no crash."""
+        from backend.models import BackupSnapshot
+
         season = _season()
         snap = _snap(path="backups/pc/gone_snap")  # dir not created
         session = _session(season, snap)
@@ -203,13 +204,14 @@ class TestStartSeasonArchive:
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot") as MockSnap,
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
         ):
             await start_season(session=session, season_id=1)
 
-        MockSnap.assert_not_called()
+        added = [c.args[0] for c in session.add.call_args_list]
+        archive_snaps = [o for o in added if isinstance(o, BackupSnapshot)]
+        assert len(archive_snaps) == 0
 
 
 # ─── DB wipe ─────────────────────────────────────────────────────────────────
@@ -225,8 +227,7 @@ class TestStartSeasonDbWipe:
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot"),
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
         ):
             await start_season(session=session, season_id=1)
@@ -245,8 +246,7 @@ class TestStartSeasonDbWipe:
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot"),
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
         ):
             result = await start_season(session=session, season_id=1)
@@ -264,8 +264,7 @@ class TestStartSeasonDbWipe:
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot"),
+            patch("backend.config.get_settings", return_value=cfg),
             patch(
                 "backend.services.seasons_service.compute_and_save_season_stats",
                 new_callable=AsyncMock,
@@ -285,8 +284,7 @@ class TestStartSeasonDbWipe:
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot"),
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
         ):
             await start_season(session=session, season_id=1)
@@ -295,6 +293,8 @@ class TestStartSeasonDbWipe:
 
     async def test_archive_snapshot_id_set_when_archive_created(self, tmp_path: Path) -> None:
         """season.archive_snapshot_id is set to the new archive snapshot's id."""
+        from backend.models import BackupSnapshot
+
         snap_dir = tmp_path / "backups" / "pc" / "snap_10"
         snap_dir.mkdir(parents=True)
         (snap_dir / "Hero.d2s").write_bytes(b"\x00" * 4)
@@ -302,21 +302,33 @@ class TestStartSeasonDbWipe:
         season = _season()
         snap = _snap(path="backups/pc/snap_10")
         session = _session(season, snap)
-        session.flush = AsyncMock()
+
+        # Use flush side-effect to stamp id=42 on any BackupSnapshot added to the session.
+        added_snaps: list = []
+        orig_add = session.add.side_effect
+
+        def _track_add(obj):
+            if isinstance(obj, BackupSnapshot):
+                added_snaps.append(obj)
+            if orig_add:
+                orig_add(obj)
+
+        session.add = MagicMock(side_effect=_track_add)
+
+        async def _stamp_flush():
+            for s in added_snaps:
+                s.id = 42
+
+        session.flush = AsyncMock(side_effect=_stamp_flush)
 
         cfg = MagicMock()
         cfg.data_dir = tmp_path
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot") as MockSnap,
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
         ):
-            archive_instance = MagicMock()
-            archive_instance.id = 42
-            MockSnap.return_value = archive_instance
-
             result = await start_season(session=session, season_id=1)
 
         assert result.archive_snapshot_id == 42
@@ -335,8 +347,7 @@ class TestStartSeasonNoSsh:
         cfg.backups_dir = tmp_path / "backups"
 
         with (
-            patch("backend.services.seasons_service.get_settings", return_value=cfg),
-            patch("backend.services.seasons_service.BackupSnapshot"),
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.seasons_service.compute_and_save_season_stats", new_callable=AsyncMock),
             patch("backend.services.ssh_client.get_sftp") as mock_sftp,
         ):

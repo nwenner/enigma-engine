@@ -113,7 +113,7 @@ class TestDoCheckin:
         with (
             patch("backend.routers.sync.AsyncSessionLocal", return_value=ctx),
             patch("backend.routers.sync.create_snapshot", new_callable=AsyncMock, return_value=snap),
-            patch("backend.routers.sync.get_settings", return_value=cfg),
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.grail_service.process_portal_tab_hook", new_callable=AsyncMock),
             patch("backend.services.seasons_service.check_season_milestones", new_callable=AsyncMock),
         ):
@@ -186,7 +186,7 @@ class TestDoCheckin:
         with (
             patch("backend.routers.sync.AsyncSessionLocal", return_value=ctx),
             patch("backend.routers.sync.create_snapshot", new_callable=AsyncMock, return_value=snap),
-            patch("backend.routers.sync.get_settings", return_value=cfg),
+            patch("backend.config.get_settings", return_value=cfg),
             patch(
                 "backend.services.grail_service.process_portal_tab_hook",
                 new_callable=AsyncMock,
@@ -215,7 +215,7 @@ class TestDoCheckin:
         with (
             patch("backend.routers.sync.AsyncSessionLocal", return_value=ctx),
             patch("backend.routers.sync.create_snapshot", new_callable=AsyncMock, return_value=snap) as mock_cs,
-            patch("backend.routers.sync.get_settings", return_value=cfg),
+            patch("backend.config.get_settings", return_value=cfg),
             patch("backend.services.grail_service.process_portal_tab_hook", new_callable=AsyncMock),
             patch("backend.services.seasons_service.check_season_milestones", new_callable=AsyncMock),
         ):
