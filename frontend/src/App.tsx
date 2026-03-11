@@ -9,6 +9,7 @@ import Grail from "./pages/Grail";
 import Stash from "./pages/Stash";
 import Seasons from "./pages/Seasons";
 import Rewards from "./pages/Rewards";
+import Demon from "./pages/Demon";
 import { usePreflight } from "./api/hooks";
 
 const NAV_ITEMS = [
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { to: "/history", label: "History", icon: "📜" },
   { to: "/grail", label: "Holy Grail", icon: "🏆" },
   { to: "/stash", label: "Item Vault", icon: "🏺" },
+  { to: "/demon", label: "Demon Registry", icon: "👹" },
   { to: "/seasons", label: "Seasons", icon: "🗓️" },
   { to: "/rewards", label: "Reward Library", icon: "🎁" },
   { to: "/settings", label: "Settings", icon: "⚙️" },
@@ -175,6 +177,7 @@ export default function App() {
             <Route path="/stash" element={<Stash />} />
             <Route path="/seasons" element={<Seasons />} />
             <Route path="/rewards" element={<Rewards />} />
+            <Route path="/demon" element={<Demon />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

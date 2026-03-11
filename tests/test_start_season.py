@@ -416,8 +416,8 @@ class TestStartSeasonStaleCleanup:
 
         # With no stale chars the stale delete execute is NOT called:
         # other_active(1) + snap(2) + stale_select(3) + char_archive(4) + grail_delete(5)
-        # + vault_item_delete(6) + gold_update(7) = 7 calls (no extra stale delete)
-        assert session.execute.call_count == 7
+        # + vault_item_delete(6) + demon_delete(7) + gold_update(8) = 8 calls (no extra stale delete)
+        assert session.execute.call_count == 8
 
     async def test_same_character_name_across_seasons_succeeds(self, tmp_path: Path) -> None:
         """

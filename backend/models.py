@@ -217,6 +217,20 @@ class SeasonStats(Base):
     snapshot_at          = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+# ─── Demon Vault ──────────────────────────────────────────────────────────────
+
+class BoundDemon(Base):
+    """A saved snapshot of a Warlock's bound demon (lf + gf sections from .d2s)."""
+    __tablename__ = "bound_demons"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    label = Column(String, nullable=False)                  # User-provided name, e.g. "Big frenzytaur lv30"
+    character_filename = Column(String, nullable=False)     # e.g. "Tald.d2s"
+    demon_bytes = Column(LargeBinary, nullable=False)       # Raw lf+gf bytes (~120 bytes)
+    notes = Column(String, nullable=True)
+    saved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 # ─── Season Reward Library ────────────────────────────────────────────────────
 
 class SeasonReward(Base):

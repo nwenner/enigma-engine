@@ -26,6 +26,9 @@ import type {
   RewardOut,
   ValidateRewardResponse,
   SeasonStatsResponse,
+  DemonStatusResponse,
+  DemonRecord,
+  WarlockInfo,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
@@ -659,6 +662,73 @@ export function useExtractFromStash() {
       return api.post("/rewards/extract-from-stash", form, {
         headers: { "Content-Type": "multipart/form-data" },
       }).then((r) => r.data);
+    },
+  });
+}
+
+// ─── Demon Vault ──────────────────────────────────────────────────────────────
+
+export function useDemonTags() {
+  return useQuery<string[]>({
+    queryKey: ["demon", "tags"],
+    queryFn: () => api.get("/demon/tags").then((r) => r.data),
+  });
+}
+
+export function useWarlocks() {
+  return useQuery<WarlockInfo[]>({
+    queryKey: ["demon", "warlocks"],
+    queryFn: () => api.get("/demon/warlocks").then((r) => r.data),
+  });
+}
+
+export function useDemonStatus(character: string) {
+  return useQuery<DemonStatusResponse>({
+    queryKey: ["demon", "status", character],
+    queryFn: () => api.get("/demon/status", { params: { character } }).then((r) => r.data),
+    enabled: !!character,
+  });
+}
+
+export function useDemonList(character?: string) {
+  return useQuery<DemonRecord[]>({
+    queryKey: ["demon", "list", character],
+    queryFn: () =>
+      api.get("/demon/list", { params: character ? { character } : {} }).then((r) => r.data),
+  });
+}
+
+export function useSaveDemon() {
+  const qc = useQueryClient();
+  return useMutation<DemonRecord, Error, { character: string; label: string; notes?: string }>({
+    mutationFn: (body) => api.post("/demon/save", body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["demon"] });
+    },
+  });
+}
+
+export function useDeleteDemon() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, number>({
+    mutationFn: (id) => api.delete(`/demon/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["demon"] });
+    },
+  });
+}
+
+export function useRestoreDemon() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; label: string; character: string },
+    Error,
+    { id: number; character: string }
+  >({
+    mutationFn: ({ id, character }) =>
+      api.post(`/demon/${id}/restore`, { character }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["demon"] });
     },
   });
 }

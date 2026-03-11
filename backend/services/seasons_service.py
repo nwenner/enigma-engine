@@ -15,7 +15,7 @@ from sqlalchemy import select, delete, update
 from sqlalchemy import func
 from backend.models import (
     Season, SeasonMilestone, SeasonAchievement,
-    Character, GrailEntry, GrailCatalog, VaultItem, GoldVault, SeasonStats,
+    Character, GrailEntry, GrailCatalog, VaultItem, GoldVault, SeasonStats, BoundDemon,
 )
 from sqlalchemy import update as sa_update
 from backend.services.d2s_parser import parse_d2s, D2SParseError
@@ -408,6 +408,7 @@ async def start_season(
     # Reset DB tables
     await session.execute(delete(GrailEntry))
     await session.execute(delete(VaultItem))
+    await session.execute(delete(BoundDemon))
     await session.execute(update(GoldVault).values(amount=0))
 
     # Activate season

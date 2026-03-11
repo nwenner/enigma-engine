@@ -369,3 +369,27 @@ export interface ValidateRewardResponse {
   valid: boolean;
   error: string | null;
 }
+
+export interface WarlockInfo {
+  filename: string;
+  name: string;
+  has_demon: boolean;
+  snapshot_at: string;
+}
+
+export interface DemonStatusResponse {
+  has_demon: boolean;
+  character: string;
+  is_warlock: boolean;
+  class_name: string;
+  snapshot_at: string | null;
+}
+
+export interface DemonRecord {
+  id: number;
+  label: string;
+  character_filename: string;
+  notes: string | null;
+  saved_at: string;
+  demon_size: number;
+}
