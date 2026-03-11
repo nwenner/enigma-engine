@@ -1,7 +1,6 @@
 import { useState, useRef } from "react";
 import {
   useRewards,
-  useValidateReward,
   useCreateReward,
   useUpdateReward,
   useDeleteReward,
@@ -9,6 +8,26 @@ import {
   type StashTabItem,
 } from "../api/hooks";
 import type { RewardOut, ValidateRewardResponse } from "../api/types";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+export const REWARD_CATEGORIES = [
+  "Rune",
+  "Runeword",
+  "Material",
+  "Unique",
+  "Set Item",
+  "Key",
+  "Charm",
+  "Worldstone Shard",
+  "Uber Ancient Summon",
+] as const;
+
+function autoCategory(qualityName: string | null): string | null {
+  if (qualityName === "unique") return "Unique";
+  if (qualityName === "set") return "Set Item";
+  return null;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -33,85 +52,6 @@ function qualityBadge(name: string | null): string {
   return name.slice(0, 3).toUpperCase();
 }
 
-// ─── Validate + preview panel ─────────────────────────────────────────────────
-
-function ValidatePanel({ onSave }: { onSave: (hex: string, parsed: ValidateRewardResponse) => void }) {
-  const validate = useValidateReward();
-  const [hex, setHex] = useState("");
-  const [result, setResult] = useState<ValidateRewardResponse | null>(null);
-
-  const handleValidate = async () => {
-    if (!hex.trim()) return;
-    setResult(null);
-    try {
-      const r = await validate.mutateAsync(hex.trim());
-      setResult(r);
-    } catch {
-      setResult(null);
-    }
-  };
-
-  const qColor = qualityColor(result?.quality_name ?? null);
-
-  return (
-    <div className="card-d2 p-4 space-y-3">
-      <h3 className="font-diablo text-d2gold text-xs tracking-widest">Paste Item Hex</h3>
-      <p className="text-slate-500 text-xs">
-        Copy bytes from the <span className="text-slate-400">hex</span> button on any stash item, or from Hero Editor.
-        Paste them here to validate before saving.
-      </p>
-
-      <textarea
-        placeholder="10 0f 00 00 4a 4d ..."
-        value={hex}
-        onChange={(e) => { setHex(e.target.value); setResult(null); }}
-        rows={3}
-        className="w-full bg-d2bg border border-d2bg-border text-slate-300 text-xs font-mono px-3 py-2 focus:outline-none focus:border-d2gold/50 resize-none transition-colors"
-      />
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleValidate}
-          disabled={validate.isPending || !hex.trim()}
-          className="btn-d2-ghost text-sm"
-        >
-          {validate.isPending ? "Validating…" : "Validate"}
-        </button>
-        {result && !result.valid && (
-          <p className="text-red-400 text-xs">{result.error ?? "Parse failed — check the hex bytes"}</p>
-        )}
-      </div>
-
-      {result?.valid && (
-        <div className={`border px-4 py-3 space-y-2 ${qColor}`}>
-          <div className="flex items-center gap-3">
-            <span className={`text-[10px] font-mono px-1.5 py-0.5 border ${qColor}`}>
-              {qualityBadge(result.quality_name)}
-            </span>
-            <span className="font-semibold text-sm">
-              {result.item_name ?? result.item_code ?? "Unknown item"}
-            </span>
-            {result.is_ethereal && (
-              <span className="text-[10px] text-sky-400 font-mono">ETH</span>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
-            {result.item_code && <span>Type: <span className="font-mono text-slate-400">{result.item_code}</span></span>}
-            {result.item_level != null && <span>ilvl: {result.item_level}</span>}
-            <span>{result.byte_len} bytes</span>
-          </div>
-          <button
-            onClick={() => onSave(hex.trim(), result)}
-            className="btn-d2 text-sm mt-1"
-          >
-            Save to Library →
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Save dialog ──────────────────────────────────────────────────────────────
 
 function SaveDialog({
@@ -126,13 +66,14 @@ function SaveDialog({
   const createReward = useCreateReward();
   const [name, setName] = useState(parsed.item_name ?? "");
   const [notes, setNotes] = useState("");
+  const [category, setCategory] = useState<string>(autoCategory(parsed.quality_name ?? null) ?? "");
   const [error, setError] = useState<string | null>(null);
 
   const handleSave = async () => {
     if (!name.trim()) { setError("Name is required"); return; }
     setError(null);
     try {
-      await createReward.mutateAsync({ name: name.trim(), hex, notes: notes.trim() || null });
+      await createReward.mutateAsync({ name: name.trim(), hex, notes: notes.trim() || null, category: category || null });
       onClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -164,6 +105,20 @@ function SaveDialog({
             className="input-d2"
             autoFocus
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-widest text-slate-500">Category</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="input-d2 text-sm"
+          >
+            <option value="">— Uncategorized —</option>
+            {REWARD_CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
 
         <div className="space-y-1.5">
@@ -204,32 +159,24 @@ function RewardRow({ reward }: { reward: RewardOut }) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(reward.name);
   const [editNotes, setEditNotes] = useState(reward.notes ?? "");
+  const [editCategory, setEditCategory] = useState(reward.category ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [copyState, setCopyState] = useState<"idle" | "loading" | "copied">("idle");
 
   const qColor = qualityColor(reward.quality_name);
 
   const handleSaveEdit = async () => {
     if (!editName.trim()) return;
-    await updateReward.mutateAsync({ id: reward.id, name: editName.trim(), notes: editNotes.trim() || null });
+    await updateReward.mutateAsync({
+      id: reward.id,
+      name: editName.trim(),
+      notes: editNotes.trim() || null,
+      category: editCategory || null,
+    });
     setEditing(false);
   };
 
   const handleDelete = async () => {
     await deleteReward.mutateAsync(reward.id);
-  };
-
-  const handleCopyHex = async () => {
-    setCopyState("loading");
-    try {
-      const resp = await fetch(`/api/rewards/${reward.id}/bytes`);
-      const data = await resp.json();
-      await navigator.clipboard.writeText(data.hex);
-      setCopyState("copied");
-      setTimeout(() => setCopyState("idle"), 2000);
-    } catch {
-      setCopyState("idle");
-    }
   };
 
   if (editing) {
@@ -242,6 +189,16 @@ function RewardRow({ reward }: { reward: RewardOut }) {
           className="input-d2 text-sm"
           autoFocus
         />
+        <select
+          value={editCategory}
+          onChange={(e) => setEditCategory(e.target.value)}
+          className="input-d2 text-xs"
+        >
+          <option value="">— Uncategorized —</option>
+          {REWARD_CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
         <input
           type="text"
           value={editNotes}
@@ -254,7 +211,7 @@ function RewardRow({ reward }: { reward: RewardOut }) {
             Save
           </button>
           <button
-            onClick={() => { setEditing(false); setEditName(reward.name); setEditNotes(reward.notes ?? ""); }}
+            onClick={() => { setEditing(false); setEditName(reward.name); setEditNotes(reward.notes ?? ""); setEditCategory(reward.category ?? ""); }}
             className="btn-d2-ghost text-xs px-3 py-1.5"
           >
             Cancel
@@ -279,6 +236,9 @@ function RewardRow({ reward }: { reward: RewardOut }) {
             )}
           </div>
           <div className="flex items-center gap-3 mt-0.5">
+            {reward.category && (
+              <span className="text-[9px] font-mono px-1 py-0.5 border border-slate-700/60 text-slate-500 shrink-0">{reward.category}</span>
+            )}
             {reward.item_name && reward.item_name !== reward.name && (
               <span className="text-slate-500 text-xs">{reward.item_name}</span>
             )}
@@ -294,20 +254,7 @@ function RewardRow({ reward }: { reward: RewardOut }) {
           </div>
         </div>
 
-        <span className="text-slate-700 text-[10px] shrink-0 tabular-nums">{reward.byte_len}b</span>
-
         <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={handleCopyHex}
-            title="Copy hex bytes to clipboard"
-            className={`text-[10px] font-mono px-1.5 py-0.5 border transition-colors ${
-              copyState === "copied"
-                ? "text-green-400 border-green-700"
-                : "text-slate-600 border-slate-800 hover:text-d2gold hover:border-d2gold/50"
-            }`}
-          >
-            {copyState === "loading" ? "…" : copyState === "copied" ? "✓hex" : "hex"}
-          </button>
           <button
             onClick={() => setEditing(true)}
             className="text-[11px] text-slate-600 hover:text-slate-300 border border-slate-800 hover:border-slate-600 px-2 py-0.5 transition-colors"
@@ -481,56 +428,101 @@ function ExtractPanel({ onSaveItem }: { onSaveItem: (hex: string, tab: StashTabI
 export default function Rewards() {
   const { data: rewards, isLoading } = useRewards();
   const [saveTarget, setSaveTarget] = useState<{ hex: string; parsed: ValidateRewardResponse } | null>(null);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const handleSaveExtracted = (hex: string, item: StashTabItem) => {
     setSaveTarget({ hex, parsed: item as unknown as ValidateRewardResponse });
   };
 
-  const grouped = rewards?.reduce<Record<string, RewardOut[]>>((acc, r) => {
-    const key = r.quality_name ?? "other";
+  const searchLower = search.trim().toLowerCase();
+  const filteredRewards = searchLower
+    ? (rewards ?? []).filter((r) => r.name.toLowerCase().includes(searchLower))
+    : rewards ?? [];
+
+  const grouped = filteredRewards.reduce<Record<string, RewardOut[]>>((acc, r) => {
+    const key = r.category ?? "Uncategorized";
     acc[key] = [...(acc[key] ?? []), r];
     return acc;
-  }, {}) ?? {};
+  }, {});
 
-  const ORDER = ["unique", "set", "rare", "crafted", "magic", "tempered", "superior", "normal", "inferior", "other"];
-  const sortedGroups = ORDER.filter((k) => grouped[k]);
+  const ORDER = [...REWARD_CATEGORIES, "Uncategorized"];
+  const availableCategories = ORDER.filter((k) => grouped[k]);
+  const visibleGroups = activeFilter ? availableCategories.filter((k) => k === activeFilter) : availableCategories;
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn space-y-6">
       <div>
         <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Reward Library</h1>
         <p className="text-slate-500 text-sm mt-1">
-          Curate items to use as season milestone rewards. Paste hex bytes from the stash viewer or Hero Editor.
+          Curate items to use as season milestone rewards. Import from a shared stash file below.
         </p>
       </div>
 
       <ExtractPanel onSaveItem={(hex, tab) => handleSaveExtracted(hex, tab)} />
 
-      <ValidatePanel onSave={(hex, parsed) => setSaveTarget({ hex, parsed })} />
-
       {/* Library */}
       <section className="space-y-3">
-        <p className="text-slate-600 text-[10px] uppercase tracking-wider">
-          Saved Rewards ({rewards?.length ?? 0})
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-slate-600 text-[10px] uppercase tracking-wider shrink-0">
+            Saved Rewards ({filteredRewards.length}{search ? ` / ${rewards?.length ?? 0}` : ""})
+          </p>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by label…"
+            className="input-d2 text-xs max-w-48"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-3">
+          {availableCategories.length > 1 && (
+            <div className="flex flex-wrap gap-1.5 justify-end">
+              <button
+                onClick={() => setActiveFilter(null)}
+                className={`text-[10px] px-2 py-0.5 border transition-colors ${
+                  activeFilter === null
+                    ? "text-d2gold border-d2gold/50 bg-d2gold/10"
+                    : "text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-500"
+                }`}
+              >
+                All
+              </button>
+              {availableCategories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveFilter(activeFilter === cat ? null : cat)}
+                  className={`text-[10px] px-2 py-0.5 border transition-colors ${
+                    activeFilter === cat
+                      ? "text-d2gold border-d2gold/50 bg-d2gold/10"
+                      : "text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-500"
+                  }`}
+                >
+                  {cat} <span className="text-slate-700">({grouped[cat].length})</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {isLoading ? (
           <div className="card-d2 px-4 py-6 text-center text-slate-600 text-sm">Loading…</div>
         ) : !rewards || rewards.length === 0 ? (
           <div className="card-d2 px-4 py-6 text-center">
-            <p className="text-slate-600 text-sm">No rewards saved yet. Validate and save an item above.</p>
+            <p className="text-slate-600 text-sm">No rewards saved yet. Import a stash file above.</p>
           </div>
         ) : (
           <div className="card-d2">
-            {sortedGroups.map((quality) => (
-              <div key={quality}>
+            {visibleGroups.map((cat) => (
+              <div key={cat}>
                 <div className="px-4 py-2 bg-black/20 border-b border-d2bg-border/50 flex items-center gap-2">
-                  <span className={`text-[10px] uppercase tracking-widest font-medium ${qualityColor(quality).split(" ")[0]}`}>
-                    {quality}
+                  <span className="text-[10px] uppercase tracking-widest font-medium text-d2gold">
+                    {cat}
                   </span>
-                  <span className="text-slate-700 text-[10px]">({grouped[quality].length})</span>
+                  <span className="text-slate-700 text-[10px]">({grouped[cat].length})</span>
                 </div>
-                {grouped[quality].map((r) => (
+                {grouped[cat].map((r) => (
                   <RewardRow key={r.id} reward={r} />
                 ))}
               </div>

@@ -118,6 +118,12 @@ async def init_db() -> None:
         except Exception:
             pass
 
+        # season_rewards: category (extensible string enum — Rune, Runeword, Unique, etc.)
+        try:
+            await conn.execute(text("ALTER TABLE season_rewards ADD COLUMN category TEXT"))
+        except Exception:
+            pass
+
         # Data migration: replace coarse cleared_normal/nightmare/hell types with
         # the per-act equivalents (cleared_actN_diffname).
         # "Act 5 replaces cleared_*" — cleared_normal ≈ cleared_act5_normal, etc.

@@ -609,7 +609,7 @@ export function useValidateReward() {
 
 export function useCreateReward() {
   const qc = useQueryClient();
-  return useMutation<RewardOut, Error, { name: string; hex: string; notes?: string | null }>({
+  return useMutation<RewardOut, Error, { name: string; hex: string; notes?: string | null; category?: string | null }>({
     mutationFn: (body) => api.post("/rewards", body).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rewards"] }),
   });
@@ -617,7 +617,7 @@ export function useCreateReward() {
 
 export function useUpdateReward() {
   const qc = useQueryClient();
-  return useMutation<RewardOut, Error, { id: number; name?: string; notes?: string | null }>({
+  return useMutation<RewardOut, Error, { id: number; name?: string; notes?: string | null; category?: string | null }>({
     mutationFn: ({ id, ...body }) => api.patch(`/rewards/${id}`, body).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rewards"] }),
   });

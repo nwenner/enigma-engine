@@ -353,6 +353,7 @@ export interface RewardOut {
   item_level: number | null;
   is_ethereal: boolean;
   notes: string | null;
+  category: string | null;
   byte_len: number;
   created_at: string;
 }

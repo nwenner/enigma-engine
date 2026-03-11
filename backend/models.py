@@ -233,4 +233,5 @@ class SeasonReward(Base):
     is_ethereal = Column(Boolean, nullable=False, default=False)
     raw_item_bytes = Column(LargeBinary, nullable=False)
     notes = Column(String, nullable=True)           # Optional user notes
+    category = Column(String, nullable=True)        # e.g. "Rune", "Runeword", "Unique" — see RewardCategory enum
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

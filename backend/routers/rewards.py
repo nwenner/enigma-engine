@@ -7,11 +7,12 @@ Endpoints:
   POST /api/rewards/validate        — parse hex bytes → item preview (no save)
   GET  /api/rewards                 — list all saved rewards
   POST /api/rewards                 — create a reward (hex + label + notes)
-  PATCH /api/rewards/{id}           — update name / notes
+  PATCH /api/rewards/{id}           — update name / notes / category
   DELETE /api/rewards/{id}          — delete a reward
 """
 import logging
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -29,6 +30,29 @@ QUALITY_NAMES: dict[int, str] = {
     1: "inferior", 2: "normal", 3: "superior", 4: "magic",
     5: "set", 6: "rare", 7: "unique", 8: "crafted", 9: "tempered",
 }
+
+
+class RewardCategory(str, Enum):
+    """Extensible category enum for reward library items.
+    Add new values here to extend without schema changes (stored as TEXT)."""
+    RUNE               = "Rune"
+    RUNEWORD           = "Runeword"
+    MATERIAL           = "Material"
+    UNIQUE             = "Unique"
+    SET_ITEM           = "Set Item"
+    KEY                = "Key"
+    CHARM              = "Charm"
+    WORLDSTONE_SHARD   = "Worldstone Shard"
+    UBER_ANCIENT_SUMMON = "Uber Ancient Summon"
+
+
+def _auto_category(quality: Optional[int]) -> Optional[str]:
+    """Infer category from item quality when possible."""
+    if quality == 7:
+        return RewardCategory.UNIQUE
+    if quality == 5:
+        return RewardCategory.SET_ITEM
+    return None
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -53,11 +77,13 @@ class RewardCreate(BaseModel):
     name: str
     hex: str
     notes: Optional[str] = None
+    category: Optional[str] = None  # RewardCategory value; None → auto-detect from quality
 
 
 class RewardUpdate(BaseModel):
     name: Optional[str] = None
     notes: Optional[str] = None
+    category: Optional[str] = None  # Pass empty string "" to clear category
 
 
 class RewardOut(BaseModel):
@@ -70,6 +96,7 @@ class RewardOut(BaseModel):
     item_level: Optional[int]
     is_ethereal: bool
     notes: Optional[str]
+    category: Optional[str]
     byte_len: int
     created_at: str
 
@@ -98,12 +125,19 @@ def _reward_out(r: SeasonReward) -> RewardOut:
         item_level=r.item_level,
         is_ethereal=r.is_ethereal,
         notes=r.notes,
+        category=r.category,
         byte_len=len(r.raw_item_bytes) if r.raw_item_bytes else 0,
         created_at=r.created_at.isoformat(),
     )
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
+
+@router.get("/rewards/categories")
+async def list_categories():
+    """Return the ordered list of valid reward categories."""
+    return {"categories": [c.value for c in RewardCategory]}
+
 
 @router.post("/rewards/extract-from-stash")
 async def extract_from_stash_file(file: UploadFile = File(...)):
@@ -178,6 +212,9 @@ async def create_reward(body: RewardCreate, session: AsyncSession = Depends(get_
 
     parsed = _parse_item_bytes(raw)
 
+    # Use explicit category if provided, otherwise auto-detect from quality
+    category = body.category or _auto_category(parsed.get("quality"))
+
     reward = SeasonReward(
         name=body.name.strip(),
         item_code=parsed["item_code"],
@@ -188,6 +225,7 @@ async def create_reward(body: RewardCreate, session: AsyncSession = Depends(get_
         is_ethereal=parsed["is_ethereal"] or False,
         raw_item_bytes=raw,
         notes=body.notes,
+        category=category,
         created_at=datetime.now(timezone.utc),
     )
     session.add(reward)
@@ -211,6 +249,8 @@ async def update_reward(
         reward.name = body.name.strip()
     if body.notes is not None:
         reward.notes = body.notes or None
+    if body.category is not None:
+        reward.category = body.category.strip() or None  # empty string clears it
 
     await session.commit()
     return _reward_out(reward)
