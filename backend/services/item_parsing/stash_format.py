@@ -43,14 +43,19 @@ def _find_item_starts(raw: bytes | bytearray, item_count: int) -> list[int]:
 
     Modern stash items reliably start with:
       first_byte = 0x10  (identified flag at bit 4)
-      fourth_byte = 0x00
+      fourth_byte = 0x00  (normal items)
+                 or 0x04  (runeword items — is_runeword flag at bit 26)
+
+    Runeword items have bit 26 set (byte 3 bit 2 = 0x04).  Without this,
+    runeword items (e.g. Enigma) are invisible and only their socketed runes
+    are detected.
 
     Returns up to item_count positions.
     """
     starts: list[int] = []
     i = 0
     while i + 3 < len(raw) and len(starts) < item_count:
-        if raw[i] == 0x10 and raw[i + 3] == 0x00:
+        if raw[i] == 0x10 and raw[i + 3] in (0x00, 0x04):
             starts.append(i)
             i += 4
         else:
@@ -100,6 +105,8 @@ def _parse_item(
         rare_name1=fields.rare_name1,
         rare_name2=fields.rare_name2,
         stat_list=stat_list,
+        is_runeword=flags.is_runeword,
+        runeword_id=fields.runeword_id,
     )
 
     # Warn about rare/crafted name word IDs that are missing from RARE_NAMES.
@@ -142,6 +149,8 @@ def _parse_item(
         is_ethereal=flags.is_ethereal,
         is_simple=flags.is_simple,
         is_ear=flags.is_ear,
+        is_runeword=flags.is_runeword,
+        runeword_id=fields.runeword_id,
         item_level=fields.item_level,
         byte_start=byte_start,
         byte_end=byte_end,

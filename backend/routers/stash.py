@@ -37,6 +37,7 @@ Machine = Literal["pc", "deck"]
 
 class StashItemResponse(BaseModel):
     page_item_index: int
+    item_type: str
     name: Optional[str]
     base_item: Optional[str]
     quality: int
@@ -47,6 +48,7 @@ class StashItemResponse(BaseModel):
     is_simple: bool
     item_level: int
     is_ethereal: bool
+    is_runeword: bool
     properties: list[str]
 
 

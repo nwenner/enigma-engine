@@ -52,6 +52,7 @@ class ItemFields:
     magic_suffix_id: int | None   # 11-bit magic suffix ID (quality==4 only)
     rare_name1: int           # 8-bit rare name word 1 ID (quality 6/8 only, else 0)
     rare_name2: int           # 8-bit rare name word 2 ID (quality 6/8 only, else 0)
+    runeword_id: int | None   # 12-bit runeword ID (is_runeword only, else None)
     prop_bit_start: int       # absolute bit offset in data where property list starts (0 for simple/ear)
 
 
@@ -161,6 +162,7 @@ def read_item_fields(
             magic_suffix_id=None,
             rare_name1=0,
             rare_name2=0,
+            runeword_id=None,
             prop_bit_start=0,
         )
 
@@ -182,6 +184,13 @@ def read_item_fields(
     unique_id, set_id, magic_prefix_id, magic_suffix_id, rare_name1, rare_name2 = (
         _skip_quality_data(reader, quality, class_specific)
     )
+
+    # Runeword fields: 12-bit runeword_id + 4-bit property_list_count
+    runeword_id = None
+    if flags.is_runeword:
+        runeword_id = reader.read(12)
+        reader.read(4)  # property_list_count (number of stat lists that follow)
+
     prop_bit_start = reader.tell()
 
     return ItemFields(
@@ -196,5 +205,6 @@ def read_item_fields(
         magic_suffix_id=magic_suffix_id,
         rare_name1=rare_name1,
         rare_name2=rare_name2,
+        runeword_id=runeword_id,
         prop_bit_start=prop_bit_start,
     )

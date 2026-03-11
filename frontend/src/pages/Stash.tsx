@@ -420,7 +420,8 @@ const REWARD_CATEGORIES = [
   "Key", "Charm", "Worldstone Shard", "Uber Ancient Summon",
 ] as const;
 
-function autoCategory(quality: number): string {
+function autoCategory(quality: number, isRuneword: boolean = false): string {
+  if (isRuneword) return "Runeword";
   if (quality === 7) return "Unique";
   if (quality === 5) return "Set Item";
   return "";
@@ -441,7 +442,7 @@ function RegisterRewardDialog({
   const displayName = item.name ?? item.base_item ?? item.quality_name ?? "";
   const colorText = qualityColor(item.quality).split(" ")[0];
   const [name, setName] = useState(displayName);
-  const [category, setCategory] = useState(autoCategory(item.quality));
+  const [category, setCategory] = useState(autoCategory(item.quality, item.is_runeword));
   const [notes, setNotes] = useState("");
 
   const handleSave = async () => {
@@ -549,7 +550,7 @@ function ItemRow({
   const colorText = qualityColor(item.quality).split(" ")[0];
   const colorBorder = qualityColor(item.quality).split(" ")[1] ?? "border-slate-700/60";
   const displayName = item.name ?? item.base_item ?? item.quality_name;
-  const showRegister = tab === PORTAL_TAB && item.quality >= REWARD_QUALITY_THRESHOLD;
+  const showRegister = tab === PORTAL_TAB && (item.is_runeword || item.quality >= REWARD_QUALITY_THRESHOLD);
 
   return (
     <div className={`px-3 py-2 border ${colorBorder} bg-black/20`}>

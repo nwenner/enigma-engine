@@ -163,6 +163,7 @@ export interface StashItem {
   is_simple: boolean;
   item_level: number;
   is_ethereal: boolean;
+  is_runeword: boolean;
   properties: string[];
 }
 

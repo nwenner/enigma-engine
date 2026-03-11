@@ -24,6 +24,8 @@ class ParsedItem:
     is_ethereal: bool
     is_simple: bool           # Simple item (rune/gem/etc.) — no complex fields
     is_ear: bool
+    is_runeword: bool         # Runeword item (bit 26 of item flags)
+    runeword_id: int | None   # 12-bit runeword ID from Runes.txt (is_runeword only)
     item_level: int           # 7-bit ilvl (0 for simple items)
     # Raw byte range within the containing page's raw_bytes
     byte_start: int           # byte offset within page raw_bytes

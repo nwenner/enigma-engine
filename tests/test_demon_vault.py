@@ -282,6 +282,7 @@ class TestSaveDemon:
 
         session = AsyncMock()
         session.execute.side_effect = [_result(None), _result(snap)]
+        session.add = MagicMock()  # session.add is synchronous in SQLAlchemy
         # refresh() does nothing — we inspect `add()` args directly instead
         session.refresh = AsyncMock()
 

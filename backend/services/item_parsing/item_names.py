@@ -6,9 +6,14 @@ quality, and quality-specific IDs.
 """
 from __future__ import annotations
 
+import logging
+
 from .tables.item_types import ITEM_TYPES
 from .tables.affixes import MAGIC_PREFIXES, MAGIC_SUFFIXES, CHARM_PREFIX_TABLE
 from .tables.rare_names import RARE_NAMES, SKILLTAB_PREFIX_NAMES
+from .tables.runewords import RUNEWORD_NAMES
+
+log = logging.getLogger(__name__)
 
 # Quality name suffixes for fallback display
 QUALITY_LABELS: dict[int, str] = {
@@ -109,6 +114,8 @@ def resolve_name(
     rare_name2: int = 0,
     catalog_name: str | None = None,
     stat_list: list[tuple[int, int, int]] | None = None,
+    is_runeword: bool = False,
+    runeword_id: int | None = None,
 ) -> tuple[str, str | None]:
     """
     Resolve the display name and rare_name for an item.
@@ -121,6 +128,19 @@ def resolve_name(
     stat_list is used for charm prefix lookup.
     """
     bname = base_name(item_type)
+
+    # Runeword: look up by runeword_id; log unknown IDs so the table can be extended
+    if is_runeword:
+        if runeword_id is not None:
+            rw_name = RUNEWORD_NAMES.get(runeword_id)
+            if rw_name:
+                return rw_name, None
+            log.warning(
+                "Unknown runeword_id=%d for base item '%s' — "
+                "add this ID to tables/runewords.py to get the proper name.",
+                runeword_id, bname or item_type.strip(),
+            )
+        return (bname or item_type.strip()) + " (runeword)", None
 
     # Catalog name takes priority for unique/set
     if catalog_name:

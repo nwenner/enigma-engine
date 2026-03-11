@@ -151,10 +151,13 @@ async def fetch_stash(
             elif item.quality == 5 and item.set_id is not None:
                 cat = catalog_lookup.get(("set", item.set_id))
 
-            # Build display name: catalog > magic full name > rare name > base
+            # Build display name: catalog > runeword > magic full name > rare name > base
             if cat:
                 display_name = cat.name
                 display_base = cat.base_item
+            elif item.is_runeword:
+                display_name = item.display_name  # e.g. "Enigma" or "Mage Plate (runeword)"
+                display_base = item.base_name
             elif item.quality == 4:
                 # display_name already has "Prefix Base of Suffix" from parser
                 display_name = item.display_name
@@ -179,6 +182,7 @@ async def fetch_stash(
                 "is_simple": item.is_simple,
                 "item_level": item.item_level,
                 "is_ethereal": item.is_ethereal,
+                "is_runeword": item.is_runeword,
                 "properties": [],
             })
 
@@ -264,6 +268,7 @@ async def fetch_stash_local(
                 "is_simple": item.is_simple,
                 "item_level": item.item_level,
                 "is_ethereal": item.is_ethereal,
+                "is_runeword": item.is_runeword,
                 "properties": [],
             })
 

@@ -39,6 +39,8 @@ def parse_item_bytes(raw: bytes) -> dict:
             fields.unique_id, fields.set_id,
             fields.magic_prefix_id, fields.magic_suffix_id,
             fields.rare_name1, fields.rare_name2,
+            is_runeword=flags.is_runeword,
+            runeword_id=fields.runeword_id,
         )
         b_name = _base_name(fields.item_type)
 
@@ -49,6 +51,7 @@ def parse_item_bytes(raw: bytes) -> dict:
             "quality_name": QUALITY_NAMES.get(fields.quality, "unknown"),
             "item_level": fields.item_level,
             "is_ethereal": flags.is_ethereal,
+            "is_runeword": flags.is_runeword,
             "valid": True,
             "error": None,
         }
