@@ -58,12 +58,24 @@ class GrailProgressResponse(BaseModel):
     items: list[GrailItemResponse]
 
 
-class RetrieveRequest(BaseModel):
-    machine: Literal["pc", "deck"]
+class DepositPreviewItem(BaseModel):
+    stash_filename: str
+    item_index: int
+    catalog_id: Optional[int]
+    item_name: Optional[str]
+    base_item: Optional[str]
+    quality_name: Optional[str]
+    item_code: Optional[str]
+    is_ethereal: bool
+    in_catalog: bool
+    already_deposited: bool
+    hardcore: bool
 
 
 class DepositRequest(BaseModel):
-    machine: Literal["pc", "deck"]
+    catalog_ids: Optional[list[int]] = None
+
+
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -188,52 +200,32 @@ async def seed_catalog(
     return {"success": True, "count": len(items)}
 
 
+@router.get("/grail/deposit/preview", response_model=list[DepositPreviewItem])
+async def preview_deposit(session: AsyncSession = Depends(get_session)):
+    """
+    Read-only scan of stash tab 5 in the latest snapshot.
+    Returns item metadata with catalog match status — no writes.
+    """
+    from backend.services.grail_service import preview_tab5
+    return await preview_tab5(session)
+
+
 @router.post("/grail/deposit")
 async def deposit_tab5(
-    body: DepositRequest,
+    body: DepositRequest = DepositRequest(),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    Download stash files from the machine, register tab 5 unique/set items in the grail,
-    clear tab 5, and upload the modified stash back. Explicit user action only.
+    Register unique/set items from tab 5 of the latest snapshot stash, then clear that tab.
+    If catalog_ids is provided, only deposit those items. Otherwise deposit all recognized items.
+    Writes to the local snapshot (mothership). Sync to device afterward.
 
-    SAFETY: Creates full backup before ANY modification. D2R must not be running.
+    SAFETY: Creates full local backup before ANY modification.
     """
     from backend.services.grail_service import deposit_tab5 as _deposit
-    from backend.routers.settings import _get_conn_kwargs, _get_setting
-    from backend.services.ssh_client import check_d2r_running, get_sftp
-
-    conn = await _get_conn_kwargs(session, body.machine)
-    save_dir = await _get_setting(session, f"{body.machine}_save_path") or ""
-    if not save_dir:
-        raise HTTPException(400, f"Save path not configured for {body.machine}")
-
-    # CRITICAL: Check D2R is not running
-    def _check_running():
-        with get_sftp(**conn) as (_ssh, _sftp):
-            is_windows = body.machine == "pc"
-            return check_d2r_running(_ssh, is_windows)
-
-    import asyncio
-    try:
-        is_running = await asyncio.to_thread(_check_running)
-        if is_running:
-            raise HTTPException(
-                409,
-                f"D2R is currently running on {body.machine.upper()}. Close the game before depositing items."
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.warning("Could not check if D2R is running: %s", e)
 
     try:
-        result = await _deposit(
-            session=session,
-            machine=body.machine,
-            conn=conn,
-            save_dir=save_dir,
-        )
+        result = await _deposit(session=session, catalog_ids=body.catalog_ids)
     except Exception as e:
         log.error("Deposit failed: %s", e)
         raise HTTPException(500, str(e))
@@ -250,13 +242,13 @@ async def deposit_tab5(
 async def retrieve_grail_item(
     mode: Mode,
     catalog_id: int,
-    body: RetrieveRequest,
     session: AsyncSession = Depends(get_session),
 ):
     """
-    Retrieve a found grail item and write it to stash tab 5.
+    Retrieve a found grail item and write it to stash tab 5 of the latest snapshot.
+    Writes to the local snapshot (mothership). Sync to device afterward.
 
-    SAFETY: Creates full backup before ANY modification. D2R must not be running.
+    SAFETY: Creates full local backup before ANY modification.
     Modern stash format only (ModernSharedStashSoftCoreV2.d2i).
     """
     hardcore = _mode_to_hardcore(mode)
@@ -284,52 +276,22 @@ async def retrieve_grail_item(
     if not entry.is_deposited:
         raise HTTPException(409, "Item is not currently in the grail vault — deposit it first")
 
-    # Modern stash format only
     stash_filename = "ModernSharedStashHardCoreV2.d2i" if hardcore else "ModernSharedStashSoftCoreV2.d2i"
 
     from backend.services.grail_service import retrieve_item_to_tab5
-    from backend.routers.settings import _get_conn_kwargs, _get_setting
-    from backend.services.ssh_client import check_d2r_running, get_sftp
-
-    conn = await _get_conn_kwargs(session, body.machine)
-    save_dir = await _get_setting(session, f"{body.machine}_save_path") or ""
-    if not save_dir:
-        raise HTTPException(400, f"Save path not configured for {body.machine}")
-
-    # CRITICAL: Check D2R is not running
-    def _check_running():
-        with get_sftp(**conn) as (_ssh, _sftp):
-            is_windows = body.machine == "pc"
-            return check_d2r_running(_ssh, is_windows)
-
-    import asyncio
-    try:
-        is_running = await asyncio.to_thread(_check_running)
-        if is_running:
-            raise HTTPException(
-                409,
-                f"D2R is currently running on {body.machine.upper()}. Close the game before retrieving items."
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.warning("Could not check if D2R is running: %s", e)
 
     try:
         await retrieve_item_to_tab5(
             session=session,
             catalog_id=catalog_id,
             hardcore=hardcore,
-            target_machine=body.machine,
-            conn=conn,
-            save_dir=save_dir,
             stash_filename=stash_filename,
         )
     except Exception as e:
         log.error("Retrieve failed: %s", e)
         raise HTTPException(500, str(e))
 
-    return {"success": True, "message": f"{cat.name} written to stash tab 5 on {body.machine.upper()}"}
+    return {"success": True, "message": f"{cat.name} written to stash tab 5. Sync to device when ready."}
 
 
 @router.delete("/grail/{mode}/{catalog_id}")

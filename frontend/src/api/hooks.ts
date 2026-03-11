@@ -309,15 +309,35 @@ export function useRetrieveGrailItem() {
   return useMutation<
     { success: boolean; message: string },
     Error,
-    { mode: "sc" | "hc"; catalogId: number; machine: "pc" | "deck" }
+    { mode: "sc" | "hc"; catalogId: number }
   >({
-    mutationFn: ({ mode, catalogId, machine }) =>
+    mutationFn: ({ mode, catalogId }) =>
       api
-        .post(`/grail/${mode}/${catalogId}/retrieve`, { machine })
+        .post(`/grail/${mode}/${catalogId}/retrieve`)
         .then((r) => r.data),
     onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["grail", mode] });
     },
+  });
+}
+
+export function useGrailDepositPreview() {
+  return useQuery<{
+    stash_filename: string;
+    item_index: number;
+    catalog_id: number | null;
+    item_name: string | null;
+    base_item: string | null;
+    quality_name: string | null;
+    item_code: string | null;
+    is_ethereal: boolean;
+    in_catalog: boolean;
+    already_deposited: boolean;
+    hardcore: boolean;
+  }[]>({
+    queryKey: ["grail", "deposit", "preview"],
+    queryFn: () => api.get("/grail/deposit/preview").then((r) => r.data),
+    staleTime: 0,
   });
 }
 
@@ -326,12 +346,13 @@ export function useDepositTab5() {
   return useMutation<
     { success: boolean; registered: string[]; skipped: string[]; errors: string[] },
     Error,
-    { machine: "pc" | "deck" }
+    { catalogIds?: number[] } | void
   >({
-    mutationFn: ({ machine }) =>
-      api.post("/grail/deposit", { machine }).then((r) => r.data),
+    mutationFn: (body) =>
+      api.post("/grail/deposit", body ? { catalog_ids: (body as { catalogIds?: number[] }).catalogIds } : {}).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["grail"] });
+      qc.invalidateQueries({ queryKey: ["grail", "deposit", "preview"] });
     },
   });
 }

@@ -5,8 +5,8 @@ import {
   useRetrieveGrailItem,
   useUnmarkGrailEntry,
   useDepositTab5,
+  useGrailDepositPreview,
   useResetGrail,
-  usePreflight,
   useActiveSeason,
 } from "../api/hooks";
 import type { GrailItem } from "../api/types";
@@ -52,19 +52,16 @@ function RetrieveModal({
   item,
   mode,
   onClose,
-  d2rRunning,
 }: {
   item: GrailItem;
   mode: Mode;
   onClose: () => void;
-  d2rRunning: boolean;
 }) {
   const retrieve = useRetrieveGrailItem();
-  const [machine, setMachine] = useState<"pc" | "deck">("pc");
 
   const handleRetrieve = async () => {
     try {
-      await retrieve.mutateAsync({ mode, catalogId: item.catalog_id, machine });
+      await retrieve.mutateAsync({ mode, catalogId: item.catalog_id });
       onClose();
     } catch {
       // error shown below
@@ -76,30 +73,8 @@ function RetrieveModal({
       <div className="bg-d2bg-elevated border border-d2bg-border w-full max-w-sm p-6 animate-fadeIn">
         <h3 className="font-diablo text-d2gold text-sm tracking-widest mb-1">Retrieve Item</h3>
         <p className="text-slate-400 text-xs mb-4">
-          {item.name} will be written to stash tab 5 on the selected machine.
+          {item.name} will be written to stash tab 5 in the mothership snapshot. Sync to device when ready.
         </p>
-
-        <div className="flex gap-2 mb-5">
-          {(["pc", "deck"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMachine(m)}
-              className={`flex-1 text-xs py-2 border transition-colors ${
-                machine === m
-                  ? "border-d2gold text-d2gold bg-d2gold/8"
-                  : "border-d2bg-border text-slate-500 hover:border-slate-500"
-              }`}
-            >
-              {m === "pc" ? "Windows PC" : "Steam Deck"}
-            </button>
-          ))}
-        </div>
-
-        {d2rRunning && (
-          <p className="text-amber-400 text-xs mb-3 bg-amber-950/30 border border-amber-800/40 px-3 py-2">
-            ⚠ Close D2R before retrieving items
-          </p>
-        )}
 
         {retrieve.error && (
           <p className="text-red-400 text-xs mb-3 bg-red-950/30 border border-red-800/40 px-3 py-2">
@@ -113,7 +88,7 @@ function RetrieveModal({
           </button>
           <button
             onClick={handleRetrieve}
-            disabled={retrieve.isPending || d2rRunning}
+            disabled={retrieve.isPending}
             className="btn-d2 text-xs px-4 py-2"
           >
             {retrieve.isPending ? "Retrieving…" : "Retrieve"}
@@ -215,76 +190,196 @@ function SetGroup({
 
 // ─── Deposit panel ────────────────────────────────────────────────────────────
 
-function DepositPanel({ d2rRunning }: { d2rRunning: boolean }) {
-  const deposit = useDepositTab5();
-  const [machine, setMachine] = useState<"pc" | "deck">("pc");
-  const [result, setResult] = useState<{
-    registered: string[];
-    errors: string[];
-  } | null>(null);
+const QUALITY_COLORS: Record<string, string> = {
+  unique:   "text-d2gold border-d2gold/40 bg-d2gold/5",
+  set:      "text-green-400 border-green-600/40 bg-green-900/5",
+  rare:     "text-yellow-300 border-yellow-600/40",
+  magic:    "text-blue-300 border-blue-600/40",
+  crafted:  "text-orange-400 border-orange-600/40",
+  tempered: "text-purple-300 border-purple-600/40",
+};
 
-  const handleDeposit = async () => {
+function qualityColor(name: string | null): string {
+  return QUALITY_COLORS[name ?? ""] ?? "text-slate-400 border-slate-600/40";
+}
+
+function qualityBadge(name: string | null): string {
+  if (!name) return "NRM";
+  return name.slice(0, 3).toUpperCase();
+}
+
+type PreviewItem = {
+  stash_filename: string;
+  item_index: number;
+  catalog_id: number | null;
+  item_name: string | null;
+  base_item: string | null;
+  quality_name: string | null;
+  item_code: string | null;
+  is_ethereal: boolean;
+  in_catalog: boolean;
+  already_deposited: boolean;
+  hardcore: boolean;
+};
+
+function DepositPanel() {
+  const { data: previewItems, isLoading: scanning, refetch } = useGrailDepositPreview();
+  const deposit = useDepositTab5();
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [result, setResult] = useState<{ registered: string[]; errors: string[] } | null>(null);
+
+  // Auto-select all eligible items when preview loads
+  const eligibleIds = useMemo(() => {
+    return (previewItems ?? [])
+      .filter((i) => i.in_catalog && !i.already_deposited && i.catalog_id != null)
+      .map((i) => i.catalog_id as number);
+  }, [previewItems]);
+
+  const [initialized, setInitialized] = useState(false);
+  if (!initialized && previewItems !== undefined) {
+    setInitialized(true);
+  }
+
+  const toggle = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleDeposit = async (catalogIds?: number[]) => {
     setResult(null);
     try {
-      const res = await deposit.mutateAsync({ machine });
+      const res = await deposit.mutateAsync(catalogIds ? { catalogIds } : undefined);
       setResult({ registered: res.registered, errors: res.errors });
+      setSelected(new Set());
+      setInitialized(false);
+      refetch();
     } catch {
       // error shown via deposit.error
     }
   };
 
-  return (
-    <div className="card-d2 p-4 mb-4">
-      <h2 className="font-diablo text-d2gold text-sm tracking-widest mb-1">Deposit Tab 5</h2>
-      <p className="text-slate-500 text-xs mb-4 leading-relaxed">
-        Register unique and set items from stash tab 5 into your grail, then clear that tab.
-        D2R must not be running.
-      </p>
+  const items: PreviewItem[] = previewItems ?? [];
+  const eligibleCount = eligibleIds.length;
+  const selectedCount = [...selected].filter((id) => eligibleIds.includes(id)).length;
 
-      <div className="flex gap-2 mb-4">
-        {(["pc", "deck"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMachine(m)}
-            className={`flex-1 text-xs py-2 border transition-colors ${
-              machine === m
-                ? "border-d2gold text-d2gold bg-d2gold/8"
-                : "border-d2bg-border text-slate-500 hover:border-slate-500"
-            }`}
-          >
-            {m === "pc" ? "Windows PC" : "Steam Deck"}
-          </button>
-        ))}
+  return (
+    <div className="card-d2 mb-4">
+      <div className="px-4 py-3 border-b border-d2bg-border flex items-center justify-between">
+        <div>
+          <h2 className="font-diablo text-d2gold text-sm tracking-widest">Deposit Tab 5</h2>
+          <p className="text-slate-600 text-[10px] mt-0.5">
+            Writes to the mothership snapshot — sync to device when ready
+          </p>
+        </div>
+        <button
+          onClick={() => { setResult(null); setInitialized(false); refetch(); }}
+          className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
+          title="Rescan tab 5"
+        >
+          ↺ Rescan
+        </button>
       </div>
 
-      {d2rRunning && (
-        <div className="text-amber-400 text-xs mb-3 bg-amber-950/30 border border-amber-800/40 px-3 py-2">
-          ⚠ Close D2R before depositing items
+      {scanning && (
+        <div className="px-4 py-6 text-slate-600 text-xs text-center">Scanning tab 5…</div>
+      )}
+
+      {!scanning && items.length === 0 && (
+        <div className="px-4 py-6 text-slate-600 text-xs text-center">
+          Tab 5 is empty — place unique or set items there to deposit them.
         </div>
       )}
 
-      <button
-        onClick={handleDeposit}
-        disabled={deposit.isPending || d2rRunning}
-        className="btn-d2 text-xs px-4 py-2 w-full"
-      >
-        {deposit.isPending ? "Depositing…" : "Deposit Items"}
-      </button>
+      {!scanning && items.length > 0 && (
+        <>
+          <div className="divide-y divide-d2bg-border/40">
+            {items.map((item) => {
+              const qColor = qualityColor(item.quality_name);
+              const eligible = item.in_catalog && !item.already_deposited && item.catalog_id != null;
+              const isChecked = item.catalog_id != null && selected.has(item.catalog_id);
+
+              return (
+                <div
+                  key={`${item.stash_filename}-${item.item_index}`}
+                  className={`flex items-center gap-3 px-4 py-2.5 ${!eligible ? "opacity-50" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    disabled={!eligible}
+                    onChange={() => eligible && item.catalog_id != null && toggle(item.catalog_id)}
+                    className="accent-d2gold shrink-0"
+                  />
+                  <span className={`text-[9px] font-mono px-1.5 py-0.5 border shrink-0 leading-4 ${qColor}`}>
+                    {qualityBadge(item.quality_name)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className={`text-sm font-semibold ${qColor.split(" ")[0]}`}>
+                      {item.item_name ?? item.item_code ?? "Unknown"}
+                    </span>
+                    {item.is_ethereal && (
+                      <span className="text-[10px] text-sky-400 font-mono ml-1.5">ETH</span>
+                    )}
+                    {item.base_item && item.base_item !== item.item_name && (
+                      <span className="text-slate-500 text-xs ml-2">{item.base_item}</span>
+                    )}
+                  </div>
+                  <span className="text-[10px] shrink-0">
+                    {item.already_deposited ? (
+                      <span className="text-green-600">✓ in vault</span>
+                    ) : !item.in_catalog ? (
+                      <span className="text-slate-600">not in catalog</span>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="px-4 py-3 border-t border-d2bg-border/40 flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => handleDeposit(Array.from(selected))}
+              disabled={deposit.isPending || selectedCount === 0}
+              className="btn-d2 text-xs px-4 py-2"
+            >
+              {deposit.isPending ? "Depositing…" : `Deposit Selected (${selectedCount})`}
+            </button>
+            {eligibleCount > 0 && selectedCount < eligibleCount && (
+              <button
+                onClick={() => handleDeposit(eligibleIds)}
+                disabled={deposit.isPending}
+                className="btn-d2-ghost text-xs px-4 py-2"
+              >
+                Deposit All Recognized ({eligibleCount})
+              </button>
+            )}
+            {eligibleCount > 0 && (
+              <button
+                onClick={() => setSelected(new Set(eligibleIds))}
+                className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors ml-auto"
+              >
+                Select All
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
       {deposit.error && (
-        <p className="text-red-400 text-xs mt-3 bg-red-950/30 border border-red-800/40 px-3 py-2">
+        <p className="text-red-400 text-xs mx-4 mb-3 bg-red-950/30 border border-red-800/40 px-3 py-2">
           {deposit.error.message}
         </p>
       )}
 
       {result && (
-        <div className="mt-3 space-y-1">
+        <div className="px-4 pb-3 space-y-1">
           {result.registered.length > 0 ? (
-            <p className="text-green-400 text-xs">
-              Registered: {result.registered.join(", ")}
-            </p>
+            <p className="text-green-400 text-xs">Registered: {result.registered.join(", ")}</p>
           ) : (
-            <p className="text-slate-500 text-xs">No new items found in tab 5.</p>
+            <p className="text-slate-500 text-xs">No new items deposited.</p>
           )}
           {result.errors.map((e, i) => (
             <p key={i} className="text-red-400 text-xs">{e}</p>
@@ -431,8 +526,6 @@ export default function Grail() {
   const unmark = useUnmarkGrailEntry();
 
   const { data, isLoading, error } = useGrailProgress(mode);
-  const { data: preflight } = usePreflight();
-  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
 
   const filteredItems = useMemo(() => {
     if (!data) return [];
@@ -485,18 +578,6 @@ export default function Grail() {
         </p>
       </div>
 
-      {/* D2R Running Warning */}
-      {d2rRunning && (
-        <div className="bg-amber-950/30 border border-amber-700/50 text-amber-300 text-sm px-4 py-3 mb-5 flex items-center gap-3">
-          <span className="text-lg">⚠</span>
-          <div className="flex-1">
-            <div className="font-medium mb-0.5">D2R is currently running</div>
-            <div className="text-xs text-amber-400/80">Close the game before depositing or retrieving items</div>
-          </div>
-        </div>
-      )}
-
-
       {/* Progress summary */}
       {data && (
         <div className="card-d2 p-4 mb-5 space-y-2">
@@ -506,7 +587,7 @@ export default function Grail() {
       )}
 
       {/* Deposit panel */}
-      <DepositPanel d2rRunning={d2rRunning} />
+      <DepositPanel />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -635,7 +716,6 @@ export default function Grail() {
           item={retrieveItem}
           mode={mode}
           onClose={() => setRetrieveItem(null)}
-          d2rRunning={d2rRunning}
         />
       )}
     </div>

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.models import GrailCatalog, VaultItem, GoldVault, BackupSnapshot, Season
+from backend.services.catalog_lookup import build_catalog_lookup
 from backend.services.item_parsing import ParsedStash, parse_stash, serialize_stash
 from backend.services.item_parsing.stash_format import (
     remove_items_from_page,
@@ -98,44 +99,6 @@ def _stash_filename(hardcore: bool) -> str:
     return "ModernSharedStashHardCoreV2.d2i" if hardcore else "ModernSharedStashSoftCoreV2.d2i"
 
 
-async def _build_catalog_lookup(
-    session: AsyncSession,
-    all_page_items: list[list],
-) -> dict[tuple, GrailCatalog]:
-    """Batch-fetch GrailCatalog entries for all unique/set items across all pages."""
-    unique_ids: set[int] = set()
-    set_ids: set[int] = set()
-
-    for page_items in all_page_items:
-        for item in page_items:
-            if item.quality == 7 and item.unique_id is not None:
-                unique_ids.add(item.unique_id)
-            elif item.quality == 5 and item.set_id is not None:
-                set_ids.add(item.set_id)
-
-    lookup: dict[tuple, GrailCatalog] = {}
-
-    if unique_ids:
-        result = await session.execute(
-            select(GrailCatalog).where(
-                GrailCatalog.quality == "unique",
-                GrailCatalog.unique_id.in_(unique_ids),
-            )
-        )
-        for cat in result.scalars().all():
-            lookup[("unique", cat.unique_id)] = cat
-
-    if set_ids:
-        result = await session.execute(
-            select(GrailCatalog).where(
-                GrailCatalog.quality == "set",
-                GrailCatalog.set_id.in_(set_ids),
-            )
-        )
-        for cat in result.scalars().all():
-            lookup[("set", cat.set_id)] = cat
-
-    return lookup
 
 
 async def fetch_stash(
@@ -176,7 +139,7 @@ async def fetch_stash(
 
     # Build catalog name lookup
     visible_pages = stash.pages[:VISIBLE_TAB_COUNT]
-    catalog_lookup = await _build_catalog_lookup(session, [p.items for p in visible_pages])
+    catalog_lookup = await build_catalog_lookup(session, [p.items for p in visible_pages])
 
     tabs = []
     for page_idx, page in enumerate(visible_pages):
@@ -262,7 +225,7 @@ async def fetch_stash_local(
 
     # Build catalog name lookup
     visible_pages = stash.pages[:VISIBLE_TAB_COUNT]
-    catalog_lookup = await _build_catalog_lookup(session, [p.items for p in visible_pages])
+    catalog_lookup = await build_catalog_lookup(session, [p.items for p in visible_pages])
 
     tabs = []
     for page_idx, page in enumerate(visible_pages):
