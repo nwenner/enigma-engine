@@ -9,6 +9,7 @@ import {
   useFetchStashItemBytes,
   useFetchVaultItemBytes,
   useActiveSeason,
+  useRegisterRewardFromSnapshot,
 } from "../api/hooks";
 import type { StashItem, VaultItemResponse } from "../api/types";
 
@@ -412,22 +413,143 @@ function QualitySummary({ items }: { items: StashItem[] }) {
   );
 }
 
+// ─── Register reward dialog ───────────────────────────────────────────────────
+
+const REWARD_CATEGORIES = [
+  "Rune", "Runeword", "Material", "Unique", "Set Item",
+  "Key", "Charm", "Worldstone Shard", "Uber Ancient Summon",
+] as const;
+
+function autoCategory(quality: number): string {
+  if (quality === 7) return "Unique";
+  if (quality === 5) return "Set Item";
+  return "";
+}
+
+function RegisterRewardDialog({
+  item,
+  mode,
+  onSaved,
+  onClose,
+}: {
+  item: StashItem;
+  mode: Mode;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const register = useRegisterRewardFromSnapshot();
+  const displayName = item.name ?? item.base_item ?? item.quality_name ?? "";
+  const colorText = qualityColor(item.quality).split(" ")[0];
+  const [name, setName] = useState(displayName);
+  const [category, setCategory] = useState(autoCategory(item.quality));
+  const [notes, setNotes] = useState("");
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    try {
+      await register.mutateAsync({
+        mode,
+        item_index: item.page_item_index,
+        name: name.trim(),
+        category: category || null,
+        notes: notes.trim() || null,
+      });
+      onSaved();
+      onClose();
+    } catch {
+      // error shown below
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="card-d2 w-full max-w-sm p-6 animate-fadeIn space-y-4">
+        <h3 className="font-diablo text-d2gold text-sm tracking-widest">Register as Reward</h3>
+
+        <div className={`border px-3 py-2 flex items-center gap-2 ${qualityColor(item.quality)}`}>
+          <span className={`text-[9px] font-mono px-1 border leading-4 shrink-0 ${qualityColor(item.quality)}`}>
+            {qualityLabel(item.quality)}
+          </span>
+          <span className={`text-sm font-semibold ${colorText}`}>{displayName}</span>
+          {item.is_ethereal && <span className="text-[10px] text-sky-400 font-mono ml-1">ETH</span>}
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-widest text-slate-500">Label</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Harlequin Crest, Enigma (AP)…"
+            className="input-d2"
+            autoFocus
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-widest text-slate-500">Category</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-d2 text-sm">
+            <option value="">— Uncategorized —</option>
+            {REWARD_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-widest text-slate-500">Notes (optional)</label>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="e.g. 40% MF, 15 all res…"
+            className="input-d2"
+          />
+        </div>
+
+        {register.error && (
+          <p className="text-red-400 text-xs bg-red-950/30 border border-red-800/40 px-3 py-2">
+            {register.error.message}
+          </p>
+        )}
+
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">Cancel</button>
+          <button
+            onClick={handleSave}
+            disabled={register.isPending || !name.trim()}
+            className="btn-d2 text-xs px-4 py-2"
+          >
+            {register.isPending ? "Saving…" : "Save to Reward Library"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Single item row ──────────────────────────────────────────────────────────
+
+const REWARD_QUALITY_THRESHOLD = 5; // set(5), crafted(6), unique(7), tempered(8)
+const PORTAL_TAB = 4;
 
 function ItemRow({
   item,
   tab,
   mode,
+  isRegistered,
   onStore,
+  onRegisterReward,
 }: {
   item: StashItem;
   tab: number;
   mode: Mode;
+  isRegistered?: boolean;
   onStore: () => void;
+  onRegisterReward?: () => void;
 }) {
   const colorText = qualityColor(item.quality).split(" ")[0];
   const colorBorder = qualityColor(item.quality).split(" ")[1] ?? "border-slate-700/60";
   const displayName = item.name ?? item.base_item ?? item.quality_name;
+  const showRegister = tab === PORTAL_TAB && item.quality >= REWARD_QUALITY_THRESHOLD;
 
   return (
     <div className={`px-3 py-2 border ${colorBorder} bg-black/20`}>
@@ -453,6 +575,19 @@ function ItemRow({
         </span>
 
         <CopyStashHexButton mode={mode} tab={tab} index={item.page_item_index} />
+        {showRegister && (
+          isRegistered ? (
+            <span className="text-[11px] text-green-500 border border-green-800 px-2 py-0.5 shrink-0">✓ Saved</span>
+          ) : (
+            <button
+              onClick={onRegisterReward}
+              className="text-[11px] text-d2gold/70 hover:text-d2gold border border-d2gold/30 hover:border-d2gold/60 px-2 py-0.5 transition-colors shrink-0"
+              title="Register as season reward"
+            >
+              Reward ★
+            </button>
+          )
+        )}
         <button
           onClick={onStore}
           className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
@@ -485,6 +620,8 @@ function StashTabView({
   onTabChange: (i: number) => void;
 }) {
   const [storeTarget, setStoreTarget] = useState<{ item: StashItem; tab: number } | null>(null);
+  const [registerTarget, setRegisterTarget] = useState<StashItem | null>(null);
+  const [registeredIndices, setRegisteredIndices] = useState<Set<number>>(new Set());
   const tab = tabs[activeTab];
 
   return (
@@ -522,7 +659,9 @@ function StashTabView({
                 item={item}
                 tab={activeTab}
                 mode={mode}
+                isRegistered={registeredIndices.has(item.page_item_index)}
                 onStore={() => setStoreTarget({ item, tab: activeTab })}
+                onRegisterReward={() => setRegisterTarget(item)}
               />
             ))}
           </div>
@@ -536,6 +675,15 @@ function StashTabView({
           mode={mode}
           machine={machine}
           onClose={() => setStoreTarget(null)}
+        />
+      )}
+
+      {registerTarget && (
+        <RegisterRewardDialog
+          item={registerTarget}
+          mode={mode}
+          onSaved={() => setRegisteredIndices((prev) => new Set(prev).add(registerTarget.page_item_index))}
+          onClose={() => setRegisterTarget(null)}
         />
       )}
     </div>

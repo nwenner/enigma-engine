@@ -55,6 +55,7 @@ def _session_returning(scalar_value) -> AsyncMock:
     result.scalar_one_or_none.return_value = scalar_value
     session = AsyncMock()
     session.execute = AsyncMock(return_value=result)
+    session.add = MagicMock()  # session.add is synchronous in SQLAlchemy
     return session
 
 
@@ -71,6 +72,7 @@ def _session_with_side_effects(values: list) -> AsyncMock:
 
     session = AsyncMock()
     session.execute = AsyncMock(side_effect=results)
+    session.add = MagicMock()  # session.add is synchronous in SQLAlchemy
     return session
 
 

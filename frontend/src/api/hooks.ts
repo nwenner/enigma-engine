@@ -631,6 +631,18 @@ export function useValidateReward() {
   });
 }
 
+export function useRegisterRewardFromSnapshot() {
+  const qc = useQueryClient();
+  return useMutation<
+    RewardOut,
+    Error,
+    { mode: "sc" | "hc"; item_index: number; name: string; category?: string | null; notes?: string | null }
+  >({
+    mutationFn: (body) => api.post("/rewards/register-from-snapshot", body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rewards"] }),
+  });
+}
+
 export function useCreateReward() {
   const qc = useQueryClient();
   return useMutation<RewardOut, Error, { name: string; hex: string; notes?: string | null; category?: string | null }>({

@@ -69,6 +69,7 @@ def _session(
     """
     session = AsyncMock()
     session.get = AsyncMock(return_value=season)
+    session.add = MagicMock()  # session.add is synchronous in SQLAlchemy
 
     other_result = MagicMock()
     other_result.scalar_one_or_none.return_value = other_active

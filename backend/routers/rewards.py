@@ -233,6 +233,83 @@ async def create_reward(body: RewardCreate, session: AsyncSession = Depends(get_
     return _reward_out(reward)
 
 
+class RegisterFromSnapshotRequest(BaseModel):
+    mode: str  # "sc" | "hc"
+    item_index: int
+    name: str
+    category: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.post("/rewards/register-from-snapshot", response_model=RewardOut)
+async def register_reward_from_snapshot(
+    body: RegisterFromSnapshotRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Register an item from stash tab 5 of the latest local snapshot as a season reward.
+    Non-destructive — item stays in the stash. Only the bytes are copied.
+    """
+    from backend.services.grail_service import _latest_snapshot, _snapshot_dir
+    from backend.services.item_parsing import parse_stash
+    from backend.services.item_parsing.stash_format import validate_page_items
+
+    if not body.name.strip():
+        raise HTTPException(400, "Name is required")
+
+    snap = await _latest_snapshot(session)
+    if snap is None:
+        raise HTTPException(404, "No snapshot available. Check In from a device first.")
+
+    snap_dir = _snapshot_dir(snap)
+    hardcore = body.mode == "hc"
+    stash_filename = "ModernSharedStashHardCoreV2.d2i" if hardcore else "ModernSharedStashSoftCoreV2.d2i"
+    stash_path = snap_dir / stash_filename
+
+    if not stash_path.exists():
+        raise HTTPException(404, f"{stash_filename} not found in latest snapshot")
+
+    try:
+        stash = parse_stash(stash_path, hardcore=hardcore)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to parse stash: {e}")
+
+    PORTAL_TAB_INDEX = 4
+    if len(stash.pages) <= PORTAL_TAB_INDEX:
+        raise HTTPException(400, "Stash has fewer than 5 tabs")
+
+    portal_page = stash.pages[PORTAL_TAB_INDEX]
+    if not validate_page_items(portal_page):
+        raise HTTPException(400, "Tab 5 failed validation")
+
+    if body.item_index < 0 or body.item_index >= len(portal_page.items):
+        raise HTTPException(400, f"Item index {body.item_index} out of range (tab 5 has {len(portal_page.items)} items)")
+
+    item = portal_page.items[body.item_index]
+    raw = bytes(portal_page.raw_bytes[item.byte_start : item.byte_end])
+
+    parsed = _parse_item_bytes(raw)
+    category = body.category or _auto_category(parsed.get("quality"))
+
+    reward = SeasonReward(
+        name=body.name.strip(),
+        item_code=parsed["item_code"],
+        item_name=parsed["item_name"],
+        quality=parsed["quality"],
+        quality_name=parsed["quality_name"],
+        item_level=parsed["item_level"],
+        is_ethereal=parsed["is_ethereal"] or False,
+        raw_item_bytes=raw,
+        notes=body.notes or None,
+        category=category,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(reward)
+    await session.commit()
+    log.info("Registered reward '%s' from snapshot tab 5 (%d bytes)", body.name, len(raw))
+    return _reward_out(reward)
+
+
 @router.patch("/rewards/{reward_id}", response_model=RewardOut)
 async def update_reward(
     reward_id: int,

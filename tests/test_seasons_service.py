@@ -91,6 +91,7 @@ def _session_no_existing() -> AsyncMock:
     result.scalar_one_or_none.return_value = None
     session = AsyncMock()
     session.execute = AsyncMock(return_value=result)
+    session.add = MagicMock()  # session.add is synchronous in SQLAlchemy
     return session
 
 
@@ -101,6 +102,7 @@ def _session_existing_achievement() -> AsyncMock:
     result.scalar_one_or_none.return_value = existing
     session = AsyncMock()
     session.execute = AsyncMock(return_value=result)
+    session.add = MagicMock()  # session.add is synchronous in SQLAlchemy
     return session
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -111,7 +111,7 @@ async def upsert_characters(session: AsyncSession, chars: list[dict]) -> None:
         )
         existing = result.scalar_one_or_none()
         incoming_mtime = float(char_dict.get("modified_at", 0.0))
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         difficulty_active = int(char_dict.get("difficulty_active", 0))
 

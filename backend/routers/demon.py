@@ -12,7 +12,7 @@ Endpoints:
 """
 import logging
 import struct
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -226,7 +226,7 @@ async def save_demon(
         character_filename=f"{body.character}.d2s",
         demon_bytes=demon_bytes,
         notes=body.notes,
-        saved_at=datetime.utcnow(),
+        saved_at=datetime.now(timezone.utc),
     )
     session.add(demon)
     await session.commit()
