@@ -133,7 +133,9 @@ async def create_local_snapshot(
     entirely on the local filesystem — no device connection required.
     """
     cfg = get_settings()
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # Include microseconds so rapid sequential calls (e.g. bulk reward claims)
+    # never collide on the destination directory name.
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     source_dir = cfg.data_dir / source_snapshot.snapshot_path
 
     if not source_dir.exists():

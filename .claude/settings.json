@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "docker run --rm -v $(pwd):/app -w /app enigma-engine-enigma-engine python3 -m pytest tests/ --ignore=tests/test_start_season.py --ignore=tests/test_sync_router.py -q 2>&1 | tail -3"
+          }
+        ]
+      }
+    ]
+  }
+}
