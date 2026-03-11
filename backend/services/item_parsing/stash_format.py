@@ -185,34 +185,44 @@ def remove_items_from_page(page: ParsedPage, indices: list[int]) -> ParsedPage:
     return ParsedPage(items=new_items, gold=page.gold, raw_bytes=new_raw, jm_item_count=new_jm_count)
 
 
-def _set_item_grid_y(item_bytes: bytes, y: int) -> bytes:
+def _set_item_grid_position(item_bytes: bytes, x: int, y: int) -> bytes:
     """
-    Update the stash grid y-position (bits 46–49) of an item's byte block.
+    Update the stash grid position (bits 42–49) of an item's byte block.
 
     Position bits in the Modern stash item header (LSB-first):
       pos_x: bits 42–45  (bits 2–5 of byte 5)
       pos_y: bits 46–49  (bits 6–7 of byte 5, bits 0–1 of byte 6)
 
+    Bits 40–41 (byte 5 bits 0–1) are preserved — they belong to adjacent fields.
     This only touches the leading item (the stash-level item at offset 0).
     Socket sub-items that follow in the same byte block are left untouched.
     """
     if len(item_bytes) < 7:
         return item_bytes
     arr = bytearray(item_bytes)
-    # Clear existing pos_y bits without disturbing pos_x or other fields
-    arr[5] = (arr[5] & 0x3F) | ((y & 0x3) << 6)   # bits 6–7 of byte 5 = y[1:0]
-    arr[6] = (arr[6] & 0xFC) | ((y >> 2) & 0x3)    # bits 0–1 of byte 6 = y[3:2]
+    # byte 5: bits 0-1 preserved | bits 2-5 = pos_x | bits 6-7 = pos_y[1:0]
+    arr[5] = (arr[5] & 0x03) | ((x & 0xF) << 2) | ((y & 0x3) << 6)
+    # byte 6: bits 0-1 = pos_y[3:2] | bits 2-7 preserved
+    arr[6] = (arr[6] & 0xFC) | ((y >> 2) & 0x3)
     return bytes(arr)
 
 
 def insert_item_into_page(page: ParsedPage, item_bytes: bytes) -> ParsedPage:
     """Append item bytes to the end of a page, incrementing item count.
 
-    The incoming item bytes are assumed to encode grid position (0, 0).  Each
-    successive insertion assigns a unique row (y = current jm_item_count) so
-    that D2R does not collapse multiple items onto the same grid cell.
+    Items are laid out in a 5-column grid to avoid visual overlap from large
+    items (e.g. armor that spans 4 rows).  Layout per insertion index:
+
+      index 0–4: row y=0, columns x=0,2,4,6,8
+      index 5–9: row y=5, columns x=0,2,4,6,8
+
+    Spacing of 2 columns and 5 rows ensures even 2×4 armor pieces don't
+    cover adjacent reward slots.  Supports up to 10 simultaneous rewards.
     """
-    item_bytes = _set_item_grid_y(item_bytes, page.jm_item_count)
+    idx = page.jm_item_count
+    x = (idx % 5) * 2   # 0, 2, 4, 6, 8
+    y = (idx // 5) * 5  # 0 for first 5 items, 5 for next 5
+    item_bytes = _set_item_grid_position(item_bytes, x, y)
     new_raw = bytearray(page.raw_bytes) + bytearray(item_bytes)
     new_jm_count = page.jm_item_count + 1
     new_items = _parse_page_items(new_raw, new_jm_count)
