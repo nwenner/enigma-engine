@@ -428,7 +428,7 @@ function ExtractPanel({ onSaveItem }: { onSaveItem: (hex: string, tab: StashTabI
 export default function Rewards() {
   const { data: rewards, isLoading } = useRewards();
   const [saveTarget, setSaveTarget] = useState<{ hex: string; parsed: ValidateRewardResponse } | null>(null);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
   const handleSaveExtracted = (hex: string, item: StashTabItem) => {
@@ -448,7 +448,7 @@ export default function Rewards() {
 
   const ORDER = [...REWARD_CATEGORIES, "Uncategorized"];
   const availableCategories = ORDER.filter((k) => grouped[k]);
-  const visibleGroups = activeFilter ? availableCategories.filter((k) => k === activeFilter) : availableCategories;
+  const visibleGroups = activeFilters.size > 0 ? availableCategories.filter((k) => activeFilters.has(k)) : availableCategories;
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn space-y-6">
@@ -479,22 +479,24 @@ export default function Rewards() {
         <div className="flex items-center justify-end gap-3">
           {availableCategories.length > 1 && (
             <div className="flex flex-wrap gap-1.5 justify-end">
-              <button
-                onClick={() => setActiveFilter(null)}
-                className={`text-[10px] px-2 py-0.5 border transition-colors ${
-                  activeFilter === null
-                    ? "text-d2gold border-d2gold/50 bg-d2gold/10"
-                    : "text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-500"
-                }`}
-              >
-                All
-              </button>
+              {activeFilters.size > 0 && (
+                <button
+                  onClick={() => setActiveFilters(new Set())}
+                  className="text-[10px] px-2 py-0.5 border transition-colors text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-500"
+                >
+                  Clear
+                </button>
+              )}
               {availableCategories.map((cat) => (
                 <button
                   key={cat}
-                  onClick={() => setActiveFilter(activeFilter === cat ? null : cat)}
+                  onClick={() => setActiveFilters((prev) => {
+                    const next = new Set(prev);
+                    next.has(cat) ? next.delete(cat) : next.add(cat);
+                    return next;
+                  })}
                   className={`text-[10px] px-2 py-0.5 border transition-colors ${
-                    activeFilter === cat
+                    activeFilters.has(cat)
                       ? "text-d2gold border-d2gold/50 bg-d2gold/10"
                       : "text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-500"
                   }`}

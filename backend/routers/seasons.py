@@ -586,7 +586,10 @@ async def claim_achievement(
     except ValueError as e:
         raise HTTPException(400, str(e))
     except RuntimeError as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(500, str(e))
+    except OSError as e:
+        log.error("Claim reward I/O error for achievement %s: %s", achievement_id, e)
+        raise HTTPException(500, "I/O error writing reward to stash — the backup is intact")
 
     return {"success": True, "claimed_at": achievement.claimed_at.isoformat()}
 

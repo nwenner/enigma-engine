@@ -433,11 +433,22 @@ async def claim_reward(
     Insert the milestone reward item into tab 5 of the Mothership (latest local snapshot).
     No SSH required — the vault is the source of truth. Sync to Device will push it to
     whatever machine the player is on.
+
+    Safety protocol (mirrors grail_service.deposit_tab5):
+      0. Backup existing snapshot locally (no SSH) before ANY modification
+      1. Parse stash
+      2. Validate tab 5 before modification
+      3. Insert reward item into tab 5
+      4. Serialize and round-trip validate (re-parse, confirm item count)
+      5. Write to disk
+      6. Mark achievement claimed and commit DB
     """
+    import tempfile
     from backend.config import get_settings
     from backend.services.item_parsing import parse_stash, serialize_stash
-    from backend.services.item_parsing.stash_format import insert_item_into_page
+    from backend.services.item_parsing.stash_format import insert_item_into_page, validate_page_items
     from backend.models import BackupSnapshot
+    from backend.services.backup_manager import create_local_snapshot
 
     achievement = await session.get(SeasonAchievement, achievement_id)
     if achievement is None:
@@ -467,12 +478,43 @@ async def claim_reward(
     if not stash_path.exists():
         raise ValueError("Stash file not found in snapshot. Check In from a device first.")
 
+    # SAFETY: Backup snapshot before ANY modification (mirrors grail deposit protocol)
+    log.info("BACKUP: Creating pre-milestone-claim backup of snapshot %s", snap.snapshot_path)
+    try:
+        await create_local_snapshot(session, snap, label="pre_season_reward")
+        log.info("BACKUP: Pre-milestone-claim backup created successfully")
+    except Exception as e:
+        log.error("BACKUP FAILED: Cannot proceed with milestone claim: %s", e)
+        raise RuntimeError(f"Pre-claim backup failed: {e}") from e
+
     stash = parse_stash(stash_path, hardcore=False)
     if len(stash.pages) <= 4:
-        raise RuntimeError("Stash has fewer than 5 tabs; cannot write to tab 5")
+        raise ValueError("Stash has fewer than 5 tabs; cannot write to tab 5")
 
-    stash.pages[4] = insert_item_into_page(stash.pages[4], milestone.reward_item_bytes)
-    stash_path.write_bytes(serialize_stash(stash))
+    # Validate tab 5 before modification
+    if not validate_page_items(stash.pages[4]):
+        raise RuntimeError("Tab 5 failed item validation — aborting to protect stash")
+
+    original_item_count = len(stash.pages[4].items)
+    stash.pages[4] = insert_item_into_page(stash.pages[4], bytes(milestone.reward_item_bytes))
+    new_bytes = serialize_stash(stash)
+
+    # Round-trip validate: re-parse serialized bytes and confirm item count
+    with tempfile.TemporaryDirectory() as tmp:
+        rt_path = Path(tmp) / "rt_stash.d2i"
+        rt_path.write_bytes(new_bytes)
+        rt_stash = parse_stash(rt_path, hardcore=False)
+        rt_page = rt_stash.pages[4]
+        expected_count = original_item_count + 1
+        if len(rt_page.items) != expected_count:
+            raise RuntimeError(
+                f"Round-trip validation failed: expected {expected_count} items in tab 5, "
+                f"got {len(rt_page.items)} — aborting write to protect stash"
+            )
+
+    # All validation passed — write to disk, then commit DB
+    stash_path.write_bytes(new_bytes)
+    log.info("Claim reward: wrote modified stash to %s", stash_path)
 
     achievement.claimed_at = datetime.now(timezone.utc)
     await session.commit()

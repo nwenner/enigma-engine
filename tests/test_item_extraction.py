@@ -322,6 +322,7 @@ class TestRewardOut:
         r.item_level = overrides.get("item_level", 90)
         r.is_ethereal = overrides.get("is_ethereal", False)
         r.notes = overrides.get("notes", None)
+        r.category = overrides.get("category", None)
         r.raw_item_bytes = overrides.get("raw_item_bytes", b"\x10" * 76)
         r.created_at = overrides.get("created_at", datetime(2026, 3, 9, tzinfo=timezone.utc))
         return r

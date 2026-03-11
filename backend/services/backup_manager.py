@@ -120,6 +120,44 @@ async def create_snapshot(
     return snapshot
 
 
+async def create_local_snapshot(
+    session: AsyncSession,
+    source_snapshot: "BackupSnapshot",
+    label: str,
+) -> "BackupSnapshot":
+    """
+    Create a local copy of an existing snapshot directory without SSH.
+
+    Used before in-place modifications to local snapshot files (e.g. milestone
+    claim reward). Mirrors the safety semantics of create_snapshot() but operates
+    entirely on the local filesystem — no device connection required.
+    """
+    cfg = get_settings()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    source_dir = cfg.data_dir / source_snapshot.snapshot_path
+
+    if not source_dir.exists():
+        raise RuntimeError(f"Source snapshot directory not found: {source_dir}")
+
+    dest_dir = cfg.backups_dir / source_snapshot.source_machine / f"{timestamp}_{label}"
+    await asyncio.to_thread(shutil.copytree, str(source_dir), str(dest_dir))
+    log.info("LOCAL BACKUP: Copied %s → %s", source_dir, dest_dir)
+
+    snapshot = BackupSnapshot(
+        source_machine=source_snapshot.source_machine,
+        snapshot_path=str(dest_dir.relative_to(cfg.data_dir)),
+        file_count=source_snapshot.file_count,
+        characters=source_snapshot.characters,
+        label=label,
+    )
+    session.add(snapshot)
+    await session.commit()
+
+    await _prune_backups(session, cfg, label)
+
+    return snapshot
+
+
 async def push_snapshot_to_machine(
     session: AsyncSession,
     machine: str,
