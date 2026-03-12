@@ -196,6 +196,12 @@ async def do_checkin(operation_id: int, machine: str, conn_kwargs: dict, save_di
                 except Exception as e:
                     log.warning("CheckIn: seasons hook failed (unaffected): %s", e)
 
+                try:
+                    from backend.services.boss_summon_service import check_boss_summon_progress
+                    await check_boss_summon_progress(session=session, snapshot_dir=snapshot_dir)
+                except Exception as e:
+                    log.warning("CheckIn: boss summon progress hook failed (unaffected): %s", e)
+
                 operation.status = "success"
                 operation.file_count = snapshot.file_count
                 operation.completed_at = datetime.now(timezone.utc)

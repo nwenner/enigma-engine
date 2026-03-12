@@ -386,6 +386,27 @@ export interface DemonStatusResponse {
   snapshot_at: string | null;
 }
 
+// ─── Boss Summon Portals ───────────────────────────────────────────────────────
+
+export interface BossPortalRequiredItem {
+  code: string;
+  label: string;
+}
+
+export interface BossPortalStatus {
+  id: string;
+  name: string;
+  description: string;
+  required_item_codes: string[];
+  required_items: BossPortalRequiredItem[];
+  sort_order: number;
+  earned_codes: string[];
+  unlocked: boolean;
+  summon_count: number;
+  last_summoned_at: string | null;
+  missing_rewards: string[];
+}
+
 export interface DemonRecord {
   id: number;
   label: string;

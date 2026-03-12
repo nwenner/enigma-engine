@@ -15,6 +15,7 @@ from backend.routers import stash as stash_router
 from backend.routers import seasons as seasons_router
 from backend.routers import rewards as rewards_router
 from backend.routers import demon as demon_router
+from backend.routers import boss_summon as boss_summon_router
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
@@ -46,6 +47,7 @@ app.include_router(stash_router.router, prefix="/api")
 app.include_router(seasons_router.router, prefix="/api")
 app.include_router(rewards_router.router, prefix="/api")
 app.include_router(demon_router.router, prefix="/api")
+app.include_router(boss_summon_router.router, prefix="/api")
 
 # Serve React SPA static assets
 if FRONTEND_DIST.exists():

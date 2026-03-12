@@ -249,3 +249,20 @@ class SeasonReward(Base):
     notes = Column(String, nullable=True)           # Optional user notes
     category = Column(String, nullable=True)        # e.g. "Rune", "Runeword", "Unique" — see RewardCategory enum
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ─── Boss Summon Portals ───────────────────────────────────────────────────────
+
+class BossSummonProgress(Base):
+    """Tracks earned item codes and unlock state for each boss summon set, per season."""
+    __tablename__ = "boss_summon_progress"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    set_id = Column(String, nullable=False)                          # e.g. "dclone"
+    season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False)
+    earned_codes = Column(String, nullable=False, default="[]")      # JSON list of earned item codes
+    unlocked_at = Column(DateTime, nullable=True)
+    summon_count = Column(Integer, nullable=False, default=0)
+    last_summoned_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (UniqueConstraint("set_id", "season_id", name="uq_boss_summon_progress"),)

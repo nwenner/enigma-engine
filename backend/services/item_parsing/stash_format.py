@@ -120,10 +120,13 @@ def _parse_item(
                     flags.position_x, flags.position_y,
                 )
 
-    # Warn when a named-quality item fell back to base name + quality label.
-    # This means the lookup tables are incomplete (missing prefix/suffix/rare word).
-    _FALLBACK_SUFFIXES = (" (magic)", " (rare)", " (crafted)", " (set)", " (unique)")
-    if fields.quality in (4, 5, 6, 7, 8) and any(display_name.endswith(s) for s in _FALLBACK_SUFFIXES):
+    # Warn when a magic/rare/crafted item fell back to base name + quality label.
+    # This indicates incomplete prefix/suffix/rare-name lookup tables.
+    # Unique (q=7) and set (q=5) are intentionally excluded: they always fall back at
+    # parse time because catalog lookup requires a DB session and is done at the
+    # service layer (stash_service.py, grail_service.py) — not a table gap.
+    _FALLBACK_SUFFIXES = (" (magic)", " (rare)", " (crafted)")
+    if fields.quality in (4, 6, 8) and any(display_name.endswith(s) for s in _FALLBACK_SUFFIXES):
         extra = ""
         if stat_list is not None:
             extra = f" charm_stats={stat_list[:6]}"

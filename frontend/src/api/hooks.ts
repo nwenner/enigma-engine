@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "./client";
 import type {
+  BossPortalStatus,
   CharacterInfo,
   SyncStatusResponse,
   SyncCompareResponse,
@@ -104,6 +105,7 @@ export function useCheckIn() {
       qc.invalidateQueries({ queryKey: ["grail"] });
       qc.invalidateQueries({ queryKey: ["stash"] });
       qc.invalidateQueries({ queryKey: ["seasons"] });
+      qc.invalidateQueries({ queryKey: ["boss-portals"] });
     },
   });
 }
@@ -748,6 +750,50 @@ export function useDeleteDemon() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["demon"] });
     },
+  });
+}
+
+// ─── Boss Summon Portals ──────────────────────────────────────────────────────
+
+export function useBossPortals() {
+  return useQuery<BossPortalStatus[]>({
+    queryKey: ["boss-portals"],
+    queryFn: () => api.get("/boss-summon").then((r) => r.data),
+    staleTime: 0,
+  });
+}
+
+export function useSummonBossSet() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; set_id: string; items_inserted: number; summon_count: number },
+    Error,
+    { setId: string; hardcore?: boolean }
+  >({
+    mutationFn: ({ setId, hardcore = false }) =>
+      api.post(`/boss-summon/${setId}/summon?hardcore=${hardcore}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["boss-portals"] }),
+  });
+}
+
+export function useEarnBossSummonCode() {
+  const qc = useQueryClient();
+  return useMutation<
+    { set_id: string; earned_codes: string[]; unlocked: boolean },
+    Error,
+    { setId: string; code: string }
+  >({
+    mutationFn: ({ setId, code }) =>
+      api.post(`/boss-summon/${setId}/earn`, { code }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["boss-portals"] }),
+  });
+}
+
+export function useResetBossSummonProgress() {
+  const qc = useQueryClient();
+  return useMutation<{ set_id: string; reset: boolean }, Error, string>({
+    mutationFn: (setId) => api.delete(`/boss-summon/${setId}/reset`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["boss-portals"] }),
   });
 }
 
