@@ -44,12 +44,16 @@ IDLE_STATE = {
 class AutoSyncStatusResponse(BaseModel):
     enabled: bool
     poll_interval: int
+    pc_enabled: bool
+    deck_enabled: bool
     state: Optional[dict] = None
 
 
 class AutoSyncConfigRequest(BaseModel):
     enabled: bool
     poll_interval_seconds: int
+    pc_enabled: bool
+    deck_enabled: bool
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -66,6 +70,12 @@ async def get_autosync_status(session: AsyncSession = Depends(get_session)):
     except ValueError:
         interval = 30
 
+    pc_enabled_raw = await _get_setting(session, "autosync_pc_enabled")
+    pc_enabled = (pc_enabled_raw or "true").lower() == "true"
+
+    deck_enabled_raw = await _get_setting(session, "autosync_deck_enabled")
+    deck_enabled = (deck_enabled_raw or "true").lower() == "true"
+
     state_raw = await _get_setting(session, "autosync_state")
     state: Optional[dict] = None
     if state_raw:
@@ -76,7 +86,13 @@ async def get_autosync_status(session: AsyncSession = Depends(get_session)):
         except Exception:
             pass
 
-    return AutoSyncStatusResponse(enabled=enabled, poll_interval=interval, state=state)
+    return AutoSyncStatusResponse(
+        enabled=enabled,
+        poll_interval=interval,
+        pc_enabled=pc_enabled,
+        deck_enabled=deck_enabled,
+        state=state,
+    )
 
 
 @router.put("/autosync/config", response_model=AutoSyncStatusResponse)
@@ -86,11 +102,15 @@ async def update_autosync_config(
 ):
     await _set_setting(session, "autosync_enabled", "true" if body.enabled else "false")
     await _set_setting(session, "autosync_poll_interval", str(body.poll_interval_seconds))
+    await _set_setting(session, "autosync_pc_enabled", "true" if body.pc_enabled else "false")
+    await _set_setting(session, "autosync_deck_enabled", "true" if body.deck_enabled else "false")
     await session.commit()
 
     return AutoSyncStatusResponse(
         enabled=body.enabled,
         poll_interval=body.poll_interval_seconds,
+        pc_enabled=body.pc_enabled,
+        deck_enabled=body.deck_enabled,
         state=None,
     )
 

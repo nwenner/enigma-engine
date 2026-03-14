@@ -282,7 +282,11 @@ export function useTestNotification() {
 
 export function useUpdateAutoSyncConfig() {
   const qc = useQueryClient();
-  return useMutation<AutoSyncStatus, Error, { enabled: boolean; poll_interval_seconds: number }>({
+  return useMutation<
+    AutoSyncStatus,
+    Error,
+    { enabled: boolean; poll_interval_seconds: number; pc_enabled: boolean; deck_enabled: boolean }
+  >({
     mutationFn: (body) => api.put("/autosync/config", body).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["autosync"] }),
   });

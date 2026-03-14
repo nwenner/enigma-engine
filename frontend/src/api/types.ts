@@ -130,6 +130,8 @@ export interface AutoSyncState {
 export interface AutoSyncStatus {
   enabled: boolean;
   poll_interval: number;
+  pc_enabled: boolean;
+  deck_enabled: boolean;
   state: AutoSyncState | null;
 }
 

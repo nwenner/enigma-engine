@@ -249,6 +249,9 @@ async def run_auto_sync_watcher() -> None:
             except ValueError:
                 interval = 30
 
+            pc_enabled = (await _get_autosync_setting("autosync_pc_enabled") or "true").lower() == "true"
+            deck_enabled = (await _get_autosync_setting("autosync_deck_enabled") or "true").lower() == "true"
+
             # Check for expired pending state
             state = await _get_state()
             if state["status"] == "pending" and state.get("expires_at"):
@@ -274,9 +277,9 @@ async def run_auto_sync_watcher() -> None:
                     await _set_state(dict(_DEFAULT_STATE))
                     asyncio.create_task(_auto_push_to_dest(direction))
 
-            # Poll D2R state
-            pc_now = await _check_d2r("pc", True)
-            deck_now = await _check_d2r("deck", False)
+            # Poll D2R state (skip unregistered machines)
+            pc_now = await _check_d2r("pc", True) if pc_enabled else None
+            deck_now = await _check_d2r("deck", False) if deck_enabled else None
 
             for machine, now_val, was_val, is_windows in [
                 ("pc", pc_now, prev["pc"], True),

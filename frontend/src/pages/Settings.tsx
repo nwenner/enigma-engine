@@ -535,14 +535,23 @@ function AutoSyncSection() {
 
   const enabled = autoSync?.enabled ?? false;
   const pollInterval = autoSync?.poll_interval ?? 30;
+  const pcEnabled = autoSync?.pc_enabled ?? true;
+  const deckEnabled = autoSync?.deck_enabled ?? true;
 
-  const toggleEnabled = () => {
-    updateConfig.mutate({ enabled: !enabled, poll_interval_seconds: pollInterval });
+  const update = (overrides: Partial<{ enabled: boolean; poll_interval_seconds: number; pc_enabled: boolean; deck_enabled: boolean }>) => {
+    updateConfig.mutate({
+      enabled,
+      poll_interval_seconds: pollInterval,
+      pc_enabled: pcEnabled,
+      deck_enabled: deckEnabled,
+      ...overrides,
+    });
   };
 
-  const changeInterval = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    updateConfig.mutate({ enabled, poll_interval_seconds: Number(e.target.value) });
-  };
+  const toggleEnabled = () => update({ enabled: !enabled });
+  const changeInterval = (e: React.ChangeEvent<HTMLSelectElement>) => update({ poll_interval_seconds: Number(e.target.value) });
+  const togglePc = () => update({ pc_enabled: !pcEnabled });
+  const toggleDeck = () => update({ deck_enabled: !deckEnabled });
 
   return (
     <div className="card-d2 p-5">
@@ -625,6 +634,36 @@ function AutoSyncSection() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="block text-xs text-slate-500 mb-2 uppercase tracking-wider">
+            Monitored devices
+          </label>
+          <div className="space-y-2">
+            {[
+              { label: "Windows PC", value: pcEnabled, toggle: togglePc },
+              { label: "Steam Deck", value: deckEnabled, toggle: toggleDeck },
+            ].map(({ label, value, toggle }) => (
+              <div key={label} className="flex items-center justify-between">
+                <span className="text-sm text-slate-300">{label}</span>
+                <button
+                  onClick={toggle}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors ${
+                    value
+                      ? "bg-d2gold/30 border-d2gold/60"
+                      : "bg-d2bg-elevated border-d2bg-border"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                      value ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
