@@ -24,7 +24,6 @@ autosync_state shape:
 import asyncio
 import json
 import logging
-import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -68,14 +67,17 @@ async def _set_autosync_setting(key: str, value: str) -> None:
         await session.commit()
 
 
+_DEFAULT_STATE = {"status": "idle", "direction": None, "detected_at": None, "expires_at": None, "reason": None}
+
+
 async def _get_state() -> dict:
     raw = await _get_autosync_setting("autosync_state")
     if not raw:
-        return {"status": "idle", "direction": None, "detected_at": None, "expires_at": None, "reason": None}
+        return dict(_DEFAULT_STATE)
     try:
         return json.loads(raw)
     except Exception:
-        return {"status": "idle", "direction": None, "detected_at": None, "expires_at": None, "reason": None}
+        return dict(_DEFAULT_STATE)
 
 
 async def _set_state(state: dict) -> None:
@@ -146,30 +148,26 @@ async def _has_new_saves(machine: str, is_windows: bool, since: datetime) -> boo
     return any(m > threshold for m in mtimes)
 
 
-async def _trigger_sync(direction: str) -> None:
-    """Create a SyncOperation record and dispatch the background task."""
-    # Local imports to avoid circular imports at module level
-    from backend.routers.sync import do_sync, sync_lock, _build_sync_kwargs
+async def _auto_push_to_dest(direction: str) -> None:
+    """Push the latest vault snapshot to the destination machine."""
+    from backend.services.backup_manager import push_snapshot_to_machine
 
-    if sync_lock.locked():
-        log.info("auto_sync: sync already in progress, skipping trigger")
-        return
-
+    dest = "deck" if direction == "pc_to_deck" else "pc"
     async with AsyncSessionLocal() as session:
         try:
-            sync_kwargs = await _build_sync_kwargs(session, direction)
+            dest_conn = await _get_conn_kwargs(session, dest)
+            dest_dir = await _get_setting(session, f"{dest}_save_path") or ""
         except Exception as exc:
-            log.error("auto_sync: could not build sync kwargs: %s", exc)
+            log.error("auto_sync: could not get dest conn kwargs: %s", exc)
             return
 
-        op = SyncOperation(direction=direction, status="pending")
-        session.add(op)
-        await session.commit()
-        await session.refresh(op)
-        op_id = op.id
-
-    asyncio.create_task(do_sync(op_id, sync_kwargs))
-    log.info("auto_sync: triggered %s (op_id=%d)", direction, op_id)
+    dest_is_windows = dest == "pc"
+    try:
+        async with AsyncSessionLocal() as session:
+            await push_snapshot_to_machine(session, dest, dest_conn, dest_dir, dest_is_windows)
+        log.info("auto_sync: pushed snapshot to %s", dest)
+    except Exception as exc:
+        log.error("auto_sync: push to %s failed: %s", dest, exc)
 
 
 async def _snapshot_source(machine: str, is_windows: bool) -> tuple[Path, int]:
@@ -191,13 +189,13 @@ async def _snapshot_source(machine: str, is_windows: bool) -> tuple[Path, int]:
         )
 
     snapshot_dir = get_settings().data_dir / snapshot.snapshot_path
+    snapshot_files = [f for f in snapshot_dir.iterdir() if f.is_file()]
+    downloaded = [{"filename": f.name, "local_part": f} for f in snapshot_files]
 
     # Run grail hook against snapshot files — dest may be offline so source-only detection
     try:
         from backend.services.grail_service import process_portal_tab_hook
-        snapshot_files = [f for f in snapshot_dir.iterdir() if f.is_file()]
         log.warning("Grail: snapshot hook running, files: %s", [f.name for f in snapshot_files])
-        downloaded = [{"filename": f.name, "local_part": f} for f in snapshot_files]
         async with AsyncSessionLocal() as grail_session:
             await process_portal_tab_hook(
                 session=grail_session,
@@ -209,53 +207,21 @@ async def _snapshot_source(machine: str, is_windows: bool) -> tuple[Path, int]:
     except Exception as _grail_err:
         log.warning("Grail hook failed during snapshot (snapshot unaffected): %s", _grail_err)
 
+    try:
+        from backend.services.seasons_service import check_season_milestones
+        async with AsyncSessionLocal() as s:
+            await check_season_milestones(session=s, downloaded=downloaded)
+    except Exception as _err:
+        log.warning("Seasons hook failed during auto-checkin (snapshot unaffected): %s", _err)
+
+    try:
+        from backend.services.boss_summon_service import check_boss_summon_progress
+        async with AsyncSessionLocal() as s:
+            await check_boss_summon_progress(session=s, snapshot_dir=snapshot_dir)
+    except Exception as _err:
+        log.warning("Boss summon hook failed during auto-checkin (snapshot unaffected): %s", _err)
+
     return snapshot_dir, snapshot.file_count
-
-
-async def _cleanup_staged(staged_path_str: str | None) -> None:
-    """
-    Remove a staged directory if it exists. No-op if path is None.
-    Snapshot dirs (under backups_dir) are managed by the prune system — they are not deleted here.
-    """
-    if not staged_path_str:
-        return
-    path = Path(staged_path_str)
-    cfg = get_settings()
-    # Don't delete snapshot dirs — the prune system owns their lifecycle
-    if path.is_relative_to(cfg.backups_dir):
-        return
-
-    def _do() -> None:
-        shutil.rmtree(str(path), ignore_errors=True)
-
-    await asyncio.to_thread(_do)
-
-
-async def _trigger_staged_sync(direction: str, staged_path: str) -> None:
-    """Like _trigger_sync but passes staged_path so source SFTP is skipped."""
-    from backend.routers.sync import do_sync, sync_lock, _build_sync_kwargs
-
-    if sync_lock.locked():
-        log.info("auto_sync: sync already in progress, skipping staged trigger")
-        return
-
-    async with AsyncSessionLocal() as session:
-        try:
-            sync_kwargs = await _build_sync_kwargs(session, direction)
-        except Exception as exc:
-            log.error("auto_sync: could not build sync kwargs for staged sync: %s", exc)
-            return
-
-        sync_kwargs["staged_path"] = staged_path
-
-        op = SyncOperation(direction=direction, status="pending")
-        session.add(op)
-        await session.commit()
-        await session.refresh(op)
-        op_id = op.id
-
-    asyncio.create_task(do_sync(op_id, sync_kwargs))
-    log.info("auto_sync: triggered staged %s (op_id=%d, staged_path=%s)", direction, op_id, staged_path)
 
 
 # ─── Main watcher loop ────────────────────────────────────────────────────────
@@ -292,26 +258,21 @@ async def run_auto_sync_watcher() -> None:
                         expires = expires.replace(tzinfo=timezone.utc)
                     if datetime.now(timezone.utc) > expires:
                         log.info("auto_sync: pending state expired, clearing")
-                        await _cleanup_staged(state.get("staged_path"))
-                        await _set_state({"status": "idle", "direction": None, "detected_at": None, "expires_at": None, "reason": None})
+                        await _set_state(dict(_DEFAULT_STATE))
                         state = await _get_state()
                 except Exception:
                     pass
 
-            # If there's a pending sync, try to execute it
+            # If there's a pending sync, try to execute it now that dest may be online
             if state["status"] == "pending" and state.get("direction"):
                 direction = state["direction"]
                 dest = "deck" if direction == "pc_to_deck" else "pc"
                 dest_is_windows = dest == "pc"
                 dest_alive = await _get_d2s_mtimes(dest, dest_is_windows)
                 if dest_alive is not None:
-                    log.info("auto_sync: dest %s is now reachable, executing pending %s", dest, direction)
-                    staged_path = state.get("staged_path")
-                    await _set_state({"status": "idle", "direction": None, "detected_at": None, "expires_at": None, "reason": None})
-                    if staged_path:
-                        await _trigger_staged_sync(direction, staged_path)
-                    else:
-                        await _trigger_sync(direction)
+                    log.info("auto_sync: dest %s is now reachable, pushing pending snapshot", dest)
+                    await _set_state(dict(_DEFAULT_STATE))
+                    asyncio.create_task(_auto_push_to_dest(direction))
 
             # Poll D2R state
             pc_now = await _check_d2r("pc", True)
@@ -323,25 +284,22 @@ async def run_auto_sync_watcher() -> None:
             ]:
                 if was_val is True and now_val is False:
                     # Game just closed on this machine
-                    log.warning("auto_sync: D2R closed on %s, triggering %s", machine, "pc_to_deck" if machine == "pc" else "deck_to_pc")
+                    log.warning("auto_sync: D2R closed on %s", machine)
                     direction = "pc_to_deck" if machine == "pc" else "deck_to_pc"
                     dest = "deck" if machine == "pc" else "pc"
                     dest_is_windows = dest == "pc"
 
+                    # Don't overwrite an unresolved conflict — user must resolve first
+                    cur_state = await _get_state()
+                    if cur_state["status"] == "conflict":
+                        log.info("auto_sync: unresolved conflict — skipping game-close trigger on %s", machine)
+                        continue
+
+                    # Check dest for unseen saves (conflict detection)
                     last_sync_time = await _get_last_sync_time()
-
-                    if last_sync_time is None:
-                        # Never synced — trigger anyway, user has to decide via UI
-                        log.info("auto_sync: no prior sync, triggering %s", direction)
-                        cur_state = await _get_state()
-                        if cur_state["status"] not in ("pending", "conflict"):
-                            await _trigger_sync(direction)
-                    else:
-                        # Check dest for unseen progress
+                    if last_sync_time is not None:
                         dest_has_new = await _has_new_saves(dest, dest_is_windows, last_sync_time)
-
                         if dest_has_new is True:
-                            # Conflict: both machines have progress
                             log.warning("auto_sync: conflict detected (both machines have new saves)")
                             now_iso = datetime.now(timezone.utc).isoformat()
                             await _set_state({
@@ -349,97 +307,34 @@ async def run_auto_sync_watcher() -> None:
                                 "direction": None,
                                 "detected_at": now_iso,
                                 "expires_at": None,
-                                "reason": f"Both PC and Deck have unseen saves since last sync",
+                                "reason": "Both PC and Deck have unseen saves since last sync",
                             })
                             asyncio.create_task(notify_conflict())
-                        elif dest_has_new is None:
-                            # Dest offline — stage files then record pending
-                            log.info("auto_sync: dest %s offline, staging files from %s", dest, machine)
-                            now_iso = datetime.now(timezone.utc).isoformat()
-                            expires_iso = (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat()
+                            continue
 
-                            cur_state = await _get_state()
-                            if cur_state["status"] == "pending" and cur_state.get("staged_path"):
-                                pending_source = "pc" if cur_state["direction"] == "pc_to_deck" else "deck"
+                    # Check-in from source: creates game_close snapshot + runs all hooks
+                    try:
+                        _snapshot_dir, count = await _snapshot_source(machine, is_windows)
+                        log.info("auto_sync: checked in %d files from %s", count, machine)
+                    except Exception as exc:
+                        log.warning("auto_sync: check-in snapshot failed: %s", exc)
+                        continue
 
-                                if machine == pending_source:
-                                    # Same machine played again — not a conflict, just re-stage
-                                    # with the fresher saves (source machine is still online).
-                                    log.info(
-                                        "auto_sync: %s played again before dest came online; "
-                                        "re-staging with fresher saves",
-                                        machine,
-                                    )
-                                    await _cleanup_staged(cur_state["staged_path"])
-                                    try:
-                                        staged_path, count = await _snapshot_source(machine, is_windows)
-                                        log.info("auto_sync: re-staged %d files from %s", count, machine)
-                                        await _set_state({
-                                            "status": "pending",
-                                            "direction": direction,
-                                            "staged_path": str(staged_path),
-                                            "staged_file_count": count,
-                                            "detected_at": now_iso,
-                                            "expires_at": expires_iso,
-                                            "reason": f"Waiting for {dest} to come online",
-                                        })
-                                    except Exception as exc:
-                                        log.warning(
-                                            "auto_sync: re-staging failed (%s), keeping pending without staged files", exc
-                                        )
-                                        await _set_state({
-                                            "status": "pending",
-                                            "direction": direction,
-                                            "detected_at": now_iso,
-                                            "expires_at": expires_iso,
-                                            "reason": f"Waiting for {dest} to come online",
-                                        })
-                                else:
-                                    # Different machine played while first machine's staged saves
-                                    # are still waiting — genuine conflict.
-                                    log.warning(
-                                        "auto_sync: conflict — %s closed but %s has staged saves waiting; "
-                                        "marking conflict instead of overwriting",
-                                        machine, pending_source,
-                                    )
-                                    await _set_state({
-                                        "status": "conflict",
-                                        "direction": None,
-                                        "detected_at": now_iso,
-                                        "expires_at": None,
-                                        "staged_path": cur_state["staged_path"],  # preserve for dismiss cleanup
-                                        "reason": "Both machines played since last sync. Staged saves waiting. Choose manually.",
-                                    })
-                                    asyncio.create_task(notify_conflict())
-                            else:
-                                try:
-                                    staged_path, count = await _snapshot_source(machine, is_windows)
-                                    log.info("auto_sync: staged %d files from %s", count, machine)
-                                    await _set_state({
-                                        "status": "pending",
-                                        "direction": direction,
-                                        "staged_path": str(staged_path),
-                                        "staged_file_count": count,
-                                        "detected_at": now_iso,
-                                        "expires_at": expires_iso,
-                                        "reason": f"Waiting for {dest} to come online",
-                                    })
-                                except Exception as exc:
-                                    log.warning(
-                                        "auto_sync: staging failed (%s), recording pending without staged files", exc
-                                    )
-                                    await _set_state({
-                                        "status": "pending",
-                                        "direction": direction,
-                                        "detected_at": now_iso,
-                                        "expires_at": expires_iso,
-                                        "reason": f"Waiting for {dest} to come online",
-                                    })
-                        else:
-                            # No conflict, dest reachable — sync now
-                            cur_state = await _get_state()
-                            if cur_state["status"] not in ("pending", "conflict"):
-                                await _trigger_sync(direction)
+                    # Push to dest or record pending
+                    dest_alive = await _get_d2s_mtimes(dest, dest_is_windows)
+                    if dest_alive is not None:
+                        asyncio.create_task(_auto_push_to_dest(direction))
+                    else:
+                        now_iso = datetime.now(timezone.utc).isoformat()
+                        expires_iso = (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat()
+                        await _set_state({
+                            "status": "pending",
+                            "direction": direction,
+                            "detected_at": now_iso,
+                            "expires_at": expires_iso,
+                            "reason": f"Waiting for {dest} to come online",
+                        })
+                        log.info("auto_sync: %s offline, snapshot in vault, state=pending", dest)
 
             # Update prev state only for successful checks
             if pc_now is not None:

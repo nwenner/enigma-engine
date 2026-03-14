@@ -7,6 +7,9 @@ import {
   usePushToDevice,
   useSyncCompare,
   useBackups,
+  useAutoSyncStatus,
+  useDismissAutoSync,
+  useResolveConflict,
 } from "../api/hooks";
 import SyncStatusModal from "../components/SyncStatusModal";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -225,6 +228,9 @@ type ComparingKey = "checkin_pc" | "checkin_deck" | "push_pc" | "push_deck";
 export default function Dashboard() {
   const { data: seasonStats, isLoading: statsLoading } = useActiveSeasonStats();
   const { data: preflight } = usePreflight();
+  const { data: autosync } = useAutoSyncStatus();
+  const dismissAutoSync = useDismissAutoSync();
+  const resolveConflict = useResolveConflict();
 
   const checkIn = useCheckIn();
   const pushToDevice = usePushToDevice();
@@ -361,6 +367,41 @@ export default function Dashboard() {
           <NavLink to="/seasons" className="text-amber-400 hover:underline text-xs shrink-0">
             End Season →
           </NavLink>
+        </div>
+      )}
+
+      {/* Auto-sync conflict banner */}
+      {autosync?.state?.status === "conflict" && (
+        <div className="bg-red-900/40 border border-red-500 rounded-lg p-4 flex items-center justify-between gap-4 mb-4">
+          <div>
+            <span className="text-red-400 font-semibold">⚠️ Sync Conflict</span>
+            <p className="text-sm text-slate-300 mt-1">
+              Both PC and Steam Deck have unseen saves. Pick which to keep.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => resolveConflict.mutate("pc")}
+              disabled={resolveConflict.isPending}
+              className="btn-d2 text-xs"
+            >
+              Keep PC Saves
+            </button>
+            <button
+              onClick={() => resolveConflict.mutate("deck")}
+              disabled={resolveConflict.isPending}
+              className="btn-d2 text-xs"
+            >
+              Keep Deck Saves
+            </button>
+            <button
+              onClick={() => dismissAutoSync.mutate()}
+              disabled={dismissAutoSync.isPending}
+              className="text-xs text-slate-500 hover:text-slate-300 px-2 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 

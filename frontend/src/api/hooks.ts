@@ -237,6 +237,15 @@ export function useDismissAutoSync() {
   });
 }
 
+export function useResolveConflict() {
+  const qc = useQueryClient();
+  return useMutation<{ op_id: number; machine: string }, Error, "pc" | "deck">({
+    mutationFn: (keep_machine) =>
+      api.post("/autosync/resolve", { keep_machine }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["autosync"] }),
+  });
+}
+
 export function useTriggerAutoSync() {
   const qc = useQueryClient();
   return useMutation<{ success: boolean; operation_id: number }, Error, void>({

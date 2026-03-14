@@ -15,16 +15,16 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.database import get_session
 from backend.models import Settings, SyncOperation
-from backend.routers.settings import _get_setting, _set_setting
+from backend.routers.settings import _get_conn_kwargs, _get_setting, _set_setting
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["autosync"])
@@ -135,15 +135,40 @@ async def trigger_autosync(session: AsyncSession = Depends(get_session)):
 
 @router.post("/autosync/dismiss")
 async def dismiss_autosync(session: AsyncSession = Depends(get_session)):
-    state_raw = await _get_setting(session, "autosync_state")
-    if state_raw:
-        try:
-            state = json.loads(state_raw)
-            staged = state.get("staged_path")
-            if staged:
-                shutil.rmtree(Path(staged), ignore_errors=True)
-        except Exception:
-            pass
     await _set_setting(session, "autosync_state", json.dumps(IDLE_STATE))
     await session.commit()
     return {"success": True}
+
+
+class ResolveConflictRequest(BaseModel):
+    keep_machine: Literal["pc", "deck"]
+
+
+@router.post("/autosync/resolve")
+async def resolve_conflict(
+    body: ResolveConflictRequest,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+):
+    """Resolve a conflict by picking which machine's saves to keep.
+    Clears conflict state and triggers a check-in from the winning machine."""
+    from backend.routers.sync import do_checkin
+
+    # Clear conflict state
+    await _set_setting(session, "autosync_state", json.dumps(IDLE_STATE))
+
+    machine = body.keep_machine
+    try:
+        conn_kwargs = await _get_conn_kwargs(session, machine)
+        save_dir = await _get_setting(session, f"{machine}_save_path") or ""
+    except Exception as exc:
+        await session.commit()
+        raise HTTPException(400, f"Could not get connection settings for {machine}: {exc}")
+
+    op = SyncOperation(direction=f"checkin_{machine}", status="pending")
+    session.add(op)
+    await session.commit()
+    await session.refresh(op)
+
+    background_tasks.add_task(do_checkin, op.id, machine, conn_kwargs, save_dir)
+    return {"op_id": op.id, "machine": machine}

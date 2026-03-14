@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -29,6 +30,8 @@ async def lifespan(app: FastAPI):
     cfg.keys_dir.mkdir(parents=True, exist_ok=True)
     cfg.tmp_dir.mkdir(parents=True, exist_ok=True)
     await init_db()
+    from backend.services.auto_sync import run_auto_sync_watcher
+    asyncio.create_task(run_auto_sync_watcher())
     yield
 
 
