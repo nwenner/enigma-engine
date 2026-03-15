@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
 from backend.database import get_session
-from backend.models import BoundDemon, BackupSnapshot, Season
+from backend.models import BoundDemon, DemonTagLibrary, BackupSnapshot, Season
 from backend.services.demon_service import (
     has_bound_demon,
     extract_demon_bytes,
@@ -163,14 +163,19 @@ async def list_warlocks(session: AsyncSession = Depends(get_session)):
 
 @router.get("/demon/tags", response_model=list[str])
 async def list_tags(session: AsyncSession = Depends(get_session)):
-    """Return all unique tags used across registered demon labels (comma-delimited)."""
-    result = await session.execute(select(BoundDemon.label))
+    """Return all unique tags — library (persists across seasons) + active demon labels."""
     tags: set[str] = set()
-    for label in result.scalars().all():
+
+    library = await session.execute(select(DemonTagLibrary.tag))
+    tags.update(library.scalars().all())
+
+    labels = await session.execute(select(BoundDemon.label))
+    for label in labels.scalars().all():
         for tag in label.split(","):
             tag = tag.strip()
             if tag:
                 tags.add(tag)
+
     return sorted(tags)
 
 
@@ -229,6 +234,17 @@ async def save_demon(
         saved_at=datetime.now(timezone.utc),
     )
     session.add(demon)
+
+    # Persist each tag to the library so suggestions survive season resets
+    for raw_tag in body.label.split(","):
+        tag = raw_tag.strip()
+        if tag:
+            existing = await session.execute(
+                select(DemonTagLibrary).where(DemonTagLibrary.tag == tag)
+            )
+            if existing.scalar_one_or_none() is None:
+                session.add(DemonTagLibrary(tag=tag))
+
     await session.commit()
     await session.refresh(demon)
 

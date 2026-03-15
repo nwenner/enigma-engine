@@ -141,6 +141,18 @@ async def init_db() -> None:
             pass
 
 
+        # Seed default demon tags (idempotent — INSERT OR IGNORE)
+        default_tags = ["Fanaticism Aura", "Cursed", "Hephisto", "Listor"]
+        for tag in default_tags:
+            try:
+                await conn.execute(
+                    text("INSERT OR IGNORE INTO demon_tag_library (tag) VALUES (:tag)"),
+                    {"tag": tag},
+                )
+            except Exception:
+                pass
+
+
 async def get_session() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         yield session

@@ -281,7 +281,8 @@ class TestSaveDemon:
         snap.snapshot_path = tmp_path.name
 
         session = AsyncMock()
-        session.execute.side_effect = [_result(None), _result(snap)]
+        # execute calls: active season, latest snapshot, tag library lookup (one per tag)
+        session.execute.side_effect = [_result(None), _result(snap), _result(None)]
         session.add = MagicMock()  # session.add is synchronous in SQLAlchemy
         # refresh() does nothing — we inspect `add()` args directly instead
         session.refresh = AsyncMock()
@@ -298,9 +299,10 @@ class TestSaveDemon:
             except Exception:
                 pass  # response building may fail post-refresh; DB calls already happened
 
-        session.add.assert_called_once()
+        # First add() is BoundDemon; second is the new DemonTagLibrary entry
+        assert session.add.call_count >= 1
         session.commit.assert_called_once()
-        added = session.add.call_args[0][0]
-        assert added.character_filename == "Tald.d2s"
-        assert added.label == "Aura frenzytaur"
-        assert len(added.demon_bytes) == 120  # lf(96) + gf(24)
+        demon_add = session.add.call_args_list[0][0][0]
+        assert demon_add.character_filename == "Tald.d2s"
+        assert demon_add.label == "Aura frenzytaur"
+        assert len(demon_add.demon_bytes) == 120  # lf(96) + gf(24)

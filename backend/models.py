@@ -231,6 +231,14 @@ class BoundDemon(Base):
     saved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class DemonTagLibrary(Base):
+    """Persistent tag vocabulary for the Demon Registry — survives season resets."""
+    __tablename__ = "demon_tag_library"
+
+    id  = Column(Integer, primary_key=True, autoincrement=True)
+    tag = Column(String, nullable=False, unique=True)
+
+
 # ─── Season Reward Library ────────────────────────────────────────────────────
 
 class SeasonReward(Base):
