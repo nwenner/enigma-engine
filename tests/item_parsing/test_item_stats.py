@@ -157,17 +157,30 @@ class TestFormatSkillStats:
         lines = format_item_stats([RawStat(188, 99, 1)])
         assert "+1 to Skill Tab 99" in lines
 
-    def test_single_skill(self):
-        # stat 107, param encodes skill_id (bits 0-5) + class_id (bits 6-8)
-        # class_id=1 (Sorceress), skill_id=3 → param = (1<<6)|3 = 67 → Ice Bolt
-        lines = format_item_stats([RawStat(107, 67, 3)])
-        assert "+3 to Ice Bolt" in lines
+    def test_single_skill_sorceress(self):
+        # Ice Bolt = global skill ID 39 (Sorceress, *Id 39 in skills.txt)
+        lines = format_item_stats([RawStat(107, 39, 3)])
+        assert "+3 to Ice Bolt (Sorceress Only)" in lines
+
+    def test_single_skill_warlock_apocalypse(self):
+        # Apocalypse = global skill ID 401 (Warlock, *Id 401 in skills.txt)
+        lines = format_item_stats([RawStat(107, 401, 3)])
+        assert "+3 to Apocalypse (Warlock Only)" in lines
+
+    def test_single_skill_warlock_sigil_death(self):
+        # Sigil Death = global skill ID 400 (Warlock, *Id 400 in skills.txt)
+        lines = format_item_stats([RawStat(107, 400, 3)])
+        assert "+3 to Sigil Death (Warlock Only)" in lines
+
+    def test_single_skill_assassin_shadow_warrior(self):
+        # Shadow Warrior = global skill ID 268 (Assassin, *Id 268 in skills.txt)
+        lines = format_item_stats([RawStat(107, 268, 1)])
+        assert "+1 to Shadow Warrior (Assassin Only)" in lines
 
     def test_single_skill_unknown_id(self):
-        # Unknown skill_id falls back to bracketed format
-        # class_id=1 (Sorceress), skill_id=63 → param = (1<<6)|63 = 127
-        lines = format_item_stats([RawStat(107, 127, 1)])
-        assert "+1 to [Skill 63] (Sorceress)" in lines
+        # Unknown global ID falls back to bracketed format
+        lines = format_item_stats([RawStat(107, 9999, 1)])
+        assert "+1 to [Skill 9999]" in lines
 
     def test_unknown_stat_skipped(self):
         # stat_id not in STAT_TABLE → read_charm_stats stops, so it won't appear at all

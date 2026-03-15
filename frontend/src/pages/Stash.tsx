@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   useStash,
   useVaultItems,
@@ -582,6 +583,102 @@ function RegisterRewardDialog({
   );
 }
 
+// ─── D2 item tooltip ──────────────────────────────────────────────────────────
+
+interface TooltipItem {
+  name?: string | null;
+  base_item?: string | null;
+  quality: number;
+  is_ethereal?: boolean;
+  is_runeword?: boolean;
+  item_level?: number;
+  properties?: string[];
+}
+
+function qualityTextColor(quality: number): string {
+  switch (quality) {
+    case 7: return "#c7a13a";   // unique gold
+    case 5: return "#4ade80";   // set green
+    case 6: return "#fde047";   // rare yellow
+    case 4: return "#93c5fd";   // magic blue
+    case 8: return "#fb923c";   // crafted orange
+    case 3: return "#cbd5e1";   // superior white
+    default: return "#94a3b8";  // normal gray
+  }
+}
+
+function D2ItemTooltip({ item, x, y }: { item: TooltipItem; x: number; y: number }) {
+  const TOOLTIP_WIDTH = 272;
+  const MARGIN = 18;
+
+  const left = x + MARGIN + TOOLTIP_WIDTH > window.innerWidth
+    ? x - MARGIN - TOOLTIP_WIDTH
+    : x + MARGIN;
+  const top = Math.max(8, Math.min(y - 12, window.innerHeight - 40));
+
+  const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
+  const showBase = !!(item.name && item.base_item && item.name !== item.base_item);
+  const nameColor = qualityTextColor(item.quality);
+  const hasProps = (item.properties?.length ?? 0) > 0;
+
+  return createPortal(
+    <div
+      style={{
+        position: "fixed",
+        left,
+        top,
+        width: TOOLTIP_WIDTH,
+        zIndex: 9999,
+        pointerEvents: "none",
+        background: "linear-gradient(180deg, #100d06 0%, #070400 100%)",
+        border: "1px solid rgba(100, 78, 28, 0.55)",
+        boxShadow: "0 6px 32px rgba(0,0,0,0.95), 0 2px 8px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,210,80,0.04)",
+        padding: "10px 14px 12px",
+      }}
+    >
+      {/* Item name */}
+      <div style={{ color: nameColor, textAlign: "center", fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>
+        {displayName}
+      </div>
+
+      {/* Base type (for named items) */}
+      {showBase && (
+        <div style={{ color: "#cbd5e1", textAlign: "center", fontSize: 11, marginTop: 2 }}>
+          {item.base_item}
+        </div>
+      )}
+
+      {/* Ethereal */}
+      {item.is_ethereal && (
+        <div style={{ color: "#7dd3fc", textAlign: "center", fontSize: 11, marginTop: 2 }}>
+          Ethereal (Cannot be Repaired)
+        </div>
+      )}
+
+      {/* Properties */}
+      {hasProps && (
+        <>
+          <div style={{ borderTop: "1px solid rgba(100,78,28,0.4)", margin: "8px 0 6px" }} />
+          {item.properties!.map((prop, i) => (
+            <div key={i} style={{ color: "#7eb4ea", fontSize: 12, lineHeight: 1.55 }}>
+              {prop}
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Item level footer */}
+      {(item.item_level ?? 0) > 0 && (
+        <>
+          <div style={{ borderTop: "1px solid rgba(80,60,20,0.35)", margin: "8px 0 4px" }} />
+          <div style={{ color: "#475569", fontSize: 10 }}>Item Level: {item.item_level}</div>
+        </>
+      )}
+    </div>,
+    document.body
+  );
+}
+
 // ─── Single item row ──────────────────────────────────────────────────────────
 
 const REWARD_QUALITY_THRESHOLD = 5; // set(5), crafted(6), unique(7), tempered(8)
@@ -608,9 +705,15 @@ function ItemRow({
   const colorBorder = qualityColor(item.quality).split(" ")[1] ?? "border-slate-700/60";
   const displayName = item.name ?? item.base_item ?? item.quality_name;
   const showRegister = tab === PORTAL_TAB && (item.is_runeword || item.quality >= REWARD_QUALITY_THRESHOLD);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
+  const hasTooltip = (item.properties?.length ?? 0) > 0 || item.is_ethereal;
 
   return (
-    <div className={`px-3 py-2 border ${colorBorder} bg-black/20`}>
+    <div
+      className={`px-3 py-2 border ${colorBorder} bg-black/20 ${hasTooltip ? "cursor-default" : ""}`}
+      onMouseMove={hasTooltip ? (e) => setTooltip({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseLeave={hasTooltip ? () => setTooltip(null) : undefined}
+    >
       <div className="flex items-center gap-2">
         <span className={`text-[9px] font-mono px-1 border shrink-0 leading-4 ${colorText} ${colorBorder}`}>
           {qualityLabel(item.quality)}
@@ -659,13 +762,8 @@ function ItemRow({
       {item.name && item.base_item && (
         <div className="text-slate-500 text-xs mt-0.5 ml-9">{item.base_item}</div>
       )}
-      {item.properties && item.properties.length > 0 && (
-        <div className="ml-9 mt-1 flex flex-col">
-          {item.properties.map((prop, i) => (
-            <span key={i} className="text-[11px] text-blue-300/80 leading-5">{prop}</span>
-          ))}
-        </div>
-      )}
+
+      {tooltip && hasTooltip && <D2ItemTooltip item={item} x={tooltip.x} y={tooltip.y} />}
     </div>
   );
 }
@@ -756,12 +854,73 @@ function StashTabView({
   );
 }
 
+// ─── Vault item row ───────────────────────────────────────────────────────────
+
+function VaultItemRow({
+  item,
+  onRetrieve,
+}: {
+  item: VaultItemResponse;
+  onRetrieve: () => void;
+}) {
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
+  const colorText = qualityColor(item.quality).split(" ")[0];
+  const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
+  const date = fmtUtcDate(item.stored_at);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
+  const hasTooltip = (item.properties?.length ?? 0) > 0 || item.is_ethereal;
+
+  return (
+    <div
+      className={`px-4 py-2.5 ${hasTooltip ? "cursor-default" : ""}`}
+      onMouseMove={hasTooltip ? (e) => setTooltip({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseLeave={hasTooltip ? () => setTooltip(null) : undefined}
+    >
+      <div className="flex items-center gap-2">
+        <span className={`text-[9px] font-mono px-1 border shrink-0 leading-4 ${qualityColor(item.quality)}`}>
+          {qualityLabel(item.quality)}
+        </span>
+        <div className="flex-1 flex items-baseline gap-1.5 min-w-0">
+          <span className={`text-sm font-semibold leading-snug truncate ${colorText}`}>
+            {displayName}
+          </span>
+          {item.name && item.base_item && (
+            <span className="text-slate-500 text-xs font-normal shrink-0">{item.base_item}</span>
+          )}
+        </div>
+        {item.is_ethereal && (
+          <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
+        )}
+        {item.item_level > 0 && (
+          <span className="text-slate-600 text-[10px] shrink-0 tabular-nums">
+            ilvl {item.item_level}
+          </span>
+        )}
+        <CopyVaultHexButton itemId={item.id} />
+        <button
+          onClick={onRetrieve}
+          disabled={d2rRunning}
+          className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={d2rRunning ? "D2R is running — close the game first" : "Retrieve to tab 5"}
+        >
+          Retrieve
+        </button>
+      </div>
+      <div className="flex items-center gap-2 mt-0.5 ml-9">
+        <span className="text-slate-700 text-[10px]">Tab {item.tab + 1}</span>
+        <span className="text-slate-800 text-[10px]">·</span>
+        <span className="text-slate-700 text-[10px]">{date}</span>
+      </div>
+      {tooltip && hasTooltip && <D2ItemTooltip item={item} x={tooltip.x} y={tooltip.y} />}
+    </div>
+  );
+}
+
 // ─── Vault section ────────────────────────────────────────────────────────────
 
 function VaultSection({ mode }: { mode: Mode }) {
   const { data: items, isLoading } = useVaultItems(mode);
-  const { data: preflight } = usePreflight();
-  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const [retrieveTarget, setRetrieveTarget] = useState<VaultItemResponse | null>(null);
 
   if (isLoading) {
@@ -785,57 +944,13 @@ function VaultSection({ mode }: { mode: Mode }) {
         </p>
       ) : (
         <div className="divide-y divide-d2bg-border/30">
-          {items.map((item) => {
-            const colorText = qualityColor(item.quality).split(" ")[0];
-            const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
-            const date = fmtUtcDate(item.stored_at);
-            return (
-              <div key={item.id} className="px-4 py-2.5">
-                <div className="flex items-center gap-2">
-                  <span className={`text-[9px] font-mono px-1 border shrink-0 leading-4 ${qualityColor(item.quality)}`}>
-                    {qualityLabel(item.quality)}
-                  </span>
-                  <div className="flex-1 flex items-baseline gap-1.5 min-w-0">
-                    <span className={`text-sm font-semibold leading-snug truncate ${colorText}`}>
-                      {displayName}
-                    </span>
-                    {item.name && item.base_item && (
-                      <span className="text-slate-500 text-xs font-normal shrink-0">{item.base_item}</span>
-                    )}
-                  </div>
-                  {item.is_ethereal && (
-                    <span className="text-[10px] text-sky-400 font-mono shrink-0">ETH</span>
-                  )}
-                  {item.item_level > 0 && (
-                    <span className="text-slate-600 text-[10px] shrink-0 tabular-nums">
-                      ilvl {item.item_level}
-                    </span>
-                  )}
-                  <CopyVaultHexButton itemId={item.id} />
-                  <button
-                    onClick={() => setRetrieveTarget(item)}
-                    disabled={d2rRunning}
-                    className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title={d2rRunning ? "D2R is running — close the game first" : "Retrieve to tab 5"}
-                  >
-                    Retrieve
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 mt-0.5 ml-9">
-                  <span className="text-slate-700 text-[10px]">Tab {item.tab + 1}</span>
-                  <span className="text-slate-800 text-[10px]">·</span>
-                  <span className="text-slate-700 text-[10px]">{date}</span>
-                </div>
-                {item.properties && item.properties.length > 0 && (
-                  <div className="ml-9 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                    {item.properties.map((prop, i) => (
-                      <span key={i} className="text-[11px] text-blue-300/80">{prop}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {items.map((item) => (
+            <VaultItemRow
+              key={item.id}
+              item={item}
+              onRetrieve={() => setRetrieveTarget(item)}
+            />
+          ))}
         </div>
       )}
 

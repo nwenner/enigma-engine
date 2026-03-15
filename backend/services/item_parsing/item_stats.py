@@ -84,89 +84,138 @@ _CLASS_NAMES: dict[int, str] = {
     7: "Warlock",
 }
 
-# stat 107 item_singleskill — (class_id, local_skill_id) → skill name
-# Sourced from data/excel_full/skills.txt, charclass column, in row order (0-indexed per class).
-_CLASS_SKILL_NAMES: dict[int, dict[int, str]] = {
-    0: {  # Amazon
-        0: "Magic Arrow", 1: "Fire Arrow", 2: "Inner Sight", 3: "Critical Strike",
-        4: "Jab", 5: "Cold Arrow", 6: "Multiple Shot", 7: "Dodge",
-        8: "Power Strike", 9: "Poison Javelin", 10: "Exploding Arrow", 11: "Slow Missiles",
-        12: "Avoid", 13: "Impale", 14: "Lightning Bolt", 15: "Ice Arrow",
-        16: "Guided Arrow", 17: "Penetrate", 18: "Charged Strike", 19: "Plague Javelin",
-        20: "Strafe", 21: "Immolation Arrow", 22: "Dopplezon", 23: "Evade",
-        24: "Fend", 25: "Freezing Arrow", 26: "Valkyrie", 27: "Pierce",
-        28: "Lightning Strike", 29: "Lightning Fury",
-    },
-    1: {  # Sorceress
-        0: "Fire Bolt", 1: "Warmth", 2: "Charged Bolt", 3: "Ice Bolt",
-        4: "Frozen Armor", 5: "Inferno", 6: "Static Field", 7: "Telekinesis",
-        8: "Frost Nova", 9: "Ice Blast", 10: "Blaze", 11: "Fire Ball",
-        12: "Nova", 13: "Lightning", 14: "Shiver Armor", 15: "Fire Wall",
-        16: "Enchant", 17: "Chain Lightning", 18: "Teleport", 19: "Glacial Spike",
-        20: "Meteor", 21: "Thunder Storm", 22: "Energy Shield", 23: "Blizzard",
-        24: "Chilling Armor", 25: "Fire Mastery", 26: "Hydra", 27: "Lightning Mastery",
-        28: "Frozen Orb", 29: "Cold Mastery",
-    },
-    2: {  # Necromancer
-        0: "Amplify Damage", 1: "Teeth", 2: "Bone Armor", 3: "Skeleton Mastery",
-        4: "Raise Skeleton", 5: "Dim Vision", 6: "Weaken", 7: "Poison Dagger",
-        8: "Corpse Explosion", 9: "Clay Golem", 10: "Iron Maiden", 11: "Terror",
-        12: "Bone Wall", 13: "Golem Mastery", 14: "Raise Skeletal Mage", 15: "Confuse",
-        16: "Life Tap", 17: "Poison Explosion", 18: "Bone Spear", 19: "BloodGolem",
-        20: "Attract", 21: "Decrepify", 22: "Bone Prison", 23: "Summon Resist",
-        24: "IronGolem", 25: "Lower Resist", 26: "Poison Nova", 27: "Bone Spirit",
-        28: "FireGolem", 29: "Revive",
-    },
-    3: {  # Paladin
-        0: "Sacrifice", 1: "Smite", 2: "Might", 3: "Prayer",
-        4: "Resist Fire", 5: "Holy Bolt", 6: "Holy Fire", 7: "Thorns",
-        8: "Defiance", 9: "Resist Cold", 10: "Zeal", 11: "Charge",
-        12: "Blessed Aim", 13: "Cleansing", 14: "Resist Lightning", 15: "Vengeance",
-        16: "Blessed Hammer", 17: "Concentration", 18: "Holy Freeze", 19: "Vigor",
-        20: "Conversion", 21: "Holy Shield", 22: "Holy Shock", 23: "Sanctuary",
-        24: "Meditation", 25: "Fist of the Heavens", 26: "Fanaticism", 27: "Conviction",
-        28: "Redemption", 29: "Salvation",
-    },
-    4: {  # Barbarian
-        0: "Bash", 1: "Blade Mastery", 2: "Axe Mastery", 3: "Mace Mastery",
-        4: "Howl", 5: "Find Potion", 6: "Leap", 7: "Double Swing",
-        8: "Pole Arm Mastery", 9: "Throwing Mastery", 10: "Spear Mastery", 11: "Taunt",
-        12: "Shout", 13: "Stun", 14: "Double Throw", 15: "Increased Stamina",
-        16: "Find Item", 17: "Leap Attack", 18: "Concentrate", 19: "Iron Skin",
-        20: "Battle Cry", 21: "Frenzy", 22: "Increased Speed", 23: "Battle Orders",
-        24: "Grim Ward", 25: "Whirlwind", 26: "Berserk", 27: "Natural Resistance",
-        28: "War Cry", 29: "Battle Command",
-    },
-    5: {  # Druid
-        0: "Raven", 1: "Plague Poppy", 2: "Werewolf", 3: "Shape Shifting",
-        4: "Firestorm", 5: "Oak Sage", 6: "Summon Spirit Wolf", 7: "Werebear",
-        8: "Molten Boulder", 9: "Arctic Blast", 10: "Cycle of Life", 11: "Feral Rage",
-        12: "Maul", 13: "Eruption", 14: "Cyclone Armor", 15: "Heart of Wolverine",
-        16: "Summon Fenris", 17: "Rabies", 18: "Fire Claws", 19: "Twister",
-        20: "Vines", 21: "Hunger", 22: "Shock Wave", 23: "Volcano",
-        24: "Tornado", 25: "Spirit of Barbs", 26: "Summon Grizzly", 27: "Fury",
-        28: "Armageddon", 29: "Hurricane",
-    },
-    6: {  # Assassin
-        0: "Fire Trauma", 1: "Claw Mastery", 2: "Psychic Hammer", 3: "Tiger Strike",
-        4: "Dragon Talon", 5: "Shock Field", 6: "Blade Sentinel", 7: "Quickness",
-        8: "Fists of Fire", 9: "Dragon Claw", 10: "Charged Bolt Sentry", 11: "Wake of Fire Sentry",
-        12: "Weapon Block", 13: "Cloak of Shadows", 14: "Cobra Strike", 15: "Blade Fury",
-        16: "Fade", 17: "Shadow Warrior", 18: "Claws of Thunder", 19: "Dragon Tail",
-        20: "Lightning Sentry", 21: "Inferno Sentry", 22: "Mind Blast", 23: "Blades of Ice",
-        24: "Dragon Flight", 25: "Death Sentry", 26: "Blade Shield", 27: "Venom",
-        28: "Shadow Master", 29: "Royal Strike",
-    },
-    7: {  # Warlock (charclass="war" in skills.txt)
-        0: "Summon Goatman", 1: "Demonic Mastery", 2: "Death Mark", 3: "Summon Tainted",
-        4: "Summon Defiler", 5: "Blood Oath", 6: "Engorge", 7: "Blood Boil",
-        8: "Consume", 9: "Bind Demon", 10: "Levitate", 11: "Eldritch Blast",
-        12: "Hex Bane", 13: "Hex Siphon", 14: "Psychic Ward", 15: "Echoing Strike",
-        16: "Hex Purge", 17: "Blade Warp", 18: "Cleave", 19: "Mirrored Blades",
-        20: "Sigil Lethargy", 21: "Ring of Fire", 22: "Miasma Bolt", 23: "Sigil Rancor",
-        24: "Enhanced Entropy", 25: "Flame Wave", 26: "Miasma Chains", 27: "Sigil Death",
-        28: "Apocalypse", 29: "Abyss",
-    },
+# stat 107 item_singleskill — global skill ID (from skills.txt *Id column) → (name, class_label)
+# class_label is appended as "(ClassName Only)" in the tooltip, matching D2R's display.
+# Sourced from data/excel_full/skills.txt; IDs are the *Id column values.
+_GLOBAL_SKILL_NAMES: dict[int, tuple[str, str]] = {
+    # Amazon (6–35)
+    6:  ("Magic Arrow",      "Amazon"),    7:  ("Fire Arrow",         "Amazon"),
+    8:  ("Inner Sight",      "Amazon"),    9:  ("Critical Strike",    "Amazon"),
+    10: ("Jab",              "Amazon"),    11: ("Cold Arrow",         "Amazon"),
+    12: ("Multiple Shot",    "Amazon"),    13: ("Dodge",              "Amazon"),
+    14: ("Power Strike",     "Amazon"),    15: ("Poison Javelin",     "Amazon"),
+    16: ("Exploding Arrow",  "Amazon"),    17: ("Slow Missiles",      "Amazon"),
+    18: ("Avoid",            "Amazon"),    19: ("Impale",             "Amazon"),
+    20: ("Lightning Bolt",   "Amazon"),    21: ("Ice Arrow",          "Amazon"),
+    22: ("Guided Arrow",     "Amazon"),    23: ("Penetrate",          "Amazon"),
+    24: ("Charged Strike",   "Amazon"),    25: ("Plague Javelin",     "Amazon"),
+    26: ("Strafe",           "Amazon"),    27: ("Immolation Arrow",   "Amazon"),
+    28: ("Dopplezon",        "Amazon"),    29: ("Evade",              "Amazon"),
+    30: ("Fend",             "Amazon"),    31: ("Freezing Arrow",     "Amazon"),
+    32: ("Valkyrie",         "Amazon"),    33: ("Pierce",             "Amazon"),
+    34: ("Lightning Strike", "Amazon"),    35: ("Lightning Fury",     "Amazon"),
+    # Sorceress (36–65)
+    36: ("Fire Bolt",        "Sorceress"), 37: ("Warmth",             "Sorceress"),
+    38: ("Charged Bolt",     "Sorceress"), 39: ("Ice Bolt",           "Sorceress"),
+    40: ("Frozen Armor",     "Sorceress"), 41: ("Inferno",            "Sorceress"),
+    42: ("Static Field",     "Sorceress"), 43: ("Telekinesis",        "Sorceress"),
+    44: ("Frost Nova",       "Sorceress"), 45: ("Ice Blast",          "Sorceress"),
+    46: ("Blaze",            "Sorceress"), 47: ("Fire Ball",          "Sorceress"),
+    48: ("Nova",             "Sorceress"), 49: ("Lightning",          "Sorceress"),
+    50: ("Shiver Armor",     "Sorceress"), 51: ("Fire Wall",          "Sorceress"),
+    52: ("Enchant",          "Sorceress"), 53: ("Chain Lightning",    "Sorceress"),
+    54: ("Teleport",         "Sorceress"), 55: ("Glacial Spike",      "Sorceress"),
+    56: ("Meteor",           "Sorceress"), 57: ("Thunder Storm",      "Sorceress"),
+    58: ("Energy Shield",    "Sorceress"), 59: ("Blizzard",           "Sorceress"),
+    60: ("Chilling Armor",   "Sorceress"), 61: ("Fire Mastery",       "Sorceress"),
+    62: ("Hydra",            "Sorceress"), 63: ("Lightning Mastery",  "Sorceress"),
+    64: ("Frozen Orb",       "Sorceress"), 65: ("Cold Mastery",       "Sorceress"),
+    # Necromancer (66–95)
+    66: ("Amplify Damage",   "Necromancer"), 67: ("Teeth",            "Necromancer"),
+    68: ("Bone Armor",       "Necromancer"), 69: ("Skeleton Mastery", "Necromancer"),
+    70: ("Raise Skeleton",   "Necromancer"), 71: ("Dim Vision",       "Necromancer"),
+    72: ("Weaken",           "Necromancer"), 73: ("Poison Dagger",    "Necromancer"),
+    74: ("Corpse Explosion", "Necromancer"), 75: ("Clay Golem",       "Necromancer"),
+    76: ("Iron Maiden",      "Necromancer"), 77: ("Terror",           "Necromancer"),
+    78: ("Bone Wall",        "Necromancer"), 79: ("Golem Mastery",    "Necromancer"),
+    80: ("Raise Skeletal Mage","Necromancer"),81: ("Confuse",          "Necromancer"),
+    82: ("Life Tap",         "Necromancer"), 83: ("Poison Explosion", "Necromancer"),
+    84: ("Bone Spear",       "Necromancer"), 85: ("BloodGolem",       "Necromancer"),
+    86: ("Attract",          "Necromancer"), 87: ("Decrepify",        "Necromancer"),
+    88: ("Bone Prison",      "Necromancer"), 89: ("Summon Resist",    "Necromancer"),
+    90: ("IronGolem",        "Necromancer"), 91: ("Lower Resist",     "Necromancer"),
+    92: ("Poison Nova",      "Necromancer"), 93: ("Bone Spirit",      "Necromancer"),
+    94: ("FireGolem",        "Necromancer"), 95: ("Revive",           "Necromancer"),
+    # Paladin (96–125)
+    96:  ("Sacrifice",          "Paladin"), 97:  ("Smite",           "Paladin"),
+    98:  ("Might",              "Paladin"), 99:  ("Prayer",          "Paladin"),
+    100: ("Resist Fire",        "Paladin"), 101: ("Holy Bolt",       "Paladin"),
+    102: ("Holy Fire",          "Paladin"), 103: ("Thorns",          "Paladin"),
+    104: ("Defiance",           "Paladin"), 105: ("Resist Cold",     "Paladin"),
+    106: ("Zeal",               "Paladin"), 107: ("Charge",          "Paladin"),
+    108: ("Blessed Aim",        "Paladin"), 109: ("Cleansing",       "Paladin"),
+    110: ("Resist Lightning",   "Paladin"), 111: ("Vengeance",       "Paladin"),
+    112: ("Blessed Hammer",     "Paladin"), 113: ("Concentration",   "Paladin"),
+    114: ("Holy Freeze",        "Paladin"), 115: ("Vigor",           "Paladin"),
+    116: ("Conversion",         "Paladin"), 117: ("Holy Shield",     "Paladin"),
+    118: ("Holy Shock",         "Paladin"), 119: ("Sanctuary",       "Paladin"),
+    120: ("Meditation",         "Paladin"), 121: ("Fist of the Heavens","Paladin"),
+    122: ("Fanaticism",         "Paladin"), 123: ("Conviction",      "Paladin"),
+    124: ("Redemption",         "Paladin"), 125: ("Salvation",       "Paladin"),
+    # Barbarian (126–155)
+    126: ("Bash",               "Barbarian"), 127: ("Blade Mastery",   "Barbarian"),
+    128: ("Axe Mastery",        "Barbarian"), 129: ("Mace Mastery",    "Barbarian"),
+    130: ("Howl",               "Barbarian"), 131: ("Find Potion",     "Barbarian"),
+    132: ("Leap",               "Barbarian"), 133: ("Double Swing",    "Barbarian"),
+    134: ("Pole Arm Mastery",   "Barbarian"), 135: ("Throwing Mastery","Barbarian"),
+    136: ("Spear Mastery",      "Barbarian"), 137: ("Taunt",           "Barbarian"),
+    138: ("Shout",              "Barbarian"), 139: ("Stun",            "Barbarian"),
+    140: ("Double Throw",       "Barbarian"), 141: ("Increased Stamina","Barbarian"),
+    142: ("Find Item",          "Barbarian"), 143: ("Leap Attack",     "Barbarian"),
+    144: ("Concentrate",        "Barbarian"), 145: ("Iron Skin",       "Barbarian"),
+    146: ("Battle Cry",         "Barbarian"), 147: ("Frenzy",          "Barbarian"),
+    148: ("Increased Speed",    "Barbarian"), 149: ("Battle Orders",   "Barbarian"),
+    150: ("Grim Ward",          "Barbarian"), 151: ("Whirlwind",       "Barbarian"),
+    152: ("Berserk",            "Barbarian"), 153: ("Natural Resistance","Barbarian"),
+    154: ("War Cry",            "Barbarian"), 155: ("Battle Command",  "Barbarian"),
+    # Druid (221–250)
+    221: ("Raven",              "Druid"), 222: ("Plague Poppy",      "Druid"),
+    223: ("Werewolf",           "Druid"), 224: ("Shape Shifting",    "Druid"),
+    225: ("Firestorm",          "Druid"), 226: ("Oak Sage",          "Druid"),
+    227: ("Summon Spirit Wolf", "Druid"), 228: ("Werebear",          "Druid"),
+    229: ("Molten Boulder",     "Druid"), 230: ("Arctic Blast",      "Druid"),
+    231: ("Cycle of Life",      "Druid"), 232: ("Feral Rage",        "Druid"),
+    233: ("Maul",               "Druid"), 234: ("Eruption",          "Druid"),
+    235: ("Cyclone Armor",      "Druid"), 236: ("Heart of Wolverine","Druid"),
+    237: ("Summon Fenris",      "Druid"), 238: ("Rabies",            "Druid"),
+    239: ("Fire Claws",         "Druid"), 240: ("Twister",           "Druid"),
+    241: ("Vines",              "Druid"), 242: ("Hunger",            "Druid"),
+    243: ("Shock Wave",         "Druid"), 244: ("Volcano",           "Druid"),
+    245: ("Tornado",            "Druid"), 246: ("Spirit of Barbs",   "Druid"),
+    247: ("Summon Grizzly",     "Druid"), 248: ("Fury",              "Druid"),
+    249: ("Armageddon",         "Druid"), 250: ("Hurricane",         "Druid"),
+    # Assassin (251–280)
+    251: ("Fire Trauma",        "Assassin"), 252: ("Claw Mastery",       "Assassin"),
+    253: ("Psychic Hammer",     "Assassin"), 254: ("Tiger Strike",        "Assassin"),
+    255: ("Dragon Talon",       "Assassin"), 256: ("Shock Field",         "Assassin"),
+    257: ("Blade Sentinel",     "Assassin"), 258: ("Quickness",           "Assassin"),
+    259: ("Fists of Fire",      "Assassin"), 260: ("Dragon Claw",         "Assassin"),
+    261: ("Charged Bolt Sentry","Assassin"), 262: ("Wake of Fire Sentry", "Assassin"),
+    263: ("Weapon Block",       "Assassin"), 264: ("Cloak of Shadows",    "Assassin"),
+    265: ("Cobra Strike",       "Assassin"), 266: ("Blade Fury",          "Assassin"),
+    267: ("Fade",               "Assassin"), 268: ("Shadow Warrior",      "Assassin"),
+    269: ("Claws of Thunder",   "Assassin"), 270: ("Dragon Tail",         "Assassin"),
+    271: ("Lightning Sentry",   "Assassin"), 272: ("Inferno Sentry",      "Assassin"),
+    273: ("Mind Blast",         "Assassin"), 274: ("Blades of Ice",       "Assassin"),
+    275: ("Dragon Flight",      "Assassin"), 276: ("Death Sentry",        "Assassin"),
+    277: ("Blade Shield",       "Assassin"), 278: ("Venom",               "Assassin"),
+    279: ("Shadow Master",      "Assassin"), 280: ("Royal Strike",        "Assassin"),
+    # Warlock (373–402)
+    373: ("Summon Goatman",  "Warlock"), 374: ("Demonic Mastery",  "Warlock"),
+    375: ("Death Mark",      "Warlock"), 376: ("Summon Tainted",   "Warlock"),
+    377: ("Summon Defiler",  "Warlock"), 378: ("Blood Oath",       "Warlock"),
+    379: ("Engorge",         "Warlock"), 380: ("Blood Boil",       "Warlock"),
+    381: ("Consume",         "Warlock"), 382: ("Bind Demon",       "Warlock"),
+    383: ("Levitate",        "Warlock"), 384: ("Eldritch Blast",   "Warlock"),
+    385: ("Hex Bane",        "Warlock"), 386: ("Hex Siphon",       "Warlock"),
+    387: ("Psychic Ward",    "Warlock"), 388: ("Echoing Strike",   "Warlock"),
+    389: ("Hex Purge",       "Warlock"), 390: ("Blade Warp",       "Warlock"),
+    391: ("Cleave",          "Warlock"), 392: ("Mirrored Blades",  "Warlock"),
+    393: ("Sigil Lethargy",  "Warlock"), 394: ("Ring of Fire",     "Warlock"),
+    395: ("Miasma Bolt",     "Warlock"), 396: ("Sigil Rancor",     "Warlock"),
+    397: ("Enhanced Entropy","Warlock"), 398: ("Flame Wave",       "Warlock"),
+    399: ("Miasma Chains",   "Warlock"), 400: ("Sigil Death",      "Warlock"),
+    401: ("Apocalypse",      "Warlock"), 402: ("Abyss",            "Warlock"),
 }
 
 # stat 188 item_addskill_tab — param low byte = tab_id
@@ -337,15 +386,13 @@ def format_item_stats(stats: list[RawStat]) -> list[str]:
             continue
 
         if stat_id == 107:  # item_singleskill
-            # param (9 bits): bits 0-5 = local skill_id, bits 6-8 = class_id
-            skill_id = p & 0x3F
-            class_id = (p >> 6) & 0x7
-            class_name = _CLASS_NAMES.get(class_id, f"Class {class_id}")
-            skill_name = _CLASS_SKILL_NAMES.get(class_id, {}).get(skill_id)
-            if skill_name:
-                lines.append(f"+{v} to {skill_name}")
+            # param is the global skill ID from skills.txt (*Id column).
+            entry = _GLOBAL_SKILL_NAMES.get(p)
+            if entry:
+                skill_name, class_name = entry
+                lines.append(f"+{v} to {skill_name} ({class_name} Only)")
             else:
-                lines.append(f"+{v} to [Skill {skill_id}] ({class_name})")
+                lines.append(f"+{v} to [Skill {p}]")
             continue
 
         if stat_id == 126:  # item_elemskill — elemental class skills
