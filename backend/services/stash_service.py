@@ -570,19 +570,19 @@ async def store_item(
 async def retrieve_vault_item(
     session: AsyncSession,
     vault_item_id: int,
-    machine: str,
-    conn: dict,
-    save_dir: str,
-    stash_filename: str,
 ) -> str:
     """
-    Write the stored item to tab 5 of the target machine's stash, then delete the VaultItem.
+    Write the stored item to tab 5 of the latest local snapshot (Mothership), then
+    delete the VaultItem.  No SSH required — Sync to Device will push it to the player's
+    machine.
 
-    SAFETY: Creates backup before any stash modification.
+    SAFETY: Creates a local backup before any stash modification.
     Returns the item's display name.
     """
-    from backend.services import ssh_client as ssh_mod
-    from backend.services.backup_manager import _sftp_download, _sftp_upload, create_snapshot
+    from backend.config import get_settings
+    from backend.models import BackupSnapshot
+    from backend.services.backup_manager import create_local_snapshot
+    from backend.services.item_parsing.stash_format import validate_page_items
 
     result = await session.execute(
         select(VaultItem).where(VaultItem.id == vault_item_id)
@@ -591,52 +591,45 @@ async def retrieve_vault_item(
     if vault_item is None:
         raise ValueError(f"VaultItem {vault_item_id} not found")
 
-    item_bytes = vault_item.raw_item_bytes
+    item_bytes = bytes(vault_item.raw_item_bytes)
     display_name = vault_item.name or f"quality={vault_item.quality} item"
+    stash_filename = _stash_filename(vault_item.hardcore)
 
-    await create_snapshot(
-        session=session,
-        machine=machine,
-        conn_kwargs=conn,
-        save_dir=save_dir,
-        label="pre_vault_retrieve",
+    # Find the latest Mothership snapshot
+    snap_result = await session.execute(
+        select(BackupSnapshot)
+        .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+        .order_by(BackupSnapshot.created_at.desc())
+        .limit(1)
     )
+    snap = snap_result.scalar_one_or_none()
+    if snap is None:
+        raise ValueError("No snapshot available. Check In from a device first.")
 
-    remote_path = ssh_mod.normalize_path(f"{save_dir}/{stash_filename}")
+    cfg = get_settings()
+    snap_dir = cfg.data_dir / snap.snapshot_path
+    stash_path = snap_dir / stash_filename
 
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp) / stash_filename
+    if not stash_path.exists():
+        raise ValueError(f"{stash_filename} not found in snapshot. Check In from a device first.")
 
-        def _download():
-            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
-                _sftp_download(sftp, remote_path, tmp_path)
+    await create_local_snapshot(session, snap, label="pre_vault_retrieve")
 
-        await asyncio.to_thread(_download)
+    stash = parse_stash(stash_path, hardcore=vault_item.hardcore)
 
-        hardcore = "HardCore" in stash_filename
-        stash = parse_stash(tmp_path, hardcore=hardcore)
+    if len(stash.pages) <= PORTAL_TAB_INDEX:
+        raise RuntimeError(f"{stash_filename} has fewer than {PORTAL_TAB_INDEX + 1} pages")
 
-        if len(stash.pages) <= PORTAL_TAB_INDEX:
-            raise RuntimeError(
-                f"{stash_filename} has fewer than {PORTAL_TAB_INDEX + 1} pages"
-            )
+    if not validate_page_items(stash.pages[PORTAL_TAB_INDEX]):
+        raise RuntimeError("Tab 5 failed item validation — aborting to protect stash")
 
-        modified_page = insert_item_into_page(stash.pages[PORTAL_TAB_INDEX], item_bytes)
-        stash.pages[PORTAL_TAB_INDEX] = modified_page
-
-        new_bytes = serialize_stash(stash)
-        upload_path = Path(tmp) / f"{stash_filename}.out"
-        upload_path.write_bytes(new_bytes)
-
-        def _upload():
-            with ssh_mod.get_sftp(**conn) as (_ssh, sftp):
-                _sftp_upload(sftp, upload_path, remote_path)
-
-        await asyncio.to_thread(_upload)
-        await _update_local_snapshot_stash(session, stash_filename, new_bytes)
+    stash.pages[PORTAL_TAB_INDEX] = insert_item_into_page(stash.pages[PORTAL_TAB_INDEX], item_bytes)
+    new_bytes = serialize_stash(stash)
+    stash_path.write_bytes(new_bytes)
+    await _update_local_snapshot_stash(session, stash_filename, new_bytes)
 
     await session.delete(vault_item)
     await session.commit()
 
-    log.info("Vault: retrieved %s to tab 5 on %s", display_name, machine)
+    log.info("Vault: retrieved %s to tab 5 in snapshot", display_name)
     return display_name

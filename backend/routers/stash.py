@@ -106,9 +106,6 @@ class StoreItemRequest(BaseModel):
     item_index: int
 
 
-class VaultRetrieveRequest(BaseModel):
-    machine: Machine
-    mode: Mode
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -144,7 +141,12 @@ async def _check_not_running(conn: dict, machine: Machine) -> None:
     except HTTPException:
         raise
     except Exception as e:
-        log.warning("Could not verify D2R is not running: %s", e)
+        log.warning("Could not verify D2R is not running on %s: %s — blocking write to be safe", machine, e)
+        raise HTTPException(
+            409,
+            f"Could not verify D2R is not running on {machine.upper()} ({e}). "
+            "Close the game and try again."
+        )
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -520,30 +522,13 @@ async def get_stash_debug(
 @router.post("/vault/items/{item_id}/retrieve")
 async def retrieve_vault_item(
     item_id: int,
-    body: VaultRetrieveRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    """Write a stored vault item to tab 5 on the target machine. D2R must not be running."""
+    """Write a stored vault item to tab 5 of the local snapshot. No SSH required — Sync to Device will push it."""
     from backend.services.stash_service import retrieve_vault_item as _retrieve
 
-    hardcore = body.mode == "hc"
-    stash_filename = (
-        "ModernSharedStashHardCoreV2.d2i" if hardcore
-        else "ModernSharedStashSoftCoreV2.d2i"
-    )
-
-    conn, save_dir = await _get_conn_and_dir(session, body.machine)
-    await _check_not_running(conn, body.machine)
-
     try:
-        display_name = await _retrieve(
-            session=session,
-            vault_item_id=item_id,
-            machine=body.machine,
-            conn=conn,
-            save_dir=save_dir,
-            stash_filename=stash_filename,
-        )
+        display_name = await _retrieve(session=session, vault_item_id=item_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
@@ -552,5 +537,5 @@ async def retrieve_vault_item(
 
     return {
         "success": True,
-        "message": f"{display_name} written to stash tab 5 on {body.machine.upper()}",
+        "message": f"{display_name} written to stash tab 5 in vault snapshot",
     }

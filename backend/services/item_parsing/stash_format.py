@@ -393,6 +393,11 @@ def serialize_stash(stash: ParsedStash) -> bytes:
     out = bytearray(stash._raw_header)
     # Write current gold into header bytes 12–15
     struct.pack_into("<I", out, 12, stash.gold)
+    # Update page0_size (header offset 16) — D2R uses this to locate page 1.
+    # Formula mirrors separator slot_size: JM(2)+count(2) + raw_bytes + next_sep(64).
+    if len(stash.pages) > 1:
+        page0_size = 4 + len(stash.pages[0].raw_bytes) + MODERN_SEP_SIZE
+        struct.pack_into("<I", out, 16, page0_size)
 
     for page_idx, page in enumerate(stash.pages):
         if page_idx > 0:

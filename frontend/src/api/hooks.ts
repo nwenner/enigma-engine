@@ -468,10 +468,10 @@ export function useRetrieveVaultItem() {
   return useMutation<
     { success: boolean; message: string },
     Error,
-    { itemId: number; machine: "pc" | "deck"; mode: "sc" | "hc" }
+    { itemId: number; mode: "sc" | "hc" }
   >({
-    mutationFn: ({ itemId, machine, mode }) =>
-      api.post(`/vault/items/${itemId}/retrieve`, { machine, mode }).then((r) => r.data),
+    mutationFn: ({ itemId }) =>
+      api.post(`/vault/items/${itemId}/retrieve`).then((r) => r.data),
     onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "items", mode] });

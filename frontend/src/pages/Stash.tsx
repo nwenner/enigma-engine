@@ -212,12 +212,11 @@ function RetrieveVaultModal({
   onClose: () => void;
 }) {
   const retrieve = useRetrieveVaultItem();
-  const [machine, setMachine] = useState<Machine>("pc");
   const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
 
   const handleRetrieve = async () => {
     try {
-      await retrieve.mutateAsync({ itemId: item.id, machine, mode });
+      await retrieve.mutateAsync({ itemId: item.id, mode });
       onClose();
     } catch {
       // error shown below
@@ -228,28 +227,12 @@ function RetrieveVaultModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
       <div className="card-d2 w-full max-w-sm p-6 animate-fadeIn">
         <h3 className="font-diablo text-d2gold text-sm tracking-widest mb-1">Retrieve Item</h3>
-        <p className="text-slate-400 text-xs mb-4">
+        <p className="text-slate-400 text-xs mb-5">
           <span className={`font-semibold ${qualityColor(item.quality).split(" ")[0]}`}>
             {displayName}
           </span>{" "}
-          will be written to stash tab 5.
+          will be written to stash tab 5 in the vault snapshot. Use <span className="text-d2gold">Sync to Device</span> to push it to your machine.
         </p>
-
-        <div className="flex gap-2 mb-5">
-          {(["pc", "deck"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMachine(m)}
-              className={`flex-1 text-xs py-2 border transition-colors ${
-                machine === m
-                  ? "border-d2gold text-d2gold bg-d2gold/8"
-                  : "border-d2bg-border text-slate-500 hover:border-slate-500"
-              }`}
-            >
-              {m === "pc" ? "Windows PC" : "Steam Deck"}
-            </button>
-          ))}
-        </div>
 
         {retrieve.error && (
           <p className="text-red-400 text-xs mb-3 bg-red-950/30 border border-red-800/40 px-3 py-2">
@@ -260,7 +243,7 @@ function RetrieveVaultModal({
         <div className="flex gap-2 justify-end">
           <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">Cancel</button>
           <button onClick={handleRetrieve} disabled={retrieve.isPending} className="btn-d2 text-xs px-4 py-2">
-            {retrieve.isPending ? "Retrieving…" : "Retrieve"}
+            {retrieve.isPending ? "Retrieving…" : "Retrieve to Snapshot"}
           </button>
         </div>
       </div>
