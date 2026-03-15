@@ -140,6 +140,7 @@ function MilestoneRow({
   const [claimError, setClaimError] = useState<string | null>(null);
 
   const myAchs = achievements.filter((a) => a.milestone_id === ms.id);
+  const isCompleted = myAchs.length > 0;
   const unclaimedWithReward = myAchs.filter((a) => !a.claimed_at && ms.has_reward);
 
   const handleClaim = async (ach: SeasonAchievement) => {
@@ -152,94 +153,168 @@ function MilestoneRow({
   };
 
   return (
-    <div className={`card-d2 p-4 space-y-2 ${ms.is_expired ? "opacity-60" : ""}`}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className={`text-sm font-medium ${ms.is_expired ? "text-slate-500" : "text-slate-200"}`}>
-            {ms.name}
-          </span>
-          <span className="text-[10px] uppercase tracking-widest text-slate-500 border border-d2bg-border px-1.5 py-0.5">
-            {milestoneTypeLabel(ms.milestone_type)}
-            {ms.milestone_type === "level" && ms.level_target ? ` ${ms.level_target}` : ""}
-            {ms.milestone_type === "gold_vault" && ms.numeric_target != null ? ` ≥ ${fmtGoldTarget(ms.numeric_target)}` : ""}
-          </span>
-          {ms.time_limit_hours !== null && (
-            <span className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
-              ms.is_expired
-                ? "text-red-500/60 border-red-900"
-                : "text-amber-400/80 border-amber-900/50"
-            }`}>
-              {ms.is_expired ? "Expired" : `⏱ ${fmtTimeLimitHours(ms.time_limit_hours)}`}
-            </span>
-          )}
-          {ms.milestone_type !== "gold_vault" && (
-            <span className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
-              ms.scope === "account"
-                ? "text-d2gold/50 border-d2gold/20"
-                : "text-slate-500 border-d2bg-border"
-            }`}>
-              {ms.scope === "account" ? "Account" : "Per Char"}
-            </span>
-          )}
-          {ms.reward_item_name && (
-            <span className="text-[10px] uppercase tracking-widest text-d2gold/70 border border-d2gold/30 px-1.5 py-0.5">
-              🎁 {ms.reward_item_name}
-            </span>
-          )}
-        </div>
-        {canClaim && unclaimedWithReward.length > 0 && (
-          <button
-            onClick={() => handleClaim(unclaimedWithReward[0])}
-            disabled={claimMutation.isPending || d2rRunning}
-            title={d2rRunning ? "D2R is running — close the game first" : undefined}
-            className="btn-d2 text-xs shrink-0"
-          >
-            {claimMutation.isPending ? "Claiming…" : "Claim Reward →"}
-          </button>
-        )}
-      </div>
-
-      {myAchs.length > 0 && (
-        <div className="space-y-1 pt-1">
-          {myAchs.map((a) => {
-            const isSeasonWide = a.character_name === "(Season)";
-            return (
-              <div key={a.id} className="flex items-center gap-2 text-xs text-slate-400">
-                <span className={a.claimed_at ? "text-green-400" : "text-slate-300"}>
-                  {a.claimed_at ? "✓" : "○"}
-                </span>
-                {isSeasonWide ? (
-                  <span className="text-slate-500 italic">Account milestone</span>
-                ) : (
-                  <>
-                    <span>{a.character_name}</span>
-                    <span className="text-slate-600">{a.character_class}</span>
-                    <span className="text-slate-600">Lvl {a.character_level}</span>
-                  </>
-                )}
-                <span className="text-slate-600">— {fmtDate(a.achieved_at)}</span>
-                {a.claimed_at && (
-                  <span className="text-green-500/70">Claimed {fmtDate(a.claimed_at)}</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+    <div
+      className={`relative card-d2 overflow-hidden transition-all duration-500 ${
+        isCompleted
+          ? "card-d2-clean border-d2gold/45 animate-glowPulseOnce"
+          : ms.is_expired
+          ? "opacity-50"
+          : "opacity-90"
+      }`}
+      style={
+        isCompleted
+          ? {
+              background: "linear-gradient(150deg, rgba(200,168,75,0.07) 0%, #111318 55%)",
+              boxShadow: "0 0 18px rgba(200,168,75,0.22), 0 4px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+            }
+          : undefined
+      }
+    >
+      {/* Completed: left accent bar */}
+      {isCompleted && (
+        <div
+          className="absolute left-0 top-0 bottom-0 w-0.5 pointer-events-none"
+          style={{
+            background: "linear-gradient(to bottom, rgba(200,168,75,0.9) 0%, rgba(200,168,75,0.3) 60%, transparent 100%)",
+          }}
+        />
       )}
 
-      {myAchs.length === 0 && (
-        <p className="text-slate-600 text-xs">
-          {ms.is_expired
-            ? "Time window closed — milestone can no longer be earned."
-            : ms.scope === "account"
+      <div className={`p-4 space-y-2 ${isCompleted ? "pl-5" : ""}`}>
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* Status glyph */}
+            <span
+              className={`text-sm leading-none select-none ${
+                isCompleted ? "text-emerald-400" : ms.is_expired ? "text-slate-700" : "text-slate-700"
+              }`}
+            >
+              {isCompleted ? "✦" : ms.is_expired ? "✕" : "◈"}
+            </span>
+
+            {/* Milestone name */}
+            <span
+              className={`text-sm font-semibold tracking-wide ${
+                isCompleted ? "text-d2gold" : ms.is_expired ? "text-slate-600" : "text-slate-300"
+              }`}
+            >
+              {ms.name}
+            </span>
+
+            {/* Type badge */}
+            <span className="text-[10px] uppercase tracking-widest text-slate-500 border border-d2bg-border px-1.5 py-0.5">
+              {milestoneTypeLabel(ms.milestone_type)}
+              {ms.milestone_type === "level" && ms.level_target ? ` ${ms.level_target}` : ""}
+              {ms.milestone_type === "gold_vault" && ms.numeric_target != null
+                ? ` ≥ ${fmtGoldTarget(ms.numeric_target)}`
+                : ""}
+            </span>
+
+            {/* Time limit badge */}
+            {ms.time_limit_hours !== null && (
+              <span
+                className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
+                  ms.is_expired
+                    ? "text-red-500/60 border-red-900"
+                    : "text-amber-400/80 border-amber-900/50"
+                }`}
+              >
+                {ms.is_expired ? "Expired" : `⏱ ${fmtTimeLimitHours(ms.time_limit_hours)}`}
+              </span>
+            )}
+
+            {/* Scope badge */}
+            {ms.milestone_type !== "gold_vault" && (
+              <span
+                className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
+                  ms.scope === "account"
+                    ? "text-d2gold/50 border-d2gold/20"
+                    : "text-slate-500 border-d2bg-border"
+                }`}
+              >
+                {ms.scope === "account" ? "Account" : "Per Char"}
+              </span>
+            )}
+
+            {/* Reward badge */}
+            {ms.reward_item_name && (
+              <span
+                className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
+                  isCompleted
+                    ? "text-d2gold border-d2gold/40 bg-d2gold/5"
+                    : "text-d2gold/70 border-d2gold/30"
+                }`}
+              >
+                🎁 {ms.reward_item_name}
+              </span>
+            )}
+          </div>
+
+          {/* Right side: COMPLETE stamp + claim button */}
+          <div className="shrink-0 flex flex-col items-end gap-2">
+            {isCompleted && (
+              <span className="font-diablo text-[10px] tracking-widest text-emerald-400 animate-stampIn whitespace-nowrap">
+                ✓ COMPLETE
+              </span>
+            )}
+            {canClaim && unclaimedWithReward.length > 0 && (
+              <button
+                onClick={() => handleClaim(unclaimedWithReward[0])}
+                disabled={claimMutation.isPending || d2rRunning}
+                title={d2rRunning ? "D2R is running — close the game first" : undefined}
+                className="btn-d2 text-xs shrink-0"
+              >
+                {claimMutation.isPending ? "Claiming…" : "Claim Reward →"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Achievement entries */}
+        {myAchs.length > 0 && (
+          <div className="space-y-1 pt-2 border-t border-d2gold/15">
+            {myAchs.map((a) => {
+              const isSeasonWide = a.character_name === "(Season)";
+              return (
+                <div key={a.id} className="flex items-center gap-2 text-xs">
+                  <span className={a.claimed_at ? "text-emerald-400" : "text-d2gold/60"}>
+                    {a.claimed_at ? "✦" : "◈"}
+                  </span>
+                  {isSeasonWide ? (
+                    <span className="text-slate-400 italic">Account milestone</span>
+                  ) : (
+                    <>
+                      <span className="text-slate-300">{a.character_name}</span>
+                      <span className="text-slate-600">{a.character_class}</span>
+                      <span className="text-slate-600">Lvl {a.character_level}</span>
+                    </>
+                  )}
+                  <span className="text-slate-700">·</span>
+                  <span className="text-slate-600">{fmtDate(a.achieved_at)}</span>
+                  {a.claimed_at && (
+                    <span className="text-emerald-600/70 text-[10px] uppercase tracking-wide">
+                      Claimed {fmtDate(a.claimed_at)}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {myAchs.length === 0 && (
+          <p className="text-slate-700 text-xs italic">
+            {ms.is_expired
+              ? "Time window closed — milestone can no longer be earned."
+              : ms.scope === "account"
               ? "Not yet achieved this season."
               : "No characters have achieved this yet."}
-        </p>
-      )}
+          </p>
+        )}
 
-      {claimError && (
-        <p className="text-red-400 text-xs mt-1">{claimError}</p>
-      )}
+        {claimError && <p className="text-red-400 text-xs mt-1">{claimError}</p>}
+      </div>
     </div>
   );
 }
