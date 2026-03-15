@@ -38,6 +38,9 @@ ITEM_TYPES: dict[str, str] = {
     # ── Quest / special items ───────────────────────────────────────────────────
     "key": "Key", "box": "Horadric Cube", "bks": "Scroll of Inifuss",
     "pk1": "Key of Terror", "pk2": "Key of Hate", "pk3": "Key of Destruction",
+    "bey": "Baal's Eye", "mbr": "Mephisto's Brain", "dhn": "Diablo's Horn",
+    "ua1": "Ancient Key (Act 1)", "ua2": "Ancient Key (Act 2)", "ua3": "Ancient Key (Act 3)",
+    "ua4": "Ancient Key (Act 4)", "ua5": "Ancient Key (Act 5)",
     "tr1": "Token of Absolution",
     # ── Helmets: Normal / Exceptional / Elite ──────────────────────────────────
     "cap": "Cap",        "skp": "Skull Cap",  "hlm": "Helm",

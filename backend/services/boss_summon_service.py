@@ -70,7 +70,7 @@ BOSS_SUMMON_SETS: list[dict[str, Any]] = [
         "id": "ancients",
         "name": "Uber Ancients",
         "description": "Assemble one key per act to challenge the Uber Ancients.",
-        "required_item_codes": ["xa1", "xa2", "xa3", "xa4", "xa5"],  # Act 1–5 Uber Ancient keys
+        "required_item_codes": ["ua1", "ua2", "ua3", "ua4", "ua5"],  # Act 1–5 Uber Ancient keys
         "sort_order": 3,
     },
 ]
@@ -88,11 +88,11 @@ ITEM_CODE_LABELS: dict[str, str] = {
     "bey": "Baal's Eye",
     "mbr": "Mephisto's Brain",
     "dhn": "Diablo's Horn",
-    "xa1": "Ancient Key (Act 1)",
-    "xa2": "Ancient Key (Act 2)",
-    "xa3": "Ancient Key (Act 3)",
-    "xa4": "Ancient Key (Act 4)",
-    "xa5": "Ancient Key (Act 5)",
+    "ua1": "Ancient Key (Act 1)",
+    "ua2": "Ancient Key (Act 2)",
+    "ua3": "Ancient Key (Act 3)",
+    "ua4": "Ancient Key (Act 4)",
+    "ua5": "Ancient Key (Act 5)",
 }
 
 
@@ -183,8 +183,13 @@ async def check_boss_summon_progress(
             continue
 
         portal_page = stash.pages[PORTAL_TAB_INDEX]
+        log.info(
+            "BossSummon: scanning tab 5 in %s — %d items",
+            filename, len(portal_page.items),
+        )
         for item in portal_page.items:
             code = item.item_type.rstrip()
+            log.info("BossSummon: tab 5 item '%s' (quality=%d, uid=%s)", code, item.quality, item.unique_id)
             if not code:
                 continue
             if code not in all_required_codes:
@@ -195,21 +200,23 @@ async def check_boss_summon_progress(
                 # We need to match by unique_id
                 if item.unique_id == required_uid:
                     found_codes.add(code)
-                    log.debug("BossSummon: matched unique item code '%s' (uid=%d) in tab 5", code, required_uid)
+                    log.info("BossSummon: matched unique item code '%s' (uid=%d) in tab 5", code, required_uid)
                 else:
-                    log.debug(
-                        "BossSummon: skipping '%s' item in tab 5 (uid=%s, need uid=%d)",
+                    log.warning(
+                        "BossSummon: uid mismatch for '%s' in tab 5 (found uid=%s, need uid=%d) — "
+                        "reward library entry may use wrong unique_id",
                         code, item.unique_id, required_uid,
                     )
             else:
                 # Non-unique: item_code match is sufficient
                 found_codes.add(code)
+                log.info("BossSummon: matched item code '%s' in tab 5 (code-only match)", code)
 
     if not found_codes:
-        log.debug("BossSummon: no matching required items in portal tab 5")
+        log.warning("BossSummon: no matching required items in portal tab 5")
         return
 
-    log.debug("BossSummon: found matching item codes in tab 5: %s", found_codes)
+    log.info("BossSummon: found matching item codes in tab 5: %s", found_codes)
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     any_changes = False

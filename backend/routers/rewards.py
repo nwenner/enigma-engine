@@ -114,6 +114,33 @@ def _parse_item_bytes(raw: bytes) -> dict:
     return parse_item_bytes(raw)
 
 
+async def _resolve_catalog_name(
+    session: AsyncSession,
+    parsed: dict,
+) -> str | None:
+    """
+    For unique (quality=7) and set (quality=5) items, look up the proper name
+    from GrailCatalog.  Falls back to the parser's display_name if no entry exists.
+    """
+    from backend.models import GrailCatalog
+    quality = parsed.get("quality")
+    if quality == 7 and parsed.get("unique_id") is not None:
+        result = await session.execute(
+            select(GrailCatalog).where(GrailCatalog.unique_id == parsed["unique_id"])
+        )
+        catalog = result.scalar_one_or_none()
+        if catalog and catalog.name:
+            return catalog.name
+    elif quality == 5 and parsed.get("set_id") is not None:
+        result = await session.execute(
+            select(GrailCatalog).where(GrailCatalog.set_id == parsed["set_id"])
+        )
+        catalog = result.scalar_one_or_none()
+        if catalog and catalog.name:
+            return catalog.name
+    return parsed.get("item_name")
+
+
 def _reward_out(r: SeasonReward) -> RewardOut:
     return RewardOut(
         id=r.id,
@@ -211,6 +238,7 @@ async def create_reward(body: RewardCreate, session: AsyncSession = Depends(get_
         raise HTTPException(400, "Hex bytes cannot be empty")
 
     parsed = _parse_item_bytes(raw)
+    item_name = await _resolve_catalog_name(session, parsed)
 
     # Use explicit category if provided, otherwise auto-detect from quality
     category = body.category or _auto_category(parsed.get("quality"))
@@ -218,7 +246,7 @@ async def create_reward(body: RewardCreate, session: AsyncSession = Depends(get_
     reward = SeasonReward(
         name=body.name.strip(),
         item_code=parsed["item_code"],
-        item_name=parsed["item_name"],
+        item_name=item_name,
         quality=parsed["quality"],
         quality_name=parsed["quality_name"],
         item_level=parsed["item_level"],
@@ -289,12 +317,13 @@ async def register_reward_from_snapshot(
     raw = bytes(portal_page.raw_bytes[item.byte_start : item.byte_end])
 
     parsed = _parse_item_bytes(raw)
+    item_name = await _resolve_catalog_name(session, parsed)
     category = body.category or _auto_category(parsed.get("quality"))
 
     reward = SeasonReward(
         name=body.name.strip(),
         item_code=parsed["item_code"],
-        item_name=parsed["item_name"],
+        item_name=item_name,
         quality=parsed["quality"],
         quality_name=parsed["quality_name"],
         item_level=parsed["item_level"],

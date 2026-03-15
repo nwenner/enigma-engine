@@ -50,14 +50,35 @@ def _find_item_starts(raw: bytes | bytearray, item_count: int) -> list[int]:
     runeword items (e.g. Enigma) are invisible and only their socketed runes
     are detected.
 
+    After recording a match, the scanner advances by a skip distance to avoid
+    false positives inside the flag block of the current item.
+
+    The skip is adaptive based on whether the matched item is a "simple" item
+    (runes, gems, keys — bit 21 of the flags block, byte 2 bit 5):
+
+    - Simple items (is_simple=True): skip 10 bytes.  Simple items are 10–11
+      bytes; their interior bytes never match the 0x10/0x00|0x04 pattern.
+
+    - Non-simple items (is_simple=False): skip 15 bytes.  Certain non-simple
+      18-byte items (e.g. ua4/ua5/pk3) have bytes at position +14 equal to
+      0x10 and position +17 equal to 0x00, which matches the scanner pattern.
+      Using skip=10 for these items causes the false positive at +14 to consume
+      a budget slot, dropping the real next item from the result.  Skip=15
+      clears the false positive.
+
     Returns up to item_count positions.
     """
+    _SIMPLE_SKIP = 10    # minimum for 10-byte simple items (runes/gems)
+    _COMPLEX_SKIP = 15   # clears false positive at byte +14 in non-simple items
     starts: list[int] = []
     i = 0
     while i + 3 < len(raw) and len(starts) < item_count:
         if raw[i] == 0x10 and raw[i + 3] in (0x00, 0x04):
             starts.append(i)
-            i += 4
+            # bit 21 of the flags block = byte 2 bit 5 = is_simple
+            b2 = raw[i + 2] if i + 2 < len(raw) else 0
+            is_simple = bool((b2 >> 5) & 1)
+            i += _SIMPLE_SKIP if is_simple else _COMPLEX_SKIP
         else:
             i += 1
     return starts

@@ -47,6 +47,8 @@ def parse_item_bytes(raw: bytes) -> dict:
         return {
             "item_name": display_name or b_name,
             "item_code": fields.item_type.strip() if fields.item_type else None,
+            "unique_id": fields.unique_id,   # needed for GrailCatalog name lookup (quality=7)
+            "set_id": fields.set_id,         # needed for GrailCatalog name lookup (quality=5)
             "quality": fields.quality,
             "quality_name": QUALITY_NAMES.get(fields.quality, "unknown"),
             "item_level": fields.item_level,
@@ -58,7 +60,7 @@ def parse_item_bytes(raw: bytes) -> dict:
     except Exception as e:
         log.warning("Item parse error: %s", e)
         return {
-            "item_name": None, "item_code": None, "quality": None,
+            "item_name": None, "item_code": None, "unique_id": None, "set_id": None, "quality": None,
             "quality_name": None, "item_level": None, "is_ethereal": False,
             "valid": False, "error": str(e),
         }

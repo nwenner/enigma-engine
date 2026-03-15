@@ -255,14 +255,49 @@ function BossSetCard({ set }: { set: BossPortalStatus }) {
 
 export default function BossPortals() {
   const { data: sets = [], isLoading, error } = useBossPortals();
+  const reset = useResetBossSummonProgress();
+  const [resettingAll, setResettingAll] = useState(false);
+  const [resetAllMsg, setResetAllMsg] = useState<string | null>(null);
+
+  const hasAnyProgress = sets.some(
+    (s) => s.earned_codes.length > 0 || s.summon_count > 0
+  );
+
+  async function handleResetAll() {
+    setResettingAll(true);
+    setResetAllMsg(null);
+    try {
+      await Promise.all(sets.map((s) => reset.mutateAsync(s.id)));
+      setResetAllMsg("All progress reset.");
+    } catch (e) {
+      setResetAllMsg(`Error: ${(e as Error).message}`);
+    } finally {
+      setResettingAll(false);
+    }
+  }
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
-      <h1 className="text-d2gold text-xl font-semibold mb-1">Boss Portals</h1>
+      <div className="flex items-start justify-between gap-4 mb-1">
+        <h1 className="text-d2gold text-xl font-semibold">Boss Portals</h1>
+        {hasAnyProgress && (
+          <button
+            className="text-xs text-slate-600 hover:text-red-400 transition-colors disabled:opacity-40 shrink-0 mt-1"
+            onClick={handleResetAll}
+            disabled={resettingAll}
+            title="Reset all boss portal progress (for testing)"
+          >
+            {resettingAll ? "Resetting…" : "↺ Reset All"}
+          </button>
+        )}
+      </div>
       <p className="text-slate-500 text-sm mb-6">
         Farm each summon set at least once to unlock infinite repeatable retrieval.
         Items are placed in portal tab 5 — sync to device when ready.
       </p>
+      {resetAllMsg && (
+        <p className="text-slate-400 text-xs mb-4">{resetAllMsg}</p>
+      )}
 
       {isLoading && <p className="text-slate-600 text-sm">Loading…</p>}
       {error && <p className="text-red-400 text-sm">Failed to load: {(error as Error).message}</p>}
