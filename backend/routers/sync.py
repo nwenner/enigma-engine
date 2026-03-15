@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.database import get_session, AsyncSessionLocal
-from backend.models import SyncOperation, Character, Season
+from backend.models import SyncOperation, Character, Season, BackupSnapshot
 from backend.routers.settings import _get_conn_kwargs, _get_setting
 from backend.services.backup_manager import run_sync, create_snapshot, push_snapshot_to_machine
 from backend.services.ssh_client import get_sftp, check_d2r_running, SSHConnectionError, list_all_files
@@ -81,6 +81,23 @@ class SyncCompareResponse(BaseModel):
     app_only: list[FileCompareEntry]       # in app DB, not on device
     has_app_data: bool                     # False = no characters in DB (skip guards)
     pushed_since_season_start: bool        # False = no push to this machine since season started
+
+
+class MachineSyncSummary(BaseModel):
+    last_checkin_at: Optional[datetime]
+    last_push_at: Optional[datetime]
+
+
+class VaultSummary(BaseModel):
+    snapshot_at: Optional[datetime]
+    source_machine: Optional[str]
+    file_count: int
+
+
+class SyncSummaryResponse(BaseModel):
+    vault: VaultSummary
+    pc: MachineSyncSummary
+    deck: MachineSyncSummary
 
 
 COMPARE_THRESHOLD_SECONDS = 60
@@ -351,6 +368,42 @@ async def push_to_device(
     background_tasks.add_task(do_push, operation.id, body.machine, conn_kwargs, save_dir, is_windows)
 
     return _build_sync_status(operation)
+
+
+@router.get("/sync/summary", response_model=SyncSummaryResponse)
+async def get_sync_summary(session: AsyncSession = Depends(get_session)):
+    """Return per-machine last check-in / last push timestamps plus vault snapshot info."""
+    snap_result = await session.execute(
+        select(BackupSnapshot)
+        .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+        .order_by(BackupSnapshot.created_at.desc())
+        .limit(1)
+    )
+    snap = snap_result.scalar_one_or_none()
+
+    async def _last(direction: str) -> Optional[datetime]:
+        r = await session.execute(
+            select(SyncOperation.completed_at)
+            .where(SyncOperation.direction == direction, SyncOperation.status == "success")
+            .order_by(SyncOperation.completed_at.desc())
+            .limit(1)
+        )
+        return r.scalar_one_or_none()
+
+    pc_checkin = await _last("checkin_pc")
+    pc_push = await _last("app_to_pc")
+    deck_checkin = await _last("checkin_deck")
+    deck_push = await _last("app_to_deck")
+
+    return SyncSummaryResponse(
+        vault=VaultSummary(
+            snapshot_at=snap.created_at if snap else None,
+            source_machine=snap.source_machine if snap else None,
+            file_count=snap.file_count if snap else 0,
+        ),
+        pc=MachineSyncSummary(last_checkin_at=pc_checkin, last_push_at=pc_push),
+        deck=MachineSyncSummary(last_checkin_at=deck_checkin, last_push_at=deck_push),
+    )
 
 
 @router.get("/sync/compare", response_model=SyncCompareResponse)

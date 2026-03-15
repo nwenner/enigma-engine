@@ -6,15 +6,15 @@ import {
   useCheckIn,
   usePushToDevice,
   useSyncCompare,
-  useBackups,
   useAutoSyncStatus,
   useDismissAutoSync,
   useResolveConflict,
+  useSyncSummary,
 } from "../api/hooks";
 import SyncStatusModal from "../components/SyncStatusModal";
 import ConfirmDialog from "../components/ConfirmDialog";
-import type { SeasonStatsResponse, SyncCompareResponse } from "../api/types";
-import { fmtUtc } from "../utils/dates";
+import type { SeasonStatsResponse, SyncCompareResponse, SyncSummaryResponse, PreflightResponse } from "../api/types";
+import { fmtRelative } from "../utils/dates";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -192,41 +192,204 @@ function NoSeasonCard() {
   );
 }
 
-// ─── Latest Snapshot ──────────────────────────────────────────────────────────
+// ─── Sync State Panel ─────────────────────────────────────────────────────────
 
-function LatestSnapshotCard() {
-  const { data: backups, isLoading } = useBackups();
-  const latestSnapshot = (backups ?? []).find(
-    (s) => s.label === "manual" || s.label === "game_close"
-  );
+function ageColor(iso: string | null): string {
+  if (!iso) return "text-slate-600";
+  const h = (Date.now() - new Date(iso.endsWith("Z") ? iso : iso + "Z").getTime()) / 3_600_000;
+  if (h < 2) return "text-green-400";
+  if (h < 12) return "text-amber-400";
+  return "text-red-400/80";
+}
+
+function relAge(iso: string | null): string {
+  if (!iso) return "never";
+  return fmtRelative(iso);
+}
+
+interface DeviceCardProps {
+  machine: "pc" | "deck";
+  summary: SyncSummaryResponse;
+  preflight: PreflightResponse | undefined;
+  hasActiveSeason: boolean;
+  anyPending: boolean;
+  comparing: string | null;
+  autoSyncWatching: boolean;
+  onCheckIn: (m: "pc" | "deck") => void;
+  onPush: (m: "pc" | "deck") => void;
+}
+
+function DeviceCard({
+  machine, summary, preflight, hasActiveSeason, anyPending, comparing, autoSyncWatching, onCheckIn, onPush,
+}: DeviceCardProps) {
+  const label = machine === "pc" ? "Windows PC" : "Steam Deck";
+  const online = machine === "pc" ? preflight?.pc_error === null : preflight?.deck_error === null;
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
+  const machineData = summary[machine];
+  const checkinDir = `checkin_${machine}`;
+  const pushDir = `push_${machine}`;
 
   return (
-    <div className="card-d2 p-4 border-l-2 border-l-d2gold/40 mb-6">
-      <p className="text-slate-600 text-[10px] uppercase tracking-wider mb-3">Latest Snapshot</p>
-      {isLoading ? (
-        <div className="text-slate-600 text-sm">Loading…</div>
-      ) : latestSnapshot ? (
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className={`text-[10px] px-2 py-0.5 border tracking-wide ${
-            latestSnapshot.source_machine === "pc"
-              ? "bg-violet-950/40 text-violet-400 border-violet-900/60"
-              : "bg-cyan-950/40 text-cyan-400 border-cyan-900/60"
-          }`}>
-            {latestSnapshot.source_machine === "pc" ? "PC" : "Steam Deck"}
-          </span>
-          <span className="text-slate-200 text-sm font-medium">{fmtUtc(latestSnapshot.created_at)}</span>
-          <span className="text-slate-500 text-xs">
-            {latestSnapshot.file_count} file{latestSnapshot.file_count !== 1 ? "s" : ""}
-          </span>
-          {(latestSnapshot.characters ?? []).length > 0 && (
-            <span className="text-slate-500 text-xs">
-              · {latestSnapshot.characters!.length} character{latestSnapshot.characters!.length !== 1 ? "s" : ""}
+    <div className="p-4 flex flex-col gap-3">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className="font-diablo text-xs tracking-widest text-slate-300">{label}</span>
+          {autoSyncWatching && (
+            <span
+              className="text-[9px] px-1 py-px border border-amber-700/60 bg-amber-950/40 text-amber-400 tracking-wide leading-none"
+              title="Auto-sync is watching this machine"
+            >
+              AUTO
             </span>
           )}
         </div>
+        {preflight ? (
+          <span className={`flex items-center gap-1.5 text-[10px] ${online ? "text-green-400" : "text-slate-600"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${online ? "bg-green-400" : "bg-slate-700"}`} />
+            {online ? "Online" : "Offline"}
+          </span>
+        ) : (
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-700 animate-pulse" />
+        )}
+      </div>
+
+      {/* Timestamps */}
+      <div className="space-y-2">
+        <div>
+          <p className="text-[9px] uppercase tracking-widest text-slate-600 mb-0.5">Last Check In</p>
+          <p className={`text-xs font-medium tabular-nums ${ageColor(machineData.last_checkin_at)}`}>
+            {relAge(machineData.last_checkin_at)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[9px] uppercase tracking-widest text-slate-600 mb-0.5">Last Synced To</p>
+          <p className={`text-xs font-medium tabular-nums ${ageColor(machineData.last_push_at)}`}>
+            {relAge(machineData.last_push_at)}
+          </p>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-col gap-1.5 mt-auto pt-1">
+        <button
+          onClick={() => onCheckIn(machine)}
+          disabled={anyPending || comparing !== null || !online || !hasActiveSeason}
+          className="btn-d2 text-xs py-1.5 w-full"
+        >
+          {comparing === checkinDir ? "Checking…" : "↓ Check In"}
+        </button>
+        <button
+          onClick={() => onPush(machine)}
+          disabled={anyPending || comparing !== null || !online || d2rRunning === true}
+          className="btn-d2-ghost text-xs py-1.5 w-full"
+        >
+          {comparing === pushDir ? "Checking…" : "↑ Sync To"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface SyncStatePanelProps {
+  summary: SyncSummaryResponse | undefined;
+  preflight: PreflightResponse | undefined;
+  hasActiveSeason: boolean;
+  anyPending: boolean;
+  comparing: string | null;
+  autoSyncEnabled: boolean;
+  autoSyncPc: boolean;
+  autoSyncDeck: boolean;
+  onCheckIn: (m: "pc" | "deck") => void;
+  onPush: (m: "pc" | "deck") => void;
+}
+
+function SyncStatePanel({
+  summary, preflight, hasActiveSeason, anyPending, comparing,
+  autoSyncEnabled, autoSyncPc, autoSyncDeck,
+  onCheckIn, onPush,
+}: SyncStatePanelProps) {
+  const vault = summary?.vault;
+  const machineLabel = vault?.source_machine === "pc" ? "PC" : vault?.source_machine === "deck" ? "Deck" : null;
+
+  const VaultInfo = () => (
+    <div className="flex flex-col items-center justify-center gap-1 py-4 px-3 text-center">
+      <p className="text-[9px] uppercase tracking-widest text-slate-600 mb-1">Vault Snapshot</p>
+      <span className="font-diablo text-d2gold text-sm tracking-widest">◈ VAULT</span>
+      {vault?.snapshot_at ? (
+        <>
+          <p className={`text-xs font-medium mt-1 ${ageColor(vault.snapshot_at)}`}>
+            {relAge(vault.snapshot_at)}
+          </p>
+          {machineLabel && (
+            <p className="text-[10px] text-slate-600">from {machineLabel} · {vault.file_count} file{vault.file_count !== 1 ? "s" : ""}</p>
+          )}
+        </>
       ) : (
-        <p className="text-slate-600 text-sm">No snapshot yet — Check In from a device to create one</p>
+        <p className="text-[10px] text-slate-600 mt-1">No snapshot yet</p>
       )}
+    </div>
+  );
+
+  if (!summary) {
+    return (
+      <div className="card-d2 mb-6 px-4 py-6 text-center text-slate-600 text-xs">
+        Loading sync status…
+      </div>
+    );
+  }
+
+  const deviceProps = { summary, preflight, hasActiveSeason, anyPending, comparing, onCheckIn, onPush };
+
+  return (
+    <div className="card-d2 mb-6 overflow-hidden">
+      {/* ── Auto-sync active banner ── */}
+      {autoSyncEnabled && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-950/30 border-b border-amber-800/40 flex-wrap">
+          <span className="text-amber-400 text-[10px]">⚡</span>
+          <span className="text-amber-300/90 text-[10px] font-medium tracking-wide">Auto-Sync Active</span>
+          <div className="flex items-center gap-1.5 ml-1">
+            {autoSyncPc && (
+              <span className="text-[9px] px-1.5 py-px border border-amber-700/50 text-amber-500/80 tracking-wide">PC</span>
+            )}
+            {autoSyncDeck && (
+              <span className="text-[9px] px-1.5 py-px border border-amber-700/50 text-amber-500/80 tracking-wide">DECK</span>
+            )}
+          </div>
+          <span className="text-amber-600/70 text-[10px] ml-auto hidden sm:block">
+            Manual syncs may conflict with background activity
+          </span>
+        </div>
+      )}
+
+      {/* ── Mobile layout (< md): vault banner + 2-col device grid ── */}
+      <div className="md:hidden">
+        <div className="border-b border-d2bg-border">
+          <VaultInfo />
+        </div>
+        <div className="grid grid-cols-2 divide-x divide-d2bg-border">
+          <DeviceCard machine="pc" autoSyncWatching={autoSyncEnabled && autoSyncPc} {...deviceProps} />
+          <DeviceCard machine="deck" autoSyncWatching={autoSyncEnabled && autoSyncDeck} {...deviceProps} />
+        </div>
+      </div>
+
+      {/* ── Desktop layout (md+): 3-col pipeline ── */}
+      <div className="hidden md:grid md:grid-cols-[1fr_auto_1fr] divide-x divide-d2bg-border">
+        <DeviceCard machine="pc" autoSyncWatching={autoSyncEnabled && autoSyncPc} {...deviceProps} />
+
+        {/* Center vault column */}
+        <div className="w-40 flex flex-col">
+          <VaultInfo />
+          {/* Connection indicators */}
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 pb-4 text-[9px] text-slate-700 tracking-widest">
+            <span>← Check In</span>
+            <div className="w-px h-6 bg-d2bg-border" />
+            <span>Sync To →</span>
+          </div>
+        </div>
+
+        <DeviceCard machine="deck" autoSyncWatching={autoSyncEnabled && autoSyncDeck} {...deviceProps} />
+      </div>
     </div>
   );
 }
@@ -272,6 +435,7 @@ export default function Dashboard() {
   const { data: seasonStats, isLoading: statsLoading } = useActiveSeasonStats();
   const { data: preflight } = usePreflight();
   const { data: autosync } = useAutoSyncStatus();
+  const { data: syncSummary } = useSyncSummary();
   const dismissAutoSync = useDismissAutoSync();
   const resolveConflict = useResolveConflict();
 
@@ -291,9 +455,6 @@ export default function Dashboard() {
 
   // Push confirm dialog (overwrite device saves — always shown before push)
   const [pushConfirm, setPushConfirm] = useState<{ machine: "pc" | "deck" } | null>(null);
-
-  const pcOnline = preflight?.pc_error === null;
-  const deckOnline = preflight?.deck_error === null;
 
   const d2rWarning =
     preflight && !preflight.safe_to_sync && (preflight.pc_running || preflight.deck_running);
@@ -448,8 +609,19 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Latest Snapshot */}
-      <LatestSnapshotCard />
+      {/* Sync State Panel */}
+      <SyncStatePanel
+        summary={syncSummary}
+        preflight={preflight}
+        hasActiveSeason={hasActiveSeason}
+        anyPending={anyPending}
+        comparing={comparing}
+        autoSyncEnabled={autosync?.enabled ?? false}
+        autoSyncPc={autosync?.pc_enabled ?? false}
+        autoSyncDeck={autosync?.deck_enabled ?? false}
+        onCheckIn={handleCheckIn}
+        onPush={handlePush}
+      />
 
       {/* D2R running warning */}
       {d2rWarning && (
@@ -469,67 +641,6 @@ export default function Dashboard() {
           {(anyError as Error).message}
         </div>
       )}
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        {/* Check In section */}
-        <div className="card-d2 p-4">
-          <h3 className="font-diablo text-d2gold text-xs tracking-widest mb-1">Seasonal Check In</h3>
-          <p className="text-slate-500 text-xs mb-4">Pull saves from a device to update the app.</p>
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => handleCheckIn("pc")}
-              disabled={anyPending || comparing !== null || !pcOnline || !hasActiveSeason}
-              className="btn-d2 text-sm"
-            >
-              {comparing === "checkin_pc" ? "Checking…" : "📥 Check In from PC"}
-            </button>
-            <button
-              onClick={() => handleCheckIn("deck")}
-              disabled={anyPending || comparing !== null || !deckOnline || !hasActiveSeason}
-              className="btn-d2 text-sm"
-            >
-              {comparing === "checkin_deck" ? "Checking…" : "📥 Check In from Deck"}
-            </button>
-          </div>
-          {!hasActiveSeason && !statsLoading && (
-            <p className="text-slate-600 text-xs mt-2">No active season — start one on the Seasons page</p>
-          )}
-          {hasActiveSeason && !pcOnline && preflight && (
-            <p className="text-slate-600 text-xs mt-2">PC offline</p>
-          )}
-          {hasActiveSeason && !deckOnline && preflight && (
-            <p className="text-slate-600 text-xs mt-1">Steam Deck offline</p>
-          )}
-        </div>
-
-        {/* Sync to Device section */}
-        <div className="card-d2 p-4">
-          <h3 className="font-diablo text-d2gold text-xs tracking-widest mb-1">Sync to Device</h3>
-          <p className="text-slate-500 text-xs mb-4">Push the latest app snapshot to a device.</p>
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => handlePush("pc")}
-              disabled={anyPending || comparing !== null || !pcOnline || d2rWarning === true}
-              className="btn-d2 text-sm"
-            >
-              {comparing === "push_pc" ? "Checking…" : "📤 Sync to PC"}
-            </button>
-            <button
-              onClick={() => handlePush("deck")}
-              disabled={anyPending || comparing !== null || !deckOnline || d2rWarning === true}
-              className="btn-d2 text-sm"
-            >
-              {comparing === "push_deck" ? "Checking…" : "📤 Sync to Deck"}
-            </button>
-          </div>
-          {!pcOnline && preflight && (
-            <p className="text-slate-600 text-xs mt-2">PC offline</p>
-          )}
-          {!deckOnline && preflight && (
-            <p className="text-slate-600 text-xs mt-1">Steam Deck offline</p>
-          )}
-        </div>
-      </div>
 
       {/* Warning dialog (stale/conflict detected by compare) */}
       {warningDialog && (

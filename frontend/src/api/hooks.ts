@@ -5,6 +5,7 @@ import type {
   CharacterInfo,
   SyncStatusResponse,
   SyncCompareResponse,
+  SyncSummaryResponse,
   PreflightResponse,
   SnapshotResponse,
   HistoryResponse,
@@ -83,6 +84,15 @@ export function useLastSync(refetchInterval?: number) {
   });
 }
 
+export function useSyncSummary() {
+  return useQuery<SyncSummaryResponse>({
+    queryKey: ["sync", "summary"],
+    queryFn: () => api.get("/sync/summary").then((r) => r.data),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useStartSync() {
   const qc = useQueryClient();
   return useMutation<SyncStatusResponse, Error, "pc_to_deck" | "deck_to_pc">({
@@ -106,13 +116,18 @@ export function useCheckIn() {
       qc.invalidateQueries({ queryKey: ["stash"] });
       qc.invalidateQueries({ queryKey: ["seasons"] });
       qc.invalidateQueries({ queryKey: ["boss-portals"] });
+      qc.invalidateQueries({ queryKey: ["sync", "summary"] });
     },
   });
 }
 
 export function usePushToDevice() {
+  const qc = useQueryClient();
   return useMutation<SyncStatusResponse, Error, "pc" | "deck">({
     mutationFn: (machine) => api.post("/sync/push", { machine }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sync", "summary"] });
+    },
   });
 }
 

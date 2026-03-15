@@ -407,6 +407,23 @@ export interface BossPortalStatus {
   missing_rewards: string[];
 }
 
+export interface MachineSyncSummary {
+  last_checkin_at: string | null;
+  last_push_at: string | null;
+}
+
+export interface VaultSyncInfo {
+  snapshot_at: string | null;
+  source_machine: string | null;
+  file_count: number;
+}
+
+export interface SyncSummaryResponse {
+  vault: VaultSyncInfo;
+  pc: MachineSyncSummary;
+  deck: MachineSyncSummary;
+}
+
 export interface DemonRecord {
   id: number;
   label: string;
