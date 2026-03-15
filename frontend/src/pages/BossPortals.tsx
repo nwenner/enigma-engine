@@ -21,11 +21,7 @@ function fmt(iso: string) {
 function CodeBadge({ item, earned }: { item: BossPortalRequiredItem; earned: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border ${
-        earned
-          ? "bg-emerald-900/30 border-emerald-600/40 text-emerald-400"
-          : "bg-d2bg-elevated border-d2border text-slate-500"
-      }`}
+      className={`chip-d2 ${earned ? "text-emerald-400/80 border-emerald-900/60" : "text-slate-500 border-d2bg-border"}`}
       title={item.code}
     >
       {earned ? "✓" : "✗"} {item.label}
@@ -91,7 +87,7 @@ function BossSetCard({ set }: { set: BossPortalStatus }) {
   }
 
   return (
-    <div className={`bg-d2bg-card border rounded p-5 ${set.unlocked ? "border-d2gold/40" : "border-d2border"}`}>
+    <div className={`card-d2 p-4 sm:p-5 ${set.unlocked ? "border-d2gold/40" : ""}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
@@ -169,7 +165,7 @@ function BossSetCard({ set }: { set: BossPortalStatus }) {
               Hardcore stash
             </label>
             <button
-              className="px-4 py-1.5 bg-d2gold/20 border border-d2gold/40 text-d2gold text-sm rounded hover:bg-d2gold/30 disabled:opacity-40 transition-colors"
+              className="btn-d2 text-sm"
               disabled={!canSummon || summon.isPending}
               onClick={handleSummon}
             >
@@ -190,7 +186,7 @@ function BossSetCard({ set }: { set: BossPortalStatus }) {
           {showEarn ? (
             <div className="flex flex-wrap gap-2 items-center">
               <select
-                className="bg-d2bg-elevated border border-d2border rounded px-2 py-1 text-xs text-slate-300 font-mono"
+                className="select-d2 w-auto"
                 value={earnCode}
                 onChange={(e) => setEarnCode(e.target.value)}
               >
@@ -201,14 +197,14 @@ function BossSetCard({ set }: { set: BossPortalStatus }) {
                   ))}
               </select>
               <button
-                className="px-3 py-1 text-xs bg-d2bg-elevated border border-d2border text-slate-300 rounded hover:border-d2gold/40 hover:text-d2gold transition-colors disabled:opacity-40"
+                className="btn-d2 text-xs disabled:opacity-40"
                 onClick={handleEarn}
                 disabled={earn.isPending}
               >
                 {earn.isPending ? "Marking…" : "Mark Earned"}
               </button>
               <button
-                className="text-slate-600 text-xs hover:text-slate-400"
+                className="btn-d2-ghost text-xs"
                 onClick={() => setShowEarn(false)}
               >
                 cancel
@@ -230,14 +226,14 @@ function BossSetCard({ set }: { set: BossPortalStatus }) {
         <div className="mt-3 flex items-center gap-3">
           <span className="text-slate-500 text-xs">Reset all progress for this set?</span>
           <button
-            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40"
+            className="btn-d2-danger text-xs"
             onClick={handleReset}
             disabled={reset.isPending}
           >
             {reset.isPending ? "Resetting…" : "Confirm Reset"}
           </button>
           <button
-            className="text-xs text-slate-600 hover:text-slate-400"
+            className="btn-d2-ghost text-xs"
             onClick={() => setShowReset(false)}
           >
             cancel
@@ -277,9 +273,9 @@ export default function BossPortals() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <div className="flex items-start justify-between gap-4 mb-1">
-        <h1 className="text-d2gold text-xl font-semibold">Boss Portals</h1>
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Boss Portals</h1>
         {hasAnyProgress && (
           <button
             className="text-xs text-slate-600 hover:text-red-400 transition-colors disabled:opacity-40 shrink-0 mt-1"
@@ -311,7 +307,7 @@ export default function BossPortals() {
           ))}
       </div>
 
-      <div className="mt-8 p-3 bg-d2bg-elevated border border-d2border/50 rounded text-xs text-slate-600">
+      <div className="card-d2 p-4 text-xs text-slate-600">
         <p className="mb-1 text-slate-500 font-medium">How it works</p>
         <p>
           Check In from a device with the required items in portal tab 5 to auto-detect them.

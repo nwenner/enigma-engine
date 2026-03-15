@@ -521,6 +521,7 @@ export function useActiveSeason() {
         throw e;
       }),
     retry: false,
+    refetchInterval: 30_000, // pick up auto-sync achievements without needing a manual refresh
   });
 }
 

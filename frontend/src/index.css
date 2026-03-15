@@ -93,6 +93,19 @@ body {
     transform: translateY(1px);
   }
 
+  /* ── Chip / badge ── */
+  .chip-d2 {
+    @apply text-[10px] uppercase tracking-widest px-1.5 py-0.5 border;
+  }
+
+  /* ── Select (full-width) ── */
+  .select-d2 {
+    @apply w-full bg-d2bg border border-d2bg-border px-3 py-1.5 text-sm
+           text-slate-200
+           focus:outline-none focus:border-d2gold/50 focus:ring-1 focus:ring-d2gold/15
+           transition-colors;
+  }
+
   /* ── Shared input style ── */
   .input-d2 {
     @apply w-full bg-d2bg border border-d2bg-border px-3 py-1.5 text-sm

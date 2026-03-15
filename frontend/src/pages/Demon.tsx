@@ -19,8 +19,6 @@ function fmt(iso: string) {
   });
 }
 
-const SELECT_CLS =
-  "bg-d2bg-elevated border border-d2border rounded px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-d2gold/50";
 
 // ─── Register panel ───────────────────────────────────────────────────────────
 
@@ -60,7 +58,7 @@ function RegisterPanel({
 
   if (warlocks.length === 0) {
     return (
-      <div className="bg-d2bg-card border border-d2border rounded p-4 mb-6">
+      <div className="card-d2 p-4">
         <p className="text-slate-500 text-sm">
           No Warlocks found in the latest snapshot. Check In from a device first.
         </p>
@@ -70,7 +68,7 @@ function RegisterPanel({
 
   if (withDemon.length === 0) {
     return (
-      <div className="bg-d2bg-card border border-d2border rounded p-4 mb-6">
+      <div className="card-d2 p-4">
         <p className="text-slate-500 text-sm">
           No Warlocks with a bound demon in the latest snapshot.
         </p>
@@ -82,13 +80,13 @@ function RegisterPanel({
   }
 
   return (
-    <div className="bg-d2bg-card border border-d2border rounded p-4 mb-6">
+    <div className="card-d2 p-4">
       <p className="text-slate-400 text-xs mb-3">
         Select a Warlock with a bound demon to register it for the season:
       </p>
       <div className="space-y-2">
         <select
-          className={SELECT_CLS + " w-full"}
+          className="select-d2"
           value={character}
           onChange={(e) => setCharacter(e.target.value)}
         >
@@ -106,13 +104,13 @@ function RegisterPanel({
           placeholder="Add tags: Fanaticism Aura, Level 85, Hephasto…"
         />
         <input
-          className={SELECT_CLS + " w-full"}
+          className="input-d2"
           placeholder="Notes (optional)"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
         <button
-          className="px-4 py-1.5 bg-d2gold/20 border border-d2gold/40 text-d2gold text-sm rounded hover:bg-d2gold/30 disabled:opacity-40 transition-colors"
+          className="btn-d2 text-sm"
           disabled={!character || tags.length === 0 || saveDemon.isPending}
           onClick={handleRegister}
         >
@@ -155,7 +153,7 @@ function DemonCard({
   }
 
   return (
-    <div className="bg-d2bg-card border border-d2border rounded p-4">
+    <div className="card-d2 p-4">
       {/* Header row */}
       <div className="flex items-start justify-between gap-4 mb-3">
         <div className="min-w-0">
@@ -164,7 +162,7 @@ function DemonCard({
             {demon.label.split(",").map((t) => t.trim()).filter(Boolean).map((tag) => (
               <span
                 key={tag}
-                className="inline-block bg-d2gold/15 border border-d2gold/30 text-d2gold text-xs rounded px-2 py-0.5"
+                className="chip-d2 text-d2gold/70 border-d2gold/30"
               >
                 {tag}
               </span>
@@ -191,7 +189,7 @@ function DemonCard({
         <div className="flex flex-wrap gap-2 items-center">
           <span className="text-slate-500 text-xs">Inject into:</span>
           <select
-            className={SELECT_CLS}
+            className="select-d2 w-auto"
             value={target}
             onChange={(e) => setTarget(e.target.value)}
           >
@@ -203,7 +201,7 @@ function DemonCard({
             ))}
           </select>
           <button
-            className="px-3 py-1.5 text-xs bg-d2gold/15 border border-d2gold/30 text-d2gold rounded hover:bg-d2gold/25 disabled:opacity-40 transition-colors"
+            className="btn-d2 text-xs"
             disabled={!target || injectDemon.isPending}
             onClick={handleInject}
           >
@@ -230,50 +228,56 @@ export default function Demon() {
   const { data: existingTags = [] } = useDemonTags();
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <h1 className="text-d2gold text-xl font-semibold mb-1">Demon Registry</h1>
-      <p className="text-slate-500 text-sm mb-6">
-        Register a bound demon for the season. Any Warlock can have it injected
-        into their save file — handy after a death.
-      </p>
-
-      {/* Register section */}
-      <h2 className="text-slate-300 text-sm font-medium mb-2">Register</h2>
-      {warlocksLoading ? (
-        <div className="bg-d2bg-card border border-d2border rounded p-4 mb-6">
-          <p className="text-slate-600 text-sm">Scanning snapshot…</p>
-        </div>
-      ) : (
-        <RegisterPanel warlocks={warlocks} existingTags={existingTags} />
-      )}
-
-      {/* Registered demons */}
-      <h2 className="text-slate-300 text-sm font-medium mb-3">
-        Registered Demons
-        {demons.length > 0 && (
-          <span className="text-slate-600 font-normal ml-1">
-            ({demons.length})
-          </span>
-        )}
-      </h2>
-
-      {demonsLoading && (
-        <p className="text-slate-600 text-sm">Loading…</p>
-      )}
-
-      {!demonsLoading && demons.length === 0 && (
-        <p className="text-slate-600 text-sm">
-          No demons registered yet.
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn space-y-6">
+      <div>
+        <h1 className="font-diablo text-d2gold text-2xl tracking-widest mb-1">Demon Registry</h1>
+        <p className="text-slate-500 text-sm">
+          Register a bound demon for the season. Any Warlock can have it injected
+          into their save file — handy after a death.
         </p>
-      )}
-
-      <div className="space-y-3">
-        {demons.map((d) => (
-          <DemonCard key={d.id} demon={d} warlocks={warlocks} />
-        ))}
       </div>
 
-      <div className="mt-8 p-3 bg-d2bg-elevated border border-d2border/50 rounded text-xs text-slate-600">
+      {/* Register section */}
+      <div>
+        <h2 className="text-slate-400 text-xs uppercase tracking-widest mb-2">Register</h2>
+        {warlocksLoading ? (
+          <div className="card-d2 p-4">
+            <p className="text-slate-600 text-sm">Scanning snapshot…</p>
+          </div>
+        ) : (
+          <RegisterPanel warlocks={warlocks} existingTags={existingTags} />
+        )}
+      </div>
+
+      {/* Registered demons */}
+      <div>
+        <h2 className="text-slate-400 text-xs uppercase tracking-widest mb-3">
+          Registered Demons
+          {demons.length > 0 && (
+            <span className="text-slate-600 font-normal ml-1 normal-case">
+              ({demons.length})
+            </span>
+          )}
+        </h2>
+
+        {demonsLoading && (
+          <p className="text-slate-600 text-sm">Loading…</p>
+        )}
+
+        {!demonsLoading && demons.length === 0 && (
+          <p className="text-slate-600 text-sm">
+            No demons registered yet.
+          </p>
+        )}
+
+        <div className="space-y-3">
+          {demons.map((d) => (
+            <DemonCard key={d.id} demon={d} warlocks={warlocks} />
+          ))}
+        </div>
+      </div>
+
+      <div className="card-d2 p-4 text-xs text-slate-600">
         <p className="mb-1 text-slate-500 font-medium">How it works</p>
         <p>
           D2R stores the bound demon in a hidden section of the .d2s save file.

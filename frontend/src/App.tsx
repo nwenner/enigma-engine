@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate, Link, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Characters from "./pages/Characters";
 import Backups from "./pages/Backups";
@@ -91,14 +91,14 @@ export default function App() {
         style={{ background: SIDEBAR_BG }}
       >
         {/* Branding */}
-        <div className="px-5 py-6 border-b border-d2bg-border">
+        <Link to="/" className="block px-5 py-6 border-b border-d2bg-border hover:bg-white/5 transition-colors">
           <h1 className="font-diablo text-d2gold text-base tracking-widest leading-tight">
             Enigma Engine
           </h1>
           <p className="text-slate-600 text-[10px] tracking-widest uppercase mt-1">
             D2R Season Manager
           </p>
-        </div>
+        </Link>
 
         {/* Nav */}
         <div className="flex flex-col gap-0.5 p-3 flex-1 overflow-y-auto">

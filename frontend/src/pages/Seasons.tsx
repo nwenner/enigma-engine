@@ -130,7 +130,6 @@ function MilestoneRow({
   canClaim: boolean;
 }) {
   const claimMutation = useClaimAchievement();
-  const [claimAch, setClaimAch] = useState<SeasonAchievement | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
 
   const myAchs = achievements.filter((a) => a.milestone_id === ms.id);
@@ -140,7 +139,6 @@ function MilestoneRow({
     setClaimError(null);
     try {
       await claimMutation.mutateAsync(ach.id);
-      setClaimAch(null);
     } catch (e: unknown) {
       setClaimError(e instanceof Error ? e.message : "Claim failed");
     }
@@ -182,9 +180,9 @@ function MilestoneRow({
             </span>
           )}
         </div>
-        {canClaim && unclaimedWithReward.length > 0 && (
+        {canClaim && unclaimedWithReward.length > 0 && !claimMutation.isPending && (
           <button
-            onClick={() => setClaimAch(unclaimedWithReward[0])}
+            onClick={() => handleClaim(unclaimedWithReward[0])}
             className="btn-d2 text-xs shrink-0"
           >
             Claim Reward →
@@ -230,16 +228,8 @@ function MilestoneRow({
         </p>
       )}
 
-      {claimAch && (
-        <ConfirmDialog
-          title="Claim Reward"
-          message={`This will write "${ms.reward_item_name ?? ms.reward_item_code ?? "item"}" to Tab 5 of your SC stash on the first available machine. Make sure D2R is not running.`}
-          confirmLabel="Claim"
-          onConfirm={() => handleClaim(claimAch)}
-          onCancel={() => { setClaimAch(null); setClaimError(null); }}
-          loading={claimMutation.isPending}
-          error={claimError}
-        />
+      {claimError && (
+        <p className="text-red-400 text-xs mt-1">{claimError}</p>
       )}
     </div>
   );

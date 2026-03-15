@@ -46,18 +46,18 @@ export function TagInput({ tags, onChange, suggestions, placeholder }: TagInputP
   return (
     <div className="relative">
       <div
-        className="flex flex-wrap gap-1.5 bg-d2bg-elevated border border-d2border rounded px-2 py-1.5 min-h-[36px] cursor-text focus-within:border-d2gold/50 transition-colors"
+        className="flex flex-wrap gap-1.5 bg-d2bg border border-d2bg-border px-2 py-1.5 min-h-[36px] cursor-text focus-within:border-d2gold/50 focus-within:ring-1 focus-within:ring-d2gold/15 transition-colors"
         onClick={() => inputRef.current?.focus()}
       >
         {tags.map((tag) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 bg-d2gold/15 border border-d2gold/30 text-d2gold text-xs rounded px-2 py-0.5"
+            className="chip-d2 inline-flex items-center gap-1 text-d2gold/70 border-d2gold/30"
           >
             {tag}
             <button
               type="button"
-              className="text-d2gold/50 hover:text-d2gold leading-none"
+              className="text-d2gold/40 hover:text-d2gold leading-none"
               onClick={(e) => {
                 e.stopPropagation();
                 removeTag(tag);
@@ -83,12 +83,12 @@ export function TagInput({ tags, onChange, suggestions, placeholder }: TagInputP
       </div>
 
       {open && filtered.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-d2bg-card border border-d2border rounded shadow-lg z-10 max-h-44 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-px bg-d2bg-elevated border border-d2bg-border border-t-d2gold/20 shadow-[0_8px_24px_rgba(0,0,0,0.6)] z-20 max-h-44 overflow-y-auto">
           {filtered.map((s) => (
             <button
               key={s}
               type="button"
-              className="w-full text-left px-3 py-1.5 text-sm text-slate-300 hover:bg-d2bg-elevated hover:text-d2gold transition-colors"
+              className="w-full text-left px-3 py-1.5 text-sm text-slate-400 hover:bg-d2bg-border/40 hover:text-d2gold transition-colors"
               onMouseDown={() => addTag(s)}
             >
               {s}

@@ -243,18 +243,20 @@ def _set_item_grid_position(item_bytes: bytes, x: int, y: int) -> bytes:
 def insert_item_into_page(page: ParsedPage, item_bytes: bytes) -> ParsedPage:
     """Append item bytes to the end of a page, incrementing item count.
 
-    Items are laid out in a 5-column grid to avoid visual overlap from large
-    items (e.g. armor that spans 4 rows).  Layout per insertion index:
+    Items are laid out in a 5-column × 5-row grid (25 slots) within the
+    10×10 stash grid:
 
-      index 0–4: row y=0, columns x=0,2,4,6,8
-      index 5–9: row y=5, columns x=0,2,4,6,8
+      Columns x: 0, 2, 4, 6, 8  (2-cell spacing, 5 per row)
+      Rows    y: 0, 2, 4, 6, 8  (2-cell spacing, 5 rows)
 
-    Spacing of 2 columns and 5 rows ensures even 2×4 armor pieces don't
-    cover adjacent reward slots.  Supports up to 10 simultaneous rewards.
+    All 25 positions are valid within the 10×10 stash grid (max y = 8+1 = 9).
+    Items up to 1 row tall never overlap.  Items taller than 2 rows may
+    visually overlap the next row, but are always placed at valid coordinates
+    (no silent off-grid loss).
     """
     idx = page.jm_item_count
     x = (idx % 5) * 2   # 0, 2, 4, 6, 8
-    y = (idx // 5) * 5  # 0 for first 5 items, 5 for next 5
+    y = (idx // 5) * 2  # 0, 2, 4, 6, 8  (5 rows, all within the 10-row grid)
     item_bytes = _set_item_grid_position(item_bytes, x, y)
     new_raw = bytearray(page.raw_bytes) + bytearray(item_bytes)
     new_jm_count = page.jm_item_count + 1
