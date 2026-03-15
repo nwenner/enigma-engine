@@ -241,10 +241,13 @@ async def fetch_stash_local(
             elif item.quality == 5 and item.set_id is not None:
                 cat = catalog_lookup.get(("set", item.set_id))
 
-            # Build display name: catalog > magic full name > rare name > base
+            # Build display name: catalog > runeword > magic full name > rare name > base
             if cat:
                 display_name = cat.name
                 display_base = cat.base_item
+            elif item.is_runeword:
+                display_name = item.display_name
+                display_base = item.base_name
             elif item.quality == 4:
                 display_name = item.display_name
                 display_base = None
@@ -530,6 +533,9 @@ async def store_item(
         if cat:
             vault_name = cat.name
             vault_base = cat.base_item
+        elif item.is_runeword:
+            vault_name = item.display_name
+            vault_base = item.base_name
         elif item.quality == 4:
             vault_name = item.display_name
             vault_base = None
