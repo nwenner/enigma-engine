@@ -17,6 +17,7 @@ from backend.services.item_parsing.item_stats import (
 from backend.services.item_parsing import parse_stash
 
 FIXTURE_SC = Path(__file__).parent / "fixtures" / "ModernSharedStashSoftCoreV2.d2i"
+FIXTURE_WARLOCK_CODEX = Path(__file__).parent / "fixtures" / "WarlockCodexSuperior.bin"
 
 
 # ─── Unit tests: format_item_stats ────────────────────────────────────────────
@@ -268,3 +269,52 @@ class TestParseStandaloneStats:
     def test_empty_bytes_returns_empty(self):
         assert parse_standalone_stats(b"") == []
         assert parse_standalone_stats(b"\x00\x00\x00") == []
+
+
+# ─── Warlock Codex regression fixture ─────────────────────────────────────────
+
+class TestWarlockCodexParsing:
+    """
+    Regression test for a Superior Warlock Codex (wa3) from the Reign of the Warlock patch.
+
+    In-game stats confirmed:
+      +3 to Apocalypse (Warlock Only)
+      +3 to Sigil: Death (Warlock Only)
+      Adds 21-30 Magic Damage
+      +11% Enhanced Defense
+      Increased Maximum Durability 11%
+      Socketed (2)
+
+    Fixture: WarlockCodexSuperior.bin — raw 35-byte item extracted from
+    ModernSharedStashSoftCoreV2.d2i (tab 4, item 0, byte_start=0, byte_end=35).
+    prop_bit_start=134.
+
+    The two Warlock skills (global IDs 400 and 401) are separated in the
+    bit stream by stat_id=457 whose save_bits was empirically determined to be 4
+    (not the 8-bit catch-all default). Without that fix, Sigil Death is skipped.
+    """
+
+    def _load_stats(self):
+        item_bytes = FIXTURE_WARLOCK_CODEX.read_bytes()
+        # prop_bit_start=134, item_end_bit = 35*8 = 280
+        raw = read_item_stats(item_bytes, prop_bit_start=134, item_end_bit=280)
+        return format_item_stats(raw)
+
+    def test_apocalypse_present(self):
+        lines = self._load_stats()
+        assert "+3 to Apocalypse (Warlock Only)" in lines, f"Stats: {lines}"
+
+    def test_sigil_death_present(self):
+        lines = self._load_stats()
+        assert "+3 to Sigil Death (Warlock Only)" in lines, f"Stats: {lines}"
+
+    def test_both_warlock_skills_present(self):
+        """Both skills must appear — confirms stat_id=457 save_bits=4 is correct."""
+        lines = self._load_stats()
+        warlock_lines = [l for l in lines if "Warlock Only" in l]
+        assert len(warlock_lines) == 2, f"Expected 2 Warlock skill lines, got: {warlock_lines}"
+
+    def test_only_warlock_skill_lines_rendered(self):
+        """No Assassin or other-class skills should appear — confirms global ID decoding."""
+        lines = self._load_stats()
+        assert not any("Assassin Only" in l for l in lines), f"Wrong class in stats: {lines}"

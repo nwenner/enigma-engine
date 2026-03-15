@@ -370,6 +370,8 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     **{k: (8, 0, 0) for k in range(425, 511)},   # D2R additions 425-510
     # Mod stat overrides (must come after catch-all ranges to take precedence)
     385: (8, 237, 0),   # mod extra gold from monsters (displayed value = raw - 237)
+    457: (4, 0, 0),     # Reign of the Warlock patch stat — empirically confirmed save_bits=4
+                        # (fixes Sigil Death parsing on Superior Warlock Codex wa3 items)
 }
 
 # Derived: stat_id → total bits to consume (save_param_bits + save_bits)
