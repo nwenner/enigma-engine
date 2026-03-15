@@ -47,6 +47,39 @@ function fmtGold(n: number): string {
   return n.toLocaleString();
 }
 
+function GoldCoins({ count, glow }: { count: number; glow?: boolean }) {
+  if (count === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {Array.from({ length: count }).map((_, i) => (
+        <span
+          key={i}
+          className="inline-block rounded-full shrink-0"
+          style={{
+            width: 11,
+            height: 11,
+            background: glow
+              ? "radial-gradient(circle at 35% 35%, #ffe97a, #f5c518 45%, #c8901a)"
+              : "radial-gradient(circle at 35% 35%, #f7e07a, #e8b820 45%, #b87e12)",
+            boxShadow: glow
+              ? "0 0 6px rgba(245,197,24,0.7), 0 1px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,200,0.4)"
+              : "0 1px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,200,0.35)",
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function goldVaultTier(gold: number): { coinCount: number; label: string; color: string; glow: boolean } {
+  if (gold === 0)            return { coinCount: 0, label: "Empty",              color: "text-slate-600",  glow: false };
+  if (gold < 1_000_000)      return { coinCount: 1, label: "Small Reserve",      color: "text-d2gold/70",  glow: false };
+  if (gold < 10_000_000)     return { coinCount: 2, label: "Growing Treasury",   color: "text-d2gold/85",  glow: false };
+  if (gold < 50_000_000)     return { coinCount: 3, label: "Major Treasury",     color: "text-d2gold",     glow: false };
+  if (gold < 200_000_000)    return { coinCount: 4, label: "Treasure Hoard",     color: "text-d2gold",     glow: false };
+  return                            { coinCount: 5, label: "Legendary Hoard",    color: "text-amber-300",  glow: true  };
+}
+
 function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
   const topChar = [...stats.characters_sc].sort((a, b) => b.level - a.level)[0] ?? null;
 
@@ -80,10 +113,20 @@ function SeasonOverviewCard({ stats }: { stats: SeasonStatsResponse }) {
 
         <div className="px-4 py-4 text-center">
           <p className="text-slate-500 text-[10px] tracking-widest uppercase mb-1">Gold Vault</p>
-          <p className="text-d2gold font-diablo text-2xl leading-none">
-            {fmtGold(stats.total_gold_vault_sc)}
-          </p>
-          <p className="text-slate-500 text-xs mt-1">SC</p>
+          {(() => {
+            const gt = goldVaultTier(stats.total_gold_vault_sc);
+            return (
+              <>
+                <div className="flex justify-center mb-1">
+                  <GoldCoins count={gt.coinCount} glow={gt.glow} />
+                </div>
+                <p className={`font-diablo text-2xl leading-none tabular-nums ${gt.color}`}>
+                  {fmtGold(stats.total_gold_vault_sc)}
+                </p>
+                <p className="text-slate-600 text-[10px] tracking-wide mt-1">{gt.label}</p>
+              </>
+            );
+          })()}
         </div>
 
         <div className="px-4 py-4 text-center">

@@ -29,8 +29,6 @@ import { fmtRelative, fmtUtcDate } from "../utils/dates";
 type Mode = "sc" | "hc";
 type Machine = "pc" | "deck";
 
-const MAX_STASH_GOLD = 12_500_000;
-
 // ─── Quality styling ──────────────────────────────────────────────────────────
 
 function qualityColor(quality: number): string {
@@ -61,17 +59,55 @@ function qualityLabel(quality: number): string {
   }
 }
 
-function GoldBar({ current, max }: { current: number; max: number }) {
-  const pct = Math.min(100, (current / max) * 100);
-  const isNearCap = pct > 80;
+const MAX_STASH_GOLD = 12_500_000;
+
+function fmtGoldAmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return n.toLocaleString();
+}
+
+function GoldCoins({ count, glow }: { count: number; glow?: boolean }) {
+  if (count === 0) return null;
   return (
-    <div className="flex-1 h-1.5 bg-d2bg-elevated rounded-none overflow-hidden">
-      <div
-        className={`h-full transition-all duration-300 ${isNearCap ? "bg-amber-400/80" : "bg-d2gold/60"}`}
-        style={{ width: `${pct}%` }}
-      />
-    </div>
+    <span className="inline-flex items-center gap-0.5">
+      {Array.from({ length: count }).map((_, i) => (
+        <span
+          key={i}
+          className="inline-block rounded-full shrink-0"
+          style={{
+            width: 11,
+            height: 11,
+            background: glow
+              ? "radial-gradient(circle at 35% 35%, #ffe97a, #f5c518 45%, #c8901a)"
+              : "radial-gradient(circle at 35% 35%, #f7e07a, #e8b820 45%, #b87e12)",
+            boxShadow: glow
+              ? "0 0 6px rgba(245,197,24,0.7), 0 1px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,200,0.4)"
+              : "0 1px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,200,0.35)",
+          }}
+        />
+      ))}
+    </span>
   );
+}
+
+function stashTier(gold: number) {
+  const pct = gold / MAX_STASH_GOLD;
+  if (gold === 0)  return { coinCount: 0, label: "Empty Pouch",    color: "text-slate-600",  bar: "bg-slate-700/30",    glow: false };
+  if (pct < 0.08)  return { coinCount: 1, label: "Loose Coins",    color: "text-d2gold/70",  bar: "bg-d2gold/35",       glow: false };
+  if (pct < 0.25)  return { coinCount: 2, label: "Heavy Purse",    color: "text-d2gold/80",  bar: "bg-d2gold/45",       glow: false };
+  if (pct < 0.50)  return { coinCount: 3, label: "Small Hoard",    color: "text-d2gold",     bar: "bg-d2gold/55",       glow: false };
+  if (pct < 0.80)  return { coinCount: 4, label: "Treasure Hoard", color: "text-d2gold",     bar: "bg-d2gold/65",       glow: false };
+  if (pct < 0.98)  return { coinCount: 5, label: "Overflowing!",   color: "text-amber-400",  bar: "bg-amber-400/65",    glow: true  };
+  return                  { coinCount: 5, label: "AT CAP",         color: "text-amber-200",  bar: "bg-amber-200/90",    glow: true  };
+}
+
+function vaultTier(gold: number) {
+  if (gold === 0)          return { coinCount: 0, label: "Empty Vault",      color: "text-slate-600",    glow: false };
+  if (gold < 5_000_000)    return { coinCount: 1, label: "Small Reserve",    color: "text-purple-400/80",glow: false };
+  if (gold < 20_000_000)   return { coinCount: 2, label: "Growing Treasury", color: "text-purple-300",   glow: false };
+  if (gold < 100_000_000)  return { coinCount: 3, label: "Major Treasury",   color: "text-purple-200",   glow: false };
+  return                          { coinCount: 5, label: "Legendary Hoard",  color: "text-d2gold",       glow: true  };
 }
 
 // ─── Copy hex button ──────────────────────────────────────────────────────────
@@ -288,8 +324,6 @@ function GoldPanel({
   const [depositError, setDepositError] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
-  const fmt = (n: number) => n.toLocaleString();
-
   const handleDeposit = async () => {
     const amount = parseInt(depositInput.replace(/[^0-9]/g, ""), 10);
     if (isNaN(amount) || amount <= 0) { setDepositError("Enter a valid amount"); return; }
@@ -314,20 +348,38 @@ function GoldPanel({
     }
   };
 
-  return (
-    <div className="card-d2 p-4 space-y-4">
-      <h3 className="font-diablo text-d2gold text-xs tracking-widest">Gold</h3>
+  const st = stashTier(stashGold);
+  const vt = vaultTier(vaultGold);
+  const stashPct = Math.min(100, (stashGold / MAX_STASH_GOLD) * 100);
 
-      {/* Stash gold */}
-      <div>
-        <div className="flex items-center gap-3 mb-1.5">
-          <span className="text-slate-500 text-xs w-20 shrink-0">Stash</span>
-          <GoldBar current={stashGold} max={MAX_STASH_GOLD} />
-          <span className="text-slate-400 text-xs w-32 text-right shrink-0 tabular-nums">
-            {fmt(stashGold)} / {fmt(MAX_STASH_GOLD)}
-          </span>
+  return (
+    <div className="card-d2 overflow-hidden divide-y divide-d2bg-border">
+
+      {/* ── Stash Gold ── */}
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[10px] uppercase tracking-widest text-slate-500">Stash Gold</p>
+          <p className="text-[10px] text-slate-700 tabular-nums">
+            {stashGold.toLocaleString()} / {MAX_STASH_GOLD.toLocaleString()}
+          </p>
         </div>
-        <div className="flex gap-2 ml-24">
+
+        <div className="flex items-end gap-3 mb-2">
+          <span className={`font-diablo text-2xl tabular-nums leading-none ${st.color}`}>
+            {fmtGoldAmt(stashGold)}
+          </span>
+          <GoldCoins count={st.coinCount} glow={st.glow} />
+          <span className="text-[10px] text-slate-600 tracking-wide mb-0.5">{st.label}</span>
+        </div>
+
+        <div className="h-1.5 bg-d2bg-elevated overflow-hidden mb-3">
+          <div
+            className={`h-full transition-all duration-500 ${st.bar}`}
+            style={{ width: `${stashPct}%` }}
+          />
+        </div>
+
+        <div className="flex gap-2">
           <input
             type="text"
             placeholder="Amount to deposit"
@@ -342,24 +394,25 @@ function GoldPanel({
             title={d2rRunning ? "D2R is running — close the game first" : undefined}
             className="btn-d2 text-xs px-3 py-1.5 shrink-0"
           >
-            {deposit.isPending ? "…" : "Deposit"}
+            {deposit.isPending ? "…" : "Deposit →"}
           </button>
         </div>
-        {depositError && <p className="text-red-400 text-xs ml-24 mt-1">{depositError}</p>}
+        {depositError && <p className="text-red-400 text-xs mt-1">{depositError}</p>}
       </div>
 
-      {/* Vault gold */}
-      <div>
-        <div className="flex items-center gap-3 mb-1.5">
-          <span className="text-slate-500 text-xs w-20 shrink-0">Vault</span>
-          <div className="flex-1 h-1.5 bg-d2bg-border/40 rounded-none overflow-hidden">
-            <div className="h-full bg-purple-500/50" style={{ width: "100%" }} />
-          </div>
-          <span className="text-purple-300 text-xs w-32 text-right shrink-0 tabular-nums">
-            {fmt(vaultGold)} stored
+      {/* ── Vault Gold ── */}
+      <div className="p-4" style={{ background: "linear-gradient(160deg, rgba(147,51,234,0.04) 0%, transparent 60%)" }}>
+        <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-3">Gold Vault</p>
+
+        <div className="flex items-end gap-3 mb-1">
+          <span className={`font-diablo text-2xl tabular-nums leading-none ${vt.color}`}>
+            {fmtGoldAmt(vaultGold)}
           </span>
+          <GoldCoins count={vt.coinCount} glow={vt.glow} />
         </div>
-        <div className="flex gap-2 ml-24">
+        <p className="text-[10px] text-slate-600 tracking-wide mb-3">{vt.label}</p>
+
+        <div className="flex gap-2">
           <input
             type="text"
             placeholder="Amount to withdraw"
@@ -374,10 +427,10 @@ function GoldPanel({
             title={d2rRunning ? "D2R is running — close the game first" : undefined}
             className="btn-d2 text-xs px-3 py-1.5 shrink-0"
           >
-            {withdraw.isPending ? "…" : "Withdraw"}
+            {withdraw.isPending ? "…" : "Withdraw →"}
           </button>
         </div>
-        {withdrawError && <p className="text-red-400 text-xs ml-24 mt-1">{withdrawError}</p>}
+        {withdrawError && <p className="text-red-400 text-xs mt-1">{withdrawError}</p>}
       </div>
     </div>
   );

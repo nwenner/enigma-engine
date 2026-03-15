@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "docker run --rm -v $(pwd):/app -w /app enigma-engine-enigma-engine python3 -m pytest tests/ -q 2>&1 | tail -3"
+            "command": "docker run --rm -v /Users/nickwenner/Dev/repos/enigma-engine:/app -w /app enigma-engine-enigma-engine python3 -m pytest tests/ -q 2>&1 | tail -3"
           }
         ]
       }
