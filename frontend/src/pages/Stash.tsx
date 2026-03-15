@@ -659,6 +659,13 @@ function ItemRow({
       {item.name && item.base_item && (
         <div className="text-slate-500 text-xs mt-0.5 ml-9">{item.base_item}</div>
       )}
+      {item.properties && item.properties.length > 0 && (
+        <div className="ml-9 mt-1 flex flex-col">
+          {item.properties.map((prop, i) => (
+            <span key={i} className="text-[11px] text-blue-300/80 leading-5">{prop}</span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -819,6 +826,13 @@ function VaultSection({ mode }: { mode: Mode }) {
                   <span className="text-slate-800 text-[10px]">·</span>
                   <span className="text-slate-700 text-[10px]">{date}</span>
                 </div>
+                {item.properties && item.properties.length > 0 && (
+                  <div className="ml-9 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                    {item.properties.map((prop, i) => (
+                      <span key={i} className="text-[11px] text-blue-300/80">{prop}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}

@@ -25,6 +25,7 @@ from backend.config import get_settings
 from backend.database import get_session
 from backend.models import VaultItem, GoldVault, BackupSnapshot, Season
 from backend.services.stash_service import QUALITY_NAMES
+from backend.services.item_parsing.item_stats import parse_standalone_stats
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["stash"])
@@ -381,7 +382,7 @@ async def list_vault_items(
             catalog_id=item.catalog_id,
             item_level=item.item_level,
             is_ethereal=item.is_ethereal,
-            properties=item.properties or [],
+            properties=parse_standalone_stats(item.raw_item_bytes) if item.raw_item_bytes else [],
         )
         for item in items
     ]

@@ -121,6 +121,10 @@ def read_charm_stats(
             break
         entry = STAT_TABLE.get(stat_id)
         if entry is None:
+            log.warning(
+                "read_charm_stats: unknown stat_id=%d at bit %d; stopping property read",
+                stat_id, reader.tell() - 9,
+            )
             break  # unknown stat — cannot advance safely
         save_bits, save_add, save_param_bits = entry
         if reader.tell() + save_param_bits + save_bits > item_end_bit:

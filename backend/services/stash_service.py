@@ -23,6 +23,8 @@ from sqlalchemy import select
 from backend.models import GrailCatalog, VaultItem, GoldVault, BackupSnapshot, Season
 from backend.services.catalog_lookup import build_catalog_lookup
 from backend.services.item_parsing import ParsedStash, parse_stash, serialize_stash
+from backend.services.item_parsing.item_stats import read_item_stats, read_runeword_stats, format_item_stats
+from backend.services.item_parsing.tables.rune_effects import get_rune_socket_effects
 from backend.services.item_parsing.stash_format import (
     remove_items_from_page,
     insert_item_into_page,
@@ -169,6 +171,33 @@ async def fetch_stash(
                 display_name = None
                 display_base = item.base_name
 
+            # Runewords and set items have multiple property lists; reading only the
+            # first list produces garbage for runewords and partial data for sets.
+            # Unique/magic/rare items have a single list and parse reliably.
+            properties: list[str] = []
+            raw_stats = []
+            if item.prop_bit_start > 0 and item.quality not in (5,):
+                log.warning("stash_service: parsing [%s] prop_bit_start=%d", item.display_name, item.prop_bit_start)
+                try:
+                    if item.is_runeword:
+                        raw_stats = read_runeword_stats(page.raw_bytes, item.prop_bit_start, item.byte_end * 8)
+                    else:
+                        raw_stats = read_item_stats(page.raw_bytes, item.prop_bit_start, item.byte_end * 8)
+                    if not raw_stats:
+                        log.warning("stash_service: no stats parsed for [%s] (empty result)", item.display_name)
+                    properties = format_item_stats(raw_stats)
+                    log.warning("stash_service: [%s] -> %s", item.display_name, properties)
+                except Exception as exc:
+                    log.warning("stash_service: failed to parse stats for [%s]: %s", item.display_name, exc)
+
+            # Append rune socket effects (e.g. Tal → Poison Resist, Eth → Regen Mana).
+            # Skip any effect whose stat_id is already in the binary property list to
+            # avoid doubling stats that runewords store inline (e.g. Ancient's Pledge).
+            if item.is_runeword and item.runeword_id is not None:
+                existing_ids = {s.stat_id for s in raw_stats}
+                socket_effects = get_rune_socket_effects(item.runeword_id, item.item_type, existing_ids)
+                properties.extend(socket_effects)
+
             items_out.append({
                 "page_item_index": item_idx,
                 "item_type": item.item_type.strip(),
@@ -183,7 +212,7 @@ async def fetch_stash(
                 "item_level": item.item_level,
                 "is_ethereal": item.is_ethereal,
                 "is_runeword": item.is_runeword,
-                "properties": [],
+                "properties": properties,
             })
 
         tabs.append({
@@ -258,6 +287,30 @@ async def fetch_stash_local(
                 display_name = None
                 display_base = item.base_name
 
+            properties: list[str] = []
+            raw_stats = []
+            if item.prop_bit_start > 0 and item.quality not in (5,):
+                log.warning("stash_service: parsing [%s] prop_bit_start=%d", item.display_name, item.prop_bit_start)
+                try:
+                    if item.is_runeword:
+                        raw_stats = read_runeword_stats(page.raw_bytes, item.prop_bit_start, item.byte_end * 8)
+                    else:
+                        raw_stats = read_item_stats(page.raw_bytes, item.prop_bit_start, item.byte_end * 8)
+                    if not raw_stats:
+                        log.warning("stash_service: no stats parsed for [%s] (empty result)", item.display_name)
+                    properties = format_item_stats(raw_stats)
+                    log.warning("stash_service: [%s] -> %s", item.display_name, properties)
+                except Exception as exc:
+                    log.warning("stash_service: failed to parse stats for [%s]: %s", item.display_name, exc)
+
+            # Append rune socket effects (e.g. Tal → Poison Resist, Eth → Regen Mana).
+            # Skip any effect whose stat_id is already in the binary property list to
+            # avoid doubling stats that runewords store inline (e.g. Ancient's Pledge).
+            if item.is_runeword and item.runeword_id is not None:
+                existing_ids = {s.stat_id for s in raw_stats}
+                socket_effects = get_rune_socket_effects(item.runeword_id, item.item_type, existing_ids)
+                properties.extend(socket_effects)
+
             items_out.append({
                 "page_item_index": item_idx,
                 "item_type": item.item_type.strip(),
@@ -272,7 +325,7 @@ async def fetch_stash_local(
                 "item_level": item.item_level,
                 "is_ethereal": item.is_ethereal,
                 "is_runeword": item.is_runeword,
-                "properties": [],
+                "properties": properties,
             })
 
         tabs.append({

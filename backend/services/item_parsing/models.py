@@ -30,6 +30,9 @@ class ParsedItem:
     # Raw byte range within the containing page's raw_bytes
     byte_start: int           # byte offset within page raw_bytes
     byte_end: int             # exclusive end byte offset
+    # Absolute bit offset (within page raw_bytes) where the property list starts.
+    # 0 for simple items and ears (no property list).
+    prop_bit_start: int = 0
 
 
 @dataclass

@@ -178,6 +178,7 @@ def _parse_item(
         item_level=fields.item_level,
         byte_start=byte_start,
         byte_end=byte_end,
+        prop_bit_start=fields.prop_bit_start,
     )
 
 

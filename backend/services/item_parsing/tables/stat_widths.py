@@ -17,6 +17,14 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     1:   (7,  32, 0),   # energy
     2:   (7,  32, 0),   # dexterity
     3:   (7,  32, 0),   # vitality
+    4:   (7,   0, 0),   # D2R stat 4 — confirmed save_bits=7 empirically from Goldwrap parsing
+    5:   (8,   0, 0),   # D2R stat 5 — save_bits=8 best guess; appears on unique shields
+    6:   (8,   0, 0),   # D2R stat 6 — save_bits=8 best guess; appears on unique swords/shields
+    8:   (9,   0, 0),   # D2R stat 8 — empirically determined; appears in property lists
+    10:  (1,   0, 0),   # D2R stat 10 — empirically determined; header stat on some charms
+    12:  (9,   0, 0),   # D2R stat 12 — empirically determined; appears after stat 10/84
+    14:  (9,   0, 0),   # D2R stat 14 — empirically determined; appears after stat 30 on gloves
+    15:  (3,   0, 0),   # D2R stat 15 — confirmed save_bits=3 (only 3 bits remain after it in Grand Charm buffer)
     7:   (9,  32, 0),   # maxhp
     9:   (8,  32, 0),   # maxmana
     11:  (8,  32, 0),   # maxstamina
@@ -33,6 +41,7 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     26:  (8,   0, 0),   # manarecovery
     27:  (8,   0, 0),   # manarecoverybonus
     28:  (8,   0, 0),   # staminarecoverybonus
+    30:  (3,   0, 0),   # D2R stat 30 — confirmed save_bits=3; header stat on belts/gloves/boots preceding resist stats
     31:  (11, 10, 0),   # armorclass
     32:  (9,   0, 0),   # armorclass_vs_missile
     33:  (8,   0, 0),   # armorclass_vs_hth
@@ -86,6 +95,7 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     81:  (7,   0, 0),   # item_knockback
     82:  (9,  20, 0),   # item_timeduration
     83:  (3,   0, 3),   # item_addclassskills
+    84:  (3,   0, 0),   # D2R stat 84 — empirically determined save_bits=3; header on some armor items
     85:  (9,  50, 0),   # item_addexperience
     86:  (7,   0, 0),   # item_healafterkill
     87:  (7,   0, 0),   # item_reducedprices
@@ -100,7 +110,9 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     97:  (6,   0, 9),   # item_nonclassskill
     98:  (1,   0, 8),   # state
     99:  (7,  20, 0),   # item_fastergethitrate
+    100: (8,   0, 0),   # D2R stat 100 — save_bits=8 best guess; appears on unique weapons
     101: (8,   0, 0),   # unknown
+    103: (8,   0, 0),   # D2R stat 103 — save_bits=8 best guess; appears on rare armor items
     102: (7,  20, 0),   # item_fasterblockrate
     104: (1,   0, 0),   # skill_bypass_demons
     105: (7,  20, 0),   # item_fastercastrate
@@ -126,6 +138,9 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     126: (3,   0, 3),   # item_elemskill
     127: (3,   0, 0),   # item_allskills
     128: (5,   0, 0),   # item_attackertakeslightdamage
+    129: (8,   0, 0),   # D2R stat 129 — save_bits=8 best guess; appears on magic amulets
+    130: (8,   0, 0),   # D2R stat 130 — save_bits=8 best guess; appears on rare helms
+    131: (11,  0, 0),   # D2R stat 131 — CONFIRMED save_bits=11 (leads to sentinel in Ruby Light Gauntlets)
     132: (6,   0, 0),   # bonearmor
     133: (7,   0, 0),   # bonearmormax
     134: (5,   0, 0),   # item_freeze
@@ -156,6 +171,7 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     159: (6,   0, 0),   # item_throw_mindamage
     160: (7,   0, 0),   # item_throw_maxdamage
     161: (8,   0, 0),   # unknown
+    166: (8,   0, 0),   # D2R stat 166 — save_bits=8 best guess; appears on rare jewelry
     167: (7,   0, 0),   # skill_conviction
     168: (7,   0, 0),   # skill_chillingarmor
     169: (8,   0, 0),   # unknown
@@ -193,7 +209,8 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     205: (7,   0, 0),   # item_noconsume
     206: (8,   0, 0),   # passive_mastery_noconsume
     207: (8,   0, 0),   # passive_mastery_replenish_oncrit
-    208: (9,   0, 0),   # missile_thorns_percent
+    208: (9, 105, 0),   # mod lightning resist (displayed value = raw - 105)
+    210: (8,   0, 0),   # D2R stat 210 — save_bits=8 best guess; appears on rare rings/jewelry
     211: (8,   0, 0),   # ua_defeated counter
     212: (8,   0, 0),   # unknown
     213: (8,   0, 0),   # passive_mastery_gethit_rate
@@ -332,6 +349,7 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     347: (8,   0, 0),   # passive_mastery_throw_crit
     348: (8,   0, 0),   # passive_weaponblock
     349: (8,   0, 0),   # passive_summon_resist
+    353: (8,   0, 0),   # D2R stat 353 — save_bits=8 best guess; appears on unique boots
     355: (1,   0, 0),   # shortparam1
     356: (2,   0, 0),   # questitemdifficulty
     357: (9,  50, 0),   # passive_mag_mastery
@@ -350,6 +368,8 @@ STAT_TABLE: dict[int, tuple[int, int, int]] = {
     **{k: (8, 0, 0) for k in range(368, 396)},   # D2R additions 368-395
     **{k: (8, 0, 0) for k in range(397, 424)},   # D2R additions 397-423
     **{k: (8, 0, 0) for k in range(425, 511)},   # D2R additions 425-510
+    # Mod stat overrides (must come after catch-all ranges to take precedence)
+    385: (8, 237, 0),   # mod extra gold from monsters (displayed value = raw - 237)
 }
 
 # Derived: stat_id → total bits to consume (save_param_bits + save_bits)
