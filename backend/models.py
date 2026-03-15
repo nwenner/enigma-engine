@@ -120,6 +120,18 @@ class VaultItem(Base):
     catalog_id = Column(Integer, ForeignKey("grail_catalog.id"), nullable=True)
 
 
+class ItemStatFeedback(Base):
+    """User-provided ground-truth stats for a vault item (for parser calibration)."""
+    __tablename__ = "item_stat_feedback"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vault_item_id = Column(Integer, ForeignKey("vault_items.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    confirmed_accurate = Column(Boolean, nullable=False, default=False)
+    corrected_stats = Column(JSON, nullable=True)  # list[str] — user-provided ground truth
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class GoldVault(Base):
     """Gold deposited from stash into the app (bypasses 12.5M stash cap)."""
     __tablename__ = "gold_vault"

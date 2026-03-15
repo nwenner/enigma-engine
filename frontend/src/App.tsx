@@ -12,6 +12,7 @@ import Rewards from "./pages/Rewards";
 import Demon from "./pages/Demon";
 import BossPortals from "./pages/BossPortals";
 import { usePreflight } from "./api/hooks";
+import { Toaster } from "sonner";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "⚔️" },
@@ -74,6 +75,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <Toaster position="bottom-right" richColors />
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div

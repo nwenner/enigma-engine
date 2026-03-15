@@ -10,6 +10,7 @@ import {
   useDismissAutoSync,
   useResolveConflict,
   useSyncSummary,
+  useSyncToasts,
 } from "../api/hooks";
 import SyncStatusModal from "../components/SyncStatusModal";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -432,6 +433,7 @@ function buildPushWarning(compare: SyncCompareResponse, machine: string): string
 type ComparingKey = "checkin_pc" | "checkin_deck" | "push_pc" | "push_deck";
 
 export default function Dashboard() {
+  useSyncToasts();
   const { data: seasonStats, isLoading: statsLoading } = useActiveSeasonStats();
   const { data: preflight } = usePreflight();
   const { data: autosync } = useAutoSyncStatus();

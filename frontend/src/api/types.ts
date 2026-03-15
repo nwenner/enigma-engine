@@ -182,6 +182,11 @@ export interface StashResponse {
   snapshot_at: string | null;
 }
 
+export interface StatFeedback {
+  confirmed_accurate: boolean;
+  corrected_stats: string[] | null;
+}
+
 export interface VaultItemResponse {
   id: number;
   name: string | null;
@@ -195,6 +200,7 @@ export interface VaultItemResponse {
   item_level: number;
   is_ethereal: boolean;
   properties: string[];
+  feedback: StatFeedback | null;
 }
 
 export interface GoldVaultResponse {

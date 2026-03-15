@@ -12,6 +12,7 @@ import {
   useActiveSeason,
   useRegisterRewardFromSnapshot,
   usePreflight,
+  useSaveStatFeedback,
 } from "../api/hooks";
 import type { StashItem, VaultItemResponse } from "../api/types";
 
@@ -854,22 +855,196 @@ function StashTabView({
   );
 }
 
+// ─── Stat feedback modal ──────────────────────────────────────────────────────
+
+function StatFeedbackModal({
+  item,
+  mode,
+  onClose,
+}: {
+  item: VaultItemResponse;
+  mode: Mode;
+  onClose: () => void;
+}) {
+  const save = useSaveStatFeedback(mode);
+  const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
+
+  // If existing corrected_stats: pre-populate added list, no parsed checked.
+  // If no feedback: pre-check all parsed stats.
+  const hasCorrected = item.feedback?.corrected_stats != null;
+  const [checkedParsed, setCheckedParsed] = useState<Set<string>>(
+    hasCorrected ? new Set() : new Set(item.properties)
+  );
+  const [added, setAdded] = useState<string[]>(
+    hasCorrected ? (item.feedback!.corrected_stats ?? []) : []
+  );
+  const [newStat, setNewStat] = useState("");
+
+  const toggleParsed = (stat: string) => {
+    setCheckedParsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(stat)) next.delete(stat);
+      else next.add(stat);
+      return next;
+    });
+  };
+
+  const addStat = () => {
+    const trimmed = newStat.trim();
+    if (!trimmed) return;
+    setAdded((prev) => [...prev, trimmed]);
+    setNewStat("");
+  };
+
+  const removeAdded = (i: number) => {
+    setAdded((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  const buildCorrectedStats = () => [
+    ...item.properties.filter((s) => checkedParsed.has(s)),
+    ...added,
+  ];
+
+  const handleSave = async (markAccurate: boolean) => {
+    try {
+      await save.mutateAsync({
+        itemId: item.id,
+        confirmed_accurate: markAccurate,
+        corrected_stats: buildCorrectedStats(),
+      });
+      onClose();
+    } catch {
+      // error shown below
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="card-d2 w-full max-w-md p-6 animate-fadeIn space-y-4">
+        <h3 className="font-diablo text-d2gold text-sm tracking-widest">
+          Edit Stats: {displayName}
+        </h3>
+
+        {item.properties.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-[10px] uppercase tracking-widest text-slate-500">Parsed stats (uncheck to exclude)</p>
+            {item.properties.map((stat, i) => (
+              <label key={i} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checkedParsed.has(stat)}
+                  onChange={() => toggleParsed(stat)}
+                  className="accent-d2gold"
+                />
+                <span className="text-xs text-slate-300">{stat}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        {added.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-[10px] uppercase tracking-widest text-slate-500">Added stats</p>
+            {added.map((stat, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="flex-1 text-xs text-slate-300">{stat}</span>
+                <button
+                  onClick={() => removeAdded(i)}
+                  className="text-slate-600 hover:text-red-400 text-xs transition-colors"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Add a stat line…"
+            value={newStat}
+            onChange={(e) => setNewStat(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addStat()}
+            className="flex-1 bg-d2bg border border-d2bg-border text-slate-200 text-xs px-2 py-1.5 placeholder-slate-600 focus:outline-none focus:border-d2gold/50 transition-colors"
+          />
+          <button
+            onClick={addStat}
+            disabled={!newStat.trim()}
+            className="btn-d2-ghost text-xs px-3 py-1.5 shrink-0"
+          >
+            Add
+          </button>
+        </div>
+
+        {save.error && (
+          <p className="text-red-400 text-xs bg-red-950/30 border border-red-800/40 px-3 py-2">
+            {save.error.message}
+          </p>
+        )}
+
+        <div className="flex gap-2 justify-end flex-wrap">
+          <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">Cancel</button>
+          <button
+            onClick={() => handleSave(false)}
+            disabled={save.isPending}
+            className="btn-d2-ghost text-xs px-4 py-2"
+          >
+            {save.isPending ? "Saving…" : "Save"}
+          </button>
+          <button
+            onClick={() => handleSave(true)}
+            disabled={save.isPending}
+            className="btn-d2 text-xs px-4 py-2"
+          >
+            Save & Mark Accurate
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Vault item row ───────────────────────────────────────────────────────────
 
 function VaultItemRow({
   item,
+  mode,
   onRetrieve,
+  onEditFeedback,
 }: {
   item: VaultItemResponse;
+  mode: Mode;
   onRetrieve: () => void;
+  onEditFeedback: () => void;
 }) {
   const { data: preflight } = usePreflight();
+  const saveFeedback = useSaveStatFeedback(mode);
   const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const colorText = qualityColor(item.quality).split(" ")[0];
   const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
   const date = fmtUtcDate(item.stored_at);
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
-  const hasTooltip = (item.properties?.length ?? 0) > 0 || item.is_ethereal;
+
+  // Tooltip shows corrected_stats if present, else parsed properties
+  const tooltipProps = item.feedback?.corrected_stats ?? item.properties;
+  const hasTooltip = (tooltipProps?.length ?? 0) > 0 || item.is_ethereal;
+  const tooltipItem = { ...item, properties: tooltipProps };
+
+  const isAccurate = item.feedback?.confirmed_accurate === true;
+  const hasCorrected = item.feedback?.corrected_stats != null;
+
+  const handleMarkAccurate = async () => {
+    try {
+      await saveFeedback.mutateAsync({
+        itemId: item.id,
+        confirmed_accurate: true,
+        corrected_stats: null,
+      });
+    } catch {
+      // silent
+    }
+  };
 
   return (
     <div
@@ -897,6 +1072,34 @@ function VaultItemRow({
             ilvl {item.item_level}
           </span>
         )}
+        {/* Feedback status badges */}
+        {isAccurate && (
+          <span className="text-[10px] text-green-500 shrink-0" title="Stats confirmed accurate">✅</span>
+        )}
+        {hasCorrected && (
+          <span className="text-[10px] text-yellow-400 shrink-0" title="Stats corrected">✏️</span>
+        )}
+        {/* Accurate button */}
+        <button
+          onClick={handleMarkAccurate}
+          disabled={saveFeedback.isPending}
+          title="Mark parsed stats as accurate"
+          className={`text-[10px] px-1.5 py-0.5 border transition-colors shrink-0 ${
+            isAccurate
+              ? "text-green-400 border-green-700"
+              : "text-slate-600 border-slate-800 hover:text-green-400 hover:border-green-700"
+          }`}
+        >
+          ✓
+        </button>
+        {/* Edit stats button */}
+        <button
+          onClick={onEditFeedback}
+          title="Edit stats"
+          className="text-[10px] text-slate-600 border border-slate-800 hover:text-yellow-400 hover:border-yellow-700 px-1.5 py-0.5 transition-colors shrink-0"
+        >
+          ✎
+        </button>
         <CopyVaultHexButton itemId={item.id} />
         <button
           onClick={onRetrieve}
@@ -912,7 +1115,7 @@ function VaultItemRow({
         <span className="text-slate-800 text-[10px]">·</span>
         <span className="text-slate-700 text-[10px]">{date}</span>
       </div>
-      {tooltip && hasTooltip && <D2ItemTooltip item={item} x={tooltip.x} y={tooltip.y} />}
+      {tooltip && hasTooltip && <D2ItemTooltip item={tooltipItem} x={tooltip.x} y={tooltip.y} />}
     </div>
   );
 }
@@ -922,6 +1125,7 @@ function VaultItemRow({
 function VaultSection({ mode }: { mode: Mode }) {
   const { data: items, isLoading } = useVaultItems(mode);
   const [retrieveTarget, setRetrieveTarget] = useState<VaultItemResponse | null>(null);
+  const [feedbackTarget, setFeedbackTarget] = useState<VaultItemResponse | null>(null);
 
   if (isLoading) {
     return (
@@ -948,7 +1152,9 @@ function VaultSection({ mode }: { mode: Mode }) {
             <VaultItemRow
               key={item.id}
               item={item}
+              mode={mode}
               onRetrieve={() => setRetrieveTarget(item)}
+              onEditFeedback={() => setFeedbackTarget(item)}
             />
           ))}
         </div>
@@ -959,6 +1165,14 @@ function VaultSection({ mode }: { mode: Mode }) {
           item={retrieveTarget}
           mode={mode}
           onClose={() => setRetrieveTarget(null)}
+        />
+      )}
+
+      {feedbackTarget && (
+        <StatFeedbackModal
+          item={feedbackTarget}
+          mode={mode}
+          onClose={() => setFeedbackTarget(null)}
         />
       )}
     </div>

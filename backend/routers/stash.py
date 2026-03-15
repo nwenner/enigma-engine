@@ -23,7 +23,7 @@ from sqlalchemy import select
 
 from backend.config import get_settings
 from backend.database import get_session
-from backend.models import VaultItem, GoldVault, BackupSnapshot, Season
+from backend.models import VaultItem, GoldVault, BackupSnapshot, Season, ItemStatFeedback
 from backend.services.stash_service import QUALITY_NAMES
 from backend.services.item_parsing.item_stats import parse_standalone_stats
 
@@ -68,6 +68,11 @@ class StashResponse(BaseModel):
     snapshot_at: Optional[str] = None
 
 
+class StatFeedback(BaseModel):
+    confirmed_accurate: bool
+    corrected_stats: Optional[list[str]] = None
+
+
 class VaultItemResponse(BaseModel):
     id: int
     name: Optional[str]
@@ -81,6 +86,12 @@ class VaultItemResponse(BaseModel):
     item_level: int
     is_ethereal: bool
     properties: list[str]
+    feedback: Optional[StatFeedback] = None
+
+
+class StatFeedbackRequest(BaseModel):
+    confirmed_accurate: bool
+    corrected_stats: Optional[list[str]] = None
 
 
 class GoldVaultResponse(BaseModel):
@@ -369,6 +380,14 @@ async def list_vault_items(
         .order_by(VaultItem.stored_at.desc())
     )
     items = result.scalars().all()
+
+    feedback_result = await session.execute(
+        select(ItemStatFeedback).where(
+            ItemStatFeedback.vault_item_id.in_([i.id for i in items])
+        )
+    )
+    feedback_map = {f.vault_item_id: f for f in feedback_result.scalars()}
+
     return [
         VaultItemResponse(
             id=item.id,
@@ -383,6 +402,13 @@ async def list_vault_items(
             item_level=item.item_level,
             is_ethereal=item.is_ethereal,
             properties=parse_standalone_stats(item.raw_item_bytes) if item.raw_item_bytes else [],
+            feedback=(
+                StatFeedback(
+                    confirmed_accurate=feedback_map[item.id].confirmed_accurate,
+                    corrected_stats=feedback_map[item.id].corrected_stats,
+                )
+                if item.id in feedback_map else None
+            ),
         )
         for item in items
     ]
@@ -539,6 +565,65 @@ async def get_stash_debug(
         "item_count": len(page.items),
         "items": items_out,
     }
+
+
+@router.post("/vault/items/{item_id}/feedback")
+async def save_stat_feedback(
+    item_id: int,
+    body: StatFeedbackRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Upsert stat feedback for a vault item (for parser calibration)."""
+    item = await session.get(VaultItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Vault item not found")
+
+    result = await session.execute(
+        select(ItemStatFeedback).where(ItemStatFeedback.vault_item_id == item_id)
+    )
+    existing = result.scalar_one_or_none()
+
+    from datetime import datetime
+    if existing:
+        existing.confirmed_accurate = body.confirmed_accurate
+        existing.corrected_stats = body.corrected_stats
+        existing.updated_at = datetime.utcnow()
+    else:
+        session.add(ItemStatFeedback(
+            vault_item_id=item_id,
+            confirmed_accurate=body.confirmed_accurate,
+            corrected_stats=body.corrected_stats,
+        ))
+
+    await session.commit()
+    return {"success": True}
+
+
+@router.get("/stat-feedback/export")
+async def export_stat_feedback(session: AsyncSession = Depends(get_session)):
+    """Export all vault items with feedback for parser calibration analysis."""
+    result = await session.execute(
+        select(ItemStatFeedback).order_by(ItemStatFeedback.vault_item_id)
+    )
+    feedbacks = result.scalars().all()
+
+    out = []
+    for fb in feedbacks:
+        item = await session.get(VaultItem, fb.vault_item_id)
+        if item is None:
+            continue
+        parsed = parse_standalone_stats(item.raw_item_bytes) if item.raw_item_bytes else []
+        out.append({
+            "vault_item_id": item.id,
+            "item_name": item.name or item.base_item,
+            "item_type": item.item_code,
+            "item_level": item.item_level,
+            "hex_bytes": bytes(item.raw_item_bytes).hex() if item.raw_item_bytes else "",
+            "parsed_stats": parsed,
+            "corrected_stats": fb.corrected_stats,
+            "confirmed_accurate": fb.confirmed_accurate,
+        })
+    return out
 
 
 @router.post("/vault/items/{item_id}/retrieve")

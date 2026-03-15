@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import api from "./client";
 import type {
   BossPortalStatus,
@@ -878,5 +879,70 @@ export function useRestoreDemon() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["demon"] });
     },
+  });
+}
+
+// ─── Stat Feedback ───────────────────────────────────────────────────────────
+
+export function useSaveStatFeedback(mode: "sc" | "hc") {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean },
+    Error,
+    { itemId: number; confirmed_accurate: boolean; corrected_stats: string[] | null }
+  >({
+    mutationFn: ({ itemId, confirmed_accurate, corrected_stats }) =>
+      api.post(`/vault/items/${itemId}/feedback`, { confirmed_accurate, corrected_stats }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["vault", "items", mode] }),
+  });
+}
+
+// ─── Sync Toast Notifications ─────────────────────────────────────────────────
+
+const DIRECTION_LABELS: Record<string, string> = {
+  checkin_pc:   "PC → Vault",
+  checkin_deck: "Steam Deck → Vault",
+  app_to_pc:    "Vault → PC",
+  app_to_deck:  "Vault → Steam Deck",
+  pc_to_deck:   "PC → Steam Deck",
+  deck_to_pc:   "Steam Deck → PC",
+};
+
+export function useSyncToasts() {
+  const lastIdRef = useRef<number | null>(null);
+
+  useQuery({
+    queryKey: ["sync", "toast-poll"],
+    queryFn: async () => {
+      const res = await fetch("/api/history?page=1&page_size=10");
+      const data: HistoryResponse = await res.json();
+
+      const newOps = data.items.filter(
+        (op) =>
+          (lastIdRef.current === null || op.id > lastIdRef.current) &&
+          (op.status === "success" || op.status === "failed")
+      );
+
+      if (lastIdRef.current !== null) {
+        const { toast } = await import("sonner");
+        newOps.forEach((op) => {
+          const label = DIRECTION_LABELS[op.direction] ?? op.direction;
+          if (op.status === "success") {
+            toast.success(`${label} — ${op.file_count} file${op.file_count !== 1 ? "s" : ""} synced`);
+          } else {
+            toast.error(`Sync failed: ${label}${op.error_message ? ` — ${op.error_message}` : ""}`);
+          }
+        });
+      }
+
+      if (data.items.length > 0) {
+        const maxId = Math.max(...data.items.map((i) => i.id));
+        lastIdRef.current = Math.max(lastIdRef.current ?? 0, maxId);
+      }
+
+      return data;
+    },
+    refetchInterval: 15_000,
+    staleTime: 0,
   });
 }
