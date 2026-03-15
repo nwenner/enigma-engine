@@ -153,13 +153,13 @@ async def _push_to_machine(dest: str) -> None:
     from backend.services.backup_manager import push_snapshot_to_machine
 
     is_windows = dest == "pc"
-    log.info("mothership_push: starting push to %s", dest)
+    log.warning("mothership_push: starting push to %s", dest)
     async with AsyncSessionLocal() as session:
         try:
             conn_kwargs = await _get_conn_kwargs(session, dest)
             save_dir = await _get_setting(session, f"{dest}_save_path") or ""
             removed, uploaded = await push_snapshot_to_machine(session, dest, conn_kwargs, save_dir, is_windows)
-            log.info("mothership_push: %s complete — removed %d, uploaded %d file(s)", dest, removed, uploaded)
+            log.warning("mothership_push: %s complete — removed %d, uploaded %d file(s)", dest, removed, uploaded)
         except Exception as exc:
             log.warning("mothership_push: push to %s failed (best-effort): %s", dest, exc)
 
@@ -226,7 +226,7 @@ async def trigger_mothership_push(
         targets.append("deck")
 
     if targets:
-        log.info("mothership_push: scheduled push to: %s", ", ".join(targets))
+        log.warning("mothership_push: scheduled push to: %s", ", ".join(targets))
 
 
 async def _auto_push_to_dest(direction: str) -> None:
