@@ -16,6 +16,28 @@ Coverage:
       - conn failure logs and returns without raising
       - push failure logs and returns without raising
 
+  _push_to_machine (new — mothership auto-push)
+      - "pc" → is_windows=True passed to push_snapshot_to_machine
+      - "deck" → is_windows=False passed to push_snapshot_to_machine
+      - conn failure is swallowed (best-effort)
+      - push failure is swallowed (best-effort)
+
+  trigger_mothership_push (new)
+      - disabled → no background tasks added
+      - both pc+deck enabled → two tasks added
+      - only pc enabled → one task for "pc"
+      - only deck enabled → one task for "deck"
+      - neither machine enabled (but master switch on) → no tasks
+
+  guard_mothership_write (new)
+      - disabled → no-op, no exception
+      - D2R running on pc → HTTPException 409
+      - D2R running on deck → HTTPException 409
+      - D2R not running on either → no exception
+      - both machines unreachable (None) → no exception
+      - pc not in enabled list → pc skipped, only deck checked
+      - no machines enabled → no-op, no exception
+
   _has_new_saves
       - True when any mtime exceeds since + threshold
       - False when all mtimes within threshold
@@ -46,8 +68,11 @@ pytest.importorskip("sqlalchemy", reason="SQLAlchemy not installed — run tests
 from backend.services.auto_sync import (
     _auto_push_to_dest,
     _has_new_saves,
+    _push_to_machine,
     _snapshot_source,
+    guard_mothership_write,
     run_auto_sync_watcher,
+    trigger_mothership_push,
     CONFLICT_THRESHOLD_SECONDS,
     PENDING_EXPIRY_DAYS,
 )
@@ -607,3 +632,249 @@ class TestWatcherPending:
         set_state_calls = [c.args[0] for c in set_state.call_args_list]
         idle_calls = [s for s in set_state_calls if s.get("status") == "idle"]
         assert len(idle_calls) >= 1
+
+
+# ─── _push_to_machine ─────────────────────────────────────────────────────────
+
+class TestPushToMachine:
+    """_push_to_machine is the best-effort per-machine push used by trigger_mothership_push."""
+
+    async def test_pc_passes_is_windows_true(self) -> None:
+        """Destination 'pc' must set is_windows=True when calling push_snapshot_to_machine."""
+        mock_push = AsyncMock(return_value=(0, 2))
+        with patch("backend.services.auto_sync.AsyncSessionLocal", return_value=_ctx()), \
+             patch("backend.services.auto_sync._get_conn_kwargs", new_callable=AsyncMock, return_value={"host": "pc"}), \
+             patch("backend.services.auto_sync._get_setting", new_callable=AsyncMock, return_value="/pc/saves"), \
+             patch("backend.services.backup_manager.push_snapshot_to_machine", mock_push):
+            await _push_to_machine("pc")
+
+        mock_push.assert_awaited_once()
+        _sess, machine, _conn, _dir, is_windows = mock_push.call_args[0]
+        assert machine == "pc"
+        assert is_windows is True
+
+    async def test_deck_passes_is_windows_false(self) -> None:
+        """Destination 'deck' must set is_windows=False when calling push_snapshot_to_machine."""
+        mock_push = AsyncMock(return_value=(0, 2))
+        with patch("backend.services.auto_sync.AsyncSessionLocal", return_value=_ctx()), \
+             patch("backend.services.auto_sync._get_conn_kwargs", new_callable=AsyncMock, return_value={"host": "deck"}), \
+             patch("backend.services.auto_sync._get_setting", new_callable=AsyncMock, return_value="/deck/saves"), \
+             patch("backend.services.backup_manager.push_snapshot_to_machine", mock_push):
+            await _push_to_machine("deck")
+
+        mock_push.assert_awaited_once()
+        _sess, machine, _conn, _dir, is_windows = mock_push.call_args[0]
+        assert machine == "deck"
+        assert is_windows is False
+
+    async def test_conn_failure_does_not_raise(self) -> None:
+        """SSH connection errors are caught and swallowed — endpoint must not fail."""
+        with patch("backend.services.auto_sync.AsyncSessionLocal", return_value=_ctx()), \
+             patch("backend.services.auto_sync._get_conn_kwargs",
+                   AsyncMock(side_effect=ValueError("no creds configured"))):
+            await _push_to_machine("pc")  # must not raise
+
+    async def test_push_failure_does_not_raise(self) -> None:
+        """push_snapshot_to_machine errors (e.g. D2R running) are swallowed."""
+        with patch("backend.services.auto_sync.AsyncSessionLocal", return_value=_ctx()), \
+             patch("backend.services.auto_sync._get_conn_kwargs", new_callable=AsyncMock, return_value={}), \
+             patch("backend.services.auto_sync._get_setting", new_callable=AsyncMock, return_value="/saves"), \
+             patch("backend.services.backup_manager.push_snapshot_to_machine",
+                   AsyncMock(side_effect=RuntimeError("D2R is currently running on PC"))):
+            await _push_to_machine("pc")  # must not raise
+
+
+# ─── trigger_mothership_push ──────────────────────────────────────────────────
+
+def _setting_side_effect(**values):
+    """AsyncMock side_effect for _get_setting(session, key) returning keyed values."""
+    async def _fn(_session, key: str) -> str | None:
+        return values.get(key)
+    return AsyncMock(side_effect=_fn)
+
+
+class TestTriggerMothershipPush:
+    """trigger_mothership_push schedules background tasks based on auto-sync settings."""
+
+    async def test_disabled_schedules_no_tasks(self) -> None:
+        """Master switch off → add_task never called."""
+        bg = MagicMock()
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(autosync_enabled="false")):
+            await trigger_mothership_push(bg, session)
+        bg.add_task.assert_not_called()
+
+    async def test_both_enabled_schedules_two_tasks(self) -> None:
+        """Both pc and deck enabled → two add_task calls, one per machine."""
+        bg = MagicMock()
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="true",
+                       autosync_deck_enabled="true",
+                   )):
+            await trigger_mothership_push(bg, session)
+
+        assert bg.add_task.call_count == 2
+        machines = {call.args[1] for call in bg.add_task.call_args_list}
+        assert machines == {"pc", "deck"}
+
+    async def test_only_pc_enabled_schedules_pc_task(self) -> None:
+        """Only pc enabled → exactly one task for 'pc'."""
+        bg = MagicMock()
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="true",
+                       autosync_deck_enabled="false",
+                   )):
+            await trigger_mothership_push(bg, session)
+
+        assert bg.add_task.call_count == 1
+        assert bg.add_task.call_args.args[1] == "pc"
+
+    async def test_only_deck_enabled_schedules_deck_task(self) -> None:
+        """Only deck enabled → exactly one task for 'deck'."""
+        bg = MagicMock()
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="false",
+                       autosync_deck_enabled="true",
+                   )):
+            await trigger_mothership_push(bg, session)
+
+        assert bg.add_task.call_count == 1
+        assert bg.add_task.call_args.args[1] == "deck"
+
+    async def test_neither_machine_enabled_schedules_no_tasks(self) -> None:
+        """Master switch on but both per-machine toggles off → no tasks."""
+        bg = MagicMock()
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="false",
+                       autosync_deck_enabled="false",
+                   )):
+            await trigger_mothership_push(bg, session)
+        bg.add_task.assert_not_called()
+
+
+# ─── guard_mothership_write ───────────────────────────────────────────────────
+
+class TestGuardMothershipWrite:
+    """guard_mothership_write blocks writes when D2R is detected running on any enabled machine."""
+
+    def _check_d2r_fn(self, **machine_states: bool | None):
+        """Return an AsyncMock side_effect for _check_d2r(machine, is_windows)."""
+        async def _fn(machine: str, _is_windows: bool) -> bool | None:
+            return machine_states.get(machine)
+        return AsyncMock(side_effect=_fn)
+
+    async def test_disabled_does_not_raise(self) -> None:
+        """Auto-sync disabled → guard is a no-op regardless of D2R state."""
+        session = AsyncMock()
+        mock_check = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(autosync_enabled="false")), \
+             patch("backend.services.auto_sync._check_d2r", mock_check):
+            await guard_mothership_write(session)  # must not raise
+        mock_check.assert_not_called()
+
+    async def test_d2r_running_on_pc_raises_409(self) -> None:
+        """D2R confirmed running on PC → HTTPException with status 409."""
+        from fastapi import HTTPException
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="true",
+                       autosync_deck_enabled="false",
+                   )), \
+             patch("backend.services.auto_sync._check_d2r",
+                   self._check_d2r_fn(pc=True)):
+            with pytest.raises(HTTPException) as exc_info:
+                await guard_mothership_write(session)
+        assert exc_info.value.status_code == 409
+        assert "PC" in exc_info.value.detail
+
+    async def test_d2r_running_on_deck_raises_409(self) -> None:
+        """D2R confirmed running on Deck → HTTPException with status 409."""
+        from fastapi import HTTPException
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="false",
+                       autosync_deck_enabled="true",
+                   )), \
+             patch("backend.services.auto_sync._check_d2r",
+                   self._check_d2r_fn(deck=True)):
+            with pytest.raises(HTTPException) as exc_info:
+                await guard_mothership_write(session)
+        assert exc_info.value.status_code == 409
+        assert "DECK" in exc_info.value.detail
+
+    async def test_d2r_not_running_does_not_raise(self) -> None:
+        """Both machines reachable and not running → no exception."""
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="true",
+                       autosync_deck_enabled="true",
+                   )), \
+             patch("backend.services.auto_sync._check_d2r",
+                   self._check_d2r_fn(pc=False, deck=False)):
+            await guard_mothership_write(session)  # must not raise
+
+    async def test_unreachable_machines_do_not_raise(self) -> None:
+        """None return (SSH timeout) is treated as 'not running' — don't block the user."""
+        session = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="true",
+                       autosync_deck_enabled="true",
+                   )), \
+             patch("backend.services.auto_sync._check_d2r",
+                   self._check_d2r_fn(pc=None, deck=None)):
+            await guard_mothership_write(session)  # must not raise
+
+    async def test_unenabled_machine_not_checked(self) -> None:
+        """A machine whose per-machine toggle is off is never SSH-checked, even if D2R
+        would be running on it — it's not in scope for auto-sync."""
+        session = AsyncMock()
+        mock_check = self._check_d2r_fn(pc=True, deck=False)
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="false",   # PC not enrolled
+                       autosync_deck_enabled="true",
+                   )), \
+             patch("backend.services.auto_sync._check_d2r", mock_check):
+            await guard_mothership_write(session)  # must not raise (only deck checked)
+
+        # _check_d2r should only have been called for "deck"
+        checked = [call.args[0] for call in mock_check.call_args_list]
+        assert "pc" not in checked
+        assert "deck" in checked
+
+    async def test_no_machines_enrolled_is_noop(self) -> None:
+        """Master switch on but both per-machine toggles off → no D2R check, no exception."""
+        session = AsyncMock()
+        mock_check = AsyncMock()
+        with patch("backend.services.auto_sync._get_setting",
+                   _setting_side_effect(
+                       autosync_enabled="true",
+                       autosync_pc_enabled="false",
+                       autosync_deck_enabled="false",
+                   )), \
+             patch("backend.services.auto_sync._check_d2r", mock_check):
+            await guard_mothership_write(session)  # must not raise
+        mock_check.assert_not_called()

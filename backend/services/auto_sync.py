@@ -153,12 +153,13 @@ async def _push_to_machine(dest: str) -> None:
     from backend.services.backup_manager import push_snapshot_to_machine
 
     is_windows = dest == "pc"
+    log.info("mothership_push: starting push to %s", dest)
     async with AsyncSessionLocal() as session:
         try:
             conn_kwargs = await _get_conn_kwargs(session, dest)
             save_dir = await _get_setting(session, f"{dest}_save_path") or ""
-            await push_snapshot_to_machine(session, dest, conn_kwargs, save_dir, is_windows)
-            log.info("mothership_push: pushed snapshot to %s", dest)
+            removed, uploaded = await push_snapshot_to_machine(session, dest, conn_kwargs, save_dir, is_windows)
+            log.info("mothership_push: %s complete — removed %d, uploaded %d file(s)", dest, removed, uploaded)
         except Exception as exc:
             log.warning("mothership_push: push to %s failed (best-effort): %s", dest, exc)
 
@@ -216,10 +217,16 @@ async def trigger_mothership_push(
     pc_enabled = await _get_setting(session, "autosync_pc_enabled") or "false"
     deck_enabled = await _get_setting(session, "autosync_deck_enabled") or "false"
 
+    targets = []
     if pc_enabled.lower() == "true":
         background_tasks.add_task(_push_to_machine, "pc")
+        targets.append("pc")
     if deck_enabled.lower() == "true":
         background_tasks.add_task(_push_to_machine, "deck")
+        targets.append("deck")
+
+    if targets:
+        log.info("mothership_push: scheduled push to: %s", ", ".join(targets))
 
 
 async def _auto_push_to_dest(direction: str) -> None:
