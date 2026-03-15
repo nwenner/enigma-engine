@@ -8,6 +8,7 @@ import {
   useGrailDepositPreview,
   useResetGrail,
   useActiveSeason,
+  usePreflight,
 } from "../api/hooks";
 import type { GrailItem } from "../api/types";
 
@@ -58,6 +59,8 @@ function RetrieveModal({
   onClose: () => void;
 }) {
   const retrieve = useRetrieveGrailItem();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
 
   const handleRetrieve = async () => {
     try {
@@ -88,7 +91,8 @@ function RetrieveModal({
           </button>
           <button
             onClick={handleRetrieve}
-            disabled={retrieve.isPending}
+            disabled={retrieve.isPending || d2rRunning}
+            title={d2rRunning ? "D2R is running — close the game first" : undefined}
             className="btn-d2 text-xs px-4 py-2"
           >
             {retrieve.isPending ? "Retrieving…" : "Retrieve"}
@@ -110,6 +114,8 @@ function ItemRow({
   onRetrieve: (item: GrailItem) => void;
   onUnmark: (item: GrailItem) => void;
 }) {
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   return (
     <div
       className={`flex items-center gap-3 px-3 py-2 border-b border-d2bg-border/50 last:border-0 ${
@@ -134,8 +140,9 @@ function ItemRow({
           {item.is_deposited ? (
             <button
               onClick={() => onRetrieve(item)}
-              className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors"
-              title="Retrieve this item to tab 5"
+              disabled={d2rRunning}
+              className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={d2rRunning ? "D2R is running — close the game first" : "Retrieve this item to tab 5"}
             >
               Request
             </button>
@@ -225,6 +232,8 @@ type PreviewItem = {
 function DepositPanel() {
   const { data: previewItems, isLoading: scanning, refetch } = useGrailDepositPreview();
   const deposit = useDepositTab5();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [result, setResult] = useState<{ registered: string[]; errors: string[] } | null>(null);
 
@@ -342,7 +351,8 @@ function DepositPanel() {
           <div className="px-4 py-3 border-t border-d2bg-border/40 flex items-center gap-2 flex-wrap">
             <button
               onClick={() => handleDeposit(Array.from(selected))}
-              disabled={deposit.isPending || selectedCount === 0}
+              disabled={deposit.isPending || selectedCount === 0 || d2rRunning}
+              title={d2rRunning ? "D2R is running — close the game first" : undefined}
               className="btn-d2 text-xs px-4 py-2"
             >
               {deposit.isPending ? "Depositing…" : `Deposit Selected (${selectedCount})`}
@@ -350,7 +360,8 @@ function DepositPanel() {
             {eligibleCount > 0 && selectedCount < eligibleCount && (
               <button
                 onClick={() => handleDeposit(eligibleIds)}
-                disabled={deposit.isPending}
+                disabled={deposit.isPending || d2rRunning}
+                title={d2rRunning ? "D2R is running — close the game first" : undefined}
                 className="btn-d2-ghost text-xs px-4 py-2"
               >
                 Deposit All Recognized ({eligibleCount})

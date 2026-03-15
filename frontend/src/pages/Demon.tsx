@@ -6,6 +6,7 @@ import {
   useSaveDemon,
   useDeleteDemon,
   useRestoreDemon,
+  usePreflight,
 } from "../api/hooks";
 import type { DemonRecord, WarlockInfo } from "../api/types";
 import { TagInput } from "../components/TagInput";
@@ -36,6 +37,8 @@ function RegisterPanel({
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const saveDemon = useSaveDemon();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
 
   function handleRegister() {
     if (!character || tags.length === 0) return;
@@ -111,7 +114,8 @@ function RegisterPanel({
         />
         <button
           className="btn-d2 text-sm"
-          disabled={!character || tags.length === 0 || saveDemon.isPending}
+          disabled={!character || tags.length === 0 || saveDemon.isPending || d2rRunning}
+          title={d2rRunning ? "D2R is running — close the game first" : undefined}
           onClick={handleRegister}
         >
           {saveDemon.isPending ? "Registering…" : "Register Demon"}
@@ -134,6 +138,8 @@ function DemonCard({
 }) {
   const deleteDemon = useDeleteDemon();
   const injectDemon = useRestoreDemon();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const [target, setTarget] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -202,7 +208,8 @@ function DemonCard({
           </select>
           <button
             className="btn-d2 text-xs"
-            disabled={!target || injectDemon.isPending}
+            disabled={!target || injectDemon.isPending || d2rRunning}
+            title={d2rRunning ? "D2R is running — close the game first" : undefined}
             onClick={handleInject}
           >
             {injectDemon.isPending ? "Injecting…" : "Inject →"}

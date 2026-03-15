@@ -10,7 +10,7 @@ DELETE /api/boss-summon/{set_id}/reset     → reset progress for a set
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,18 +39,27 @@ async def get_boss_portals(session: AsyncSession = Depends(get_session)):
 @router.post("/{set_id}/summon")
 async def summon(
     set_id: str,
+    background_tasks: BackgroundTasks,
     hardcore: bool = Query(default=False),
     session: AsyncSession = Depends(get_session),
 ):
     """Insert the required summon items into portal tab 5 of the latest snapshot."""
+    from backend.services.auto_sync import guard_mothership_write
+    await guard_mothership_write(session)
+
     try:
-        return await summon_boss_set(session, set_id, hardcore=hardcore)
+        result = await summon_boss_set(session, set_id, hardcore=hardcore)
     except ValueError as e:
         raise HTTPException(404, str(e))
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except RuntimeError as e:
         raise HTTPException(400, str(e))
+
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
+
+    return result
 
 
 @router.post("/{set_id}/earn")

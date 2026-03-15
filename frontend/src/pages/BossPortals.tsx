@@ -4,6 +4,7 @@ import {
   useSummonBossSet,
   useEarnBossSummonCode,
   useResetBossSummonProgress,
+  usePreflight,
 } from "../api/hooks";
 import type { BossPortalStatus, BossPortalRequiredItem } from "../api/types";
 
@@ -42,6 +43,8 @@ function BossSetCard({ set }: { set: BossPortalStatus }) {
   const summon = useSummonBossSet();
   const earn = useEarnBossSummonCode();
   const reset = useResetBossSummonProgress();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
 
   const allEarned = set.required_item_codes.every((c) => set.earned_codes.includes(c));
   const canSummon = set.unlocked && set.missing_rewards.length === 0;
@@ -166,7 +169,8 @@ function BossSetCard({ set }: { set: BossPortalStatus }) {
             </label>
             <button
               className="btn-d2 text-sm"
-              disabled={!canSummon || summon.isPending}
+              disabled={!canSummon || summon.isPending || d2rRunning}
+              title={d2rRunning ? "D2R is running — close the game first" : undefined}
               onClick={handleSummon}
             >
               {summon.isPending ? "Summoning…" : "Summon →"}

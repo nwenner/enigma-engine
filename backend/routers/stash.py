@@ -16,7 +16,7 @@ Endpoints:
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -243,10 +243,14 @@ async def get_vault_gold(
 @router.post("/stash/gold/deposit")
 async def deposit_gold(
     body: GoldDepositRequest,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     """Move gold from stash into the vault. D2R must not be running."""
     from backend.services.stash_service import deposit_gold as _deposit
+
+    from backend.services.auto_sync import guard_mothership_write
+    await guard_mothership_write(session)
 
     conn, save_dir = await _get_conn_and_dir(session, body.machine)
     await _check_not_running(conn, body.machine)
@@ -273,16 +277,23 @@ async def deposit_gold(
     except Exception as e:
         log.warning("Gold milestone check failed (non-fatal): %s", e)
 
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
+
     return {"success": True, "stash_gold": result["stash_gold"], "vault_gold": result["vault_gold"]}
 
 
 @router.post("/stash/gold/withdraw")
 async def withdraw_gold(
     body: GoldWithdrawRequest,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     """Move gold from vault into the stash. D2R must not be running."""
     from backend.services.stash_service import withdraw_gold as _withdraw
+
+    from backend.services.auto_sync import guard_mothership_write
+    await guard_mothership_write(session)
 
     conn, save_dir = await _get_conn_and_dir(session, body.machine)
     await _check_not_running(conn, body.machine)
@@ -302,16 +313,23 @@ async def withdraw_gold(
         log.error("Gold withdraw failed: %s", e)
         raise HTTPException(500, str(e))
 
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
+
     return {"success": True, "stash_gold": result["stash_gold"], "vault_gold": result["vault_gold"]}
 
 
 @router.post("/stash/item/store")
 async def store_item(
     body: StoreItemRequest,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     """Remove an item from the stash and save it in the vault. D2R must not be running."""
     from backend.services.stash_service import store_item as _store
+
+    from backend.services.auto_sync import guard_mothership_write
+    await guard_mothership_write(session)
 
     conn, save_dir = await _get_conn_and_dir(session, body.machine)
     await _check_not_running(conn, body.machine)
@@ -331,6 +349,9 @@ async def store_item(
     except Exception as e:
         log.error("Item store failed: %s", e)
         raise HTTPException(500, str(e))
+
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
 
     return {"success": True, **result}
 
@@ -522,10 +543,14 @@ async def get_stash_debug(
 @router.post("/vault/items/{item_id}/retrieve")
 async def retrieve_vault_item(
     item_id: int,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     """Write a stored vault item to tab 5 of the local snapshot. No SSH required — Sync to Device will push it."""
+    from backend.services.auto_sync import guard_mothership_write
     from backend.services.stash_service import retrieve_vault_item as _retrieve
+
+    await guard_mothership_write(session)
 
     try:
         display_name = await _retrieve(session=session, vault_item_id=item_id)
@@ -534,6 +559,9 @@ async def retrieve_vault_item(
     except Exception as e:
         log.error("Vault retrieve failed: %s", e)
         raise HTTPException(500, str(e))
+
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
 
     return {
         "success": True,

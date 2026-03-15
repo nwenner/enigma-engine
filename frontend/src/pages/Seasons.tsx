@@ -14,6 +14,7 @@ import {
   usePatchSeason,
   useMilestoneTemplate,
   useSaveMilestoneTemplate,
+  usePreflight,
 } from "../api/hooks";
 import type { MilestoneTemplate } from "../api/hooks";
 import type {
@@ -134,6 +135,8 @@ function MilestoneRow({
   canClaim: boolean;
 }) {
   const claimMutation = useClaimAchievement();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const [claimError, setClaimError] = useState<string | null>(null);
 
   const myAchs = achievements.filter((a) => a.milestone_id === ms.id);
@@ -184,12 +187,14 @@ function MilestoneRow({
             </span>
           )}
         </div>
-        {canClaim && unclaimedWithReward.length > 0 && !claimMutation.isPending && (
+        {canClaim && unclaimedWithReward.length > 0 && (
           <button
             onClick={() => handleClaim(unclaimedWithReward[0])}
+            disabled={claimMutation.isPending || d2rRunning}
+            title={d2rRunning ? "D2R is running — close the game first" : undefined}
             className="btn-d2 text-xs shrink-0"
           >
-            Claim Reward →
+            {claimMutation.isPending ? "Claiming…" : "Claim Reward →"}
           </button>
         )}
       </div>

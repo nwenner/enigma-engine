@@ -23,7 +23,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -584,9 +584,13 @@ async def validate_item(body: ValidateItemRequest):
 @router.post("/seasons/achievements/{achievement_id}/claim")
 async def claim_achievement(
     achievement_id: int,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
+    from backend.services.auto_sync import guard_mothership_write
     from backend.services.seasons_service import claim_reward
+
+    await guard_mothership_write(session)
 
     try:
         achievement = await claim_reward(session=session, achievement_id=achievement_id)
@@ -597,6 +601,9 @@ async def claim_achievement(
     except OSError as e:
         log.error("Claim reward I/O error for achievement %s: %s", achievement_id, e)
         raise HTTPException(500, "I/O error writing reward to stash — the backup is intact")
+
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
 
     return {"success": True, "claimed_at": achievement.claimed_at.isoformat()}
 

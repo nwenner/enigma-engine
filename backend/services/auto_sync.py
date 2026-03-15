@@ -148,6 +148,80 @@ async def _has_new_saves(machine: str, is_windows: bool, since: datetime) -> boo
     return any(m > threshold for m in mtimes)
 
 
+async def _push_to_machine(dest: str) -> None:
+    """Push the latest vault snapshot to a single destination machine. Best-effort."""
+    from backend.services.backup_manager import push_snapshot_to_machine
+
+    is_windows = dest == "pc"
+    async with AsyncSessionLocal() as session:
+        try:
+            conn_kwargs = await _get_conn_kwargs(session, dest)
+            save_dir = await _get_setting(session, f"{dest}_save_path") or ""
+            await push_snapshot_to_machine(session, dest, conn_kwargs, save_dir, is_windows)
+            log.info("mothership_push: pushed snapshot to %s", dest)
+        except Exception as exc:
+            log.warning("mothership_push: push to %s failed (best-effort): %s", dest, exc)
+
+
+async def guard_mothership_write(session) -> None:
+    """Raise HTTP 409 if D2R is running on any auto-sync-enabled machine.
+
+    Call this before any mothership write (grail, vault, rewards, demon, boss summon).
+    No-op if auto-sync is disabled or no machines are reachable.
+    Checks all enabled machines in parallel to minimize latency.
+    """
+    from fastapi import HTTPException
+
+    enabled = await _get_setting(session, "autosync_enabled") or "false"
+    if enabled.lower() != "true":
+        return
+
+    pc_enabled = await _get_setting(session, "autosync_pc_enabled") or "false"
+    deck_enabled = await _get_setting(session, "autosync_deck_enabled") or "false"
+
+    targets = []
+    if pc_enabled.lower() == "true":
+        targets.append(("pc", True))
+    if deck_enabled.lower() == "true":
+        targets.append(("deck", False))
+
+    if not targets:
+        return
+
+    async def _check_one(machine: str, is_windows: bool) -> tuple[str, bool | None]:
+        running = await _check_d2r(machine, is_windows)
+        return machine, running
+
+    results = await asyncio.gather(*[_check_one(m, w) for m, w in targets])
+
+    for machine, is_running in results:
+        if is_running is True:
+            raise HTTPException(
+                409,
+                f"D2R is currently running on {machine.upper()}. "
+                "Close the game before making changes — auto-sync would push them to the live device.",
+            )
+
+
+async def trigger_mothership_push(
+    background_tasks,  # fastapi.BackgroundTasks
+    session,           # AsyncSession — used to read settings
+) -> None:
+    """Schedule background pushes to all auto-sync-enabled machines.
+    Called after any mothership write operation. No-op if auto-sync is disabled."""
+    enabled = await _get_setting(session, "autosync_enabled") or "false"
+    if enabled.lower() != "true":
+        return
+
+    pc_enabled = await _get_setting(session, "autosync_pc_enabled") or "false"
+    deck_enabled = await _get_setting(session, "autosync_deck_enabled") or "false"
+
+    if pc_enabled.lower() == "true":
+        background_tasks.add_task(_push_to_machine, "pc")
+    if deck_enabled.lower() == "true":
+        background_tasks.add_task(_push_to_machine, "deck")
+
+
 async def _auto_push_to_dest(direction: str) -> None:
     """Push the latest vault snapshot to the destination machine."""
     from backend.services.backup_manager import push_snapshot_to_machine

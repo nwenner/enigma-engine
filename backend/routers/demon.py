@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -287,6 +287,7 @@ async def delete_demon(
 async def restore_demon(
     demon_id: int,
     body: RestoreDemonRequest,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     """
@@ -312,6 +313,9 @@ async def restore_demon(
     d2s_data = d2s_path.read_bytes()
     _require_warlock(d2s_data, body.character)
 
+    from backend.services.auto_sync import guard_mothership_write
+    await guard_mothership_write(session)
+
     try:
         new_d2s = restore_demon_to_d2s(d2s_data, demon.demon_bytes)
     except ValueError as e:
@@ -320,4 +324,8 @@ async def restore_demon(
     d2s_path.write_bytes(new_d2s)
 
     log.info("Injected demon '%s' into snapshot/%s", demon.label, character_file)
+
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
+
     return {"success": True, "label": demon.label, "character": character_file}

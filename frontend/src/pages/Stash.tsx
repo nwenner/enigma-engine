@@ -10,6 +10,7 @@ import {
   useFetchVaultItemBytes,
   useActiveSeason,
   useRegisterRewardFromSnapshot,
+  usePreflight,
 } from "../api/hooks";
 import type { StashItem, VaultItemResponse } from "../api/types";
 
@@ -157,6 +158,8 @@ function StoreModal({
   onClose: () => void;
 }) {
   const store = useStoreItem();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
   const colorText = qualityColor(item.quality).split(" ")[0];
 
@@ -191,7 +194,12 @@ function StoreModal({
 
         <div className="flex gap-2 justify-end">
           <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">Cancel</button>
-          <button onClick={handleStore} disabled={store.isPending} className="btn-d2 text-xs px-4 py-2">
+          <button
+            onClick={handleStore}
+            disabled={store.isPending || d2rRunning}
+            title={d2rRunning ? "D2R is running — close the game first" : undefined}
+            className="btn-d2 text-xs px-4 py-2"
+          >
             {store.isPending ? "Storing…" : "Store Item"}
           </button>
         </div>
@@ -212,6 +220,8 @@ function RetrieveVaultModal({
   onClose: () => void;
 }) {
   const retrieve = useRetrieveVaultItem();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const displayName = item.name ?? item.base_item ?? qualityLabel(item.quality);
 
   const handleRetrieve = async () => {
@@ -242,7 +252,12 @@ function RetrieveVaultModal({
 
         <div className="flex gap-2 justify-end">
           <button onClick={onClose} className="btn-d2-ghost text-xs px-4 py-2">Cancel</button>
-          <button onClick={handleRetrieve} disabled={retrieve.isPending} className="btn-d2 text-xs px-4 py-2">
+          <button
+            onClick={handleRetrieve}
+            disabled={retrieve.isPending || d2rRunning}
+            title={d2rRunning ? "D2R is running — close the game first" : undefined}
+            className="btn-d2 text-xs px-4 py-2"
+          >
             {retrieve.isPending ? "Retrieving…" : "Retrieve to Snapshot"}
           </button>
         </div>
@@ -266,6 +281,8 @@ function GoldPanel({
 }) {
   const deposit = useDepositGold();
   const withdraw = useWithdrawGold();
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const [depositInput, setDepositInput] = useState("");
   const [withdrawInput, setWithdrawInput] = useState("");
   const [depositError, setDepositError] = useState<string | null>(null);
@@ -321,7 +338,8 @@ function GoldPanel({
           />
           <button
             onClick={handleDeposit}
-            disabled={deposit.isPending || !depositInput}
+            disabled={deposit.isPending || !depositInput || d2rRunning}
+            title={d2rRunning ? "D2R is running — close the game first" : undefined}
             className="btn-d2 text-xs px-3 py-1.5 shrink-0"
           >
             {deposit.isPending ? "…" : "Deposit"}
@@ -352,7 +370,8 @@ function GoldPanel({
           />
           <button
             onClick={handleWithdraw}
-            disabled={withdraw.isPending || !withdrawInput}
+            disabled={withdraw.isPending || !withdrawInput || d2rRunning}
+            title={d2rRunning ? "D2R is running — close the game first" : undefined}
             className="btn-d2 text-xs px-3 py-1.5 shrink-0"
           >
             {withdraw.isPending ? "…" : "Withdraw"}
@@ -530,6 +549,8 @@ function ItemRow({
   onStore: () => void;
   onRegisterReward?: () => void;
 }) {
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const colorText = qualityColor(item.quality).split(" ")[0];
   const colorBorder = qualityColor(item.quality).split(" ")[1] ?? "border-slate-700/60";
   const displayName = item.name ?? item.base_item ?? item.quality_name;
@@ -574,8 +595,9 @@ function ItemRow({
         )}
         <button
           onClick={onStore}
-          className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
-          title="Store this item in vault"
+          disabled={d2rRunning}
+          className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={d2rRunning ? "D2R is running — close the game first" : "Store this item in vault"}
         >
           Store
         </button>
@@ -678,6 +700,8 @@ function StashTabView({
 
 function VaultSection({ mode }: { mode: Mode }) {
   const { data: items, isLoading } = useVaultItems(mode);
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
   const [retrieveTarget, setRetrieveTarget] = useState<VaultItemResponse | null>(null);
 
   if (isLoading) {
@@ -730,8 +754,9 @@ function VaultSection({ mode }: { mode: Mode }) {
                   <CopyVaultHexButton itemId={item.id} />
                   <button
                     onClick={() => setRetrieveTarget(item)}
-                    className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0"
-                    title="Retrieve to tab 5"
+                    disabled={d2rRunning}
+                    className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={d2rRunning ? "D2R is running — close the game first" : "Retrieve to tab 5"}
                   >
                     Retrieve
                   </button>

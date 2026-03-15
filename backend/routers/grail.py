@@ -14,7 +14,7 @@ import json
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -212,6 +212,7 @@ async def preview_deposit(session: AsyncSession = Depends(get_session)):
 
 @router.post("/grail/deposit")
 async def deposit_tab5(
+    background_tasks: BackgroundTasks,
     body: DepositRequest = DepositRequest(),
     session: AsyncSession = Depends(get_session),
 ):
@@ -222,13 +223,19 @@ async def deposit_tab5(
 
     SAFETY: Creates full local backup before ANY modification.
     """
+    from backend.services.auto_sync import guard_mothership_write
     from backend.services.grail_service import deposit_tab5 as _deposit
+
+    await guard_mothership_write(session)
 
     try:
         result = await _deposit(session=session, catalog_ids=body.catalog_ids)
     except Exception as e:
         log.error("Deposit failed: %s", e)
         raise HTTPException(500, str(e))
+
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
 
     return {
         "success": True,
@@ -242,6 +249,7 @@ async def deposit_tab5(
 async def retrieve_grail_item(
     mode: Mode,
     catalog_id: int,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     """
@@ -278,7 +286,10 @@ async def retrieve_grail_item(
 
     stash_filename = "ModernSharedStashHardCoreV2.d2i" if hardcore else "ModernSharedStashSoftCoreV2.d2i"
 
+    from backend.services.auto_sync import guard_mothership_write
     from backend.services.grail_service import retrieve_item_to_tab5
+
+    await guard_mothership_write(session)
 
     try:
         await retrieve_item_to_tab5(
@@ -290,6 +301,9 @@ async def retrieve_grail_item(
     except Exception as e:
         log.error("Retrieve failed: %s", e)
         raise HTTPException(500, str(e))
+
+    from backend.services.auto_sync import trigger_mothership_push
+    await trigger_mothership_push(background_tasks, session)
 
     return {"success": True, "message": f"{cat.name} written to stash tab 5. Sync to device when ready."}
 
