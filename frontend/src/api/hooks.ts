@@ -595,6 +595,38 @@ export function useDeleteSeason() {
   });
 }
 
+// ─── Milestone template ───────────────────────────────────────────────────────
+
+export interface MilestoneTemplateEntry {
+  name: string;
+  milestone_type: string;
+  scope: string;
+  level_target: number | null;
+  numeric_target: number | null;
+  time_limit_hours: number | null;
+  reward_item_name: string | null;
+  reward_item_code: string | null;
+}
+
+export interface MilestoneTemplate {
+  milestones: MilestoneTemplateEntry[];
+}
+
+export function useMilestoneTemplate() {
+  return useQuery<MilestoneTemplate | null>({
+    queryKey: ["milestoneTemplate"],
+    queryFn: () => api.get("/settings/milestone-template").then((r) => r.data),
+  });
+}
+
+export function useSaveMilestoneTemplate() {
+  const qc = useQueryClient();
+  return useMutation<{ saved: boolean; count: number }, Error, MilestoneTemplate>({
+    mutationFn: (body) => api.post("/settings/milestone-template", body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["milestoneTemplate"] }),
+  });
+}
+
 export function useAddMilestone() {
   const qc = useQueryClient();
   return useMutation<SeasonMilestone, Error, { seasonId: number; milestone: MilestoneCreateInput }>({

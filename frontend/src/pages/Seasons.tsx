@@ -12,7 +12,10 @@ import {
   usePatchMilestone,
   useDeleteMilestone,
   usePatchSeason,
+  useMilestoneTemplate,
+  useSaveMilestoneTemplate,
 } from "../api/hooks";
+import type { MilestoneTemplate } from "../api/hooks";
 import type {
   SeasonDetail,
   SeasonListItem,
@@ -510,6 +513,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
   const addMilestone = useAddMilestone();
   const deleteMilestone = useDeleteMilestone();
   const patchSeason = usePatchSeason();
+  const saveTemplate = useSaveMilestoneTemplate();
 
   const [showEnd, setShowEnd] = useState(false);
   const [endError, setEndError] = useState<string | null>(null);
@@ -634,7 +638,26 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            <button
+              onClick={() => saveTemplate.mutate({
+                milestones: season.milestones.map(ms => ({
+                  name: ms.name,
+                  milestone_type: ms.milestone_type,
+                  scope: ms.scope,
+                  level_target: ms.level_target ?? null,
+                  numeric_target: ms.numeric_target ?? null,
+                  time_limit_hours: ms.time_limit_hours ?? null,
+                  reward_item_name: ms.reward_item_name ?? null,
+                  reward_item_code: ms.reward_item_code ?? null,
+                })),
+              })}
+              disabled={saveTemplate.isPending}
+              title="Save all milestones as the default template for new seasons"
+              className="text-xs px-3 py-1.5 border border-d2bg-border text-slate-500 hover:border-d2gold/50 hover:text-d2gold/80 transition-colors"
+            >
+              {saveTemplate.isSuccess ? "★ Saved" : saveTemplate.isPending ? "Saving…" : "★ Save as Template"}
+            </button>
             <button
               onClick={() => {
                 if (!editMode) {
@@ -1180,6 +1203,9 @@ function nextKey() { return ++_msKey; }
 
 function CreateSeasonPanel() {
   const createSeason = useCreateSeason();
+  const { data: template } = useMilestoneTemplate();
+  const saveTemplate = useSaveMilestoneTemplate();
+  const { data: rewards } = useRewards();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [durationWeeks, setDurationWeeks] = useState("");
@@ -1187,10 +1213,54 @@ function CreateSeasonPanel() {
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<SeasonDetail | null>(null);
 
+  type CTypeFilter = "all" | "gold" | "level" | "normal" | "nightmare" | "hell";
+  type CScopeFilter = "all" | "account" | "character";
+  const [cTypeFilter, setCTypeFilter] = useState<CTypeFilter>("all");
+  const [cScopeFilter, setCScopeFilter] = useState<CScopeFilter>("all");
+
+  const loadFromTemplate = (t: MilestoneTemplate) => {
+    setMilestones(t.milestones.map(entry => {
+      const match = rewards?.find(r => r.name === entry.reward_item_name) ?? null;
+      return {
+        id: nextKey(),
+        name: entry.name,
+        milestone_type: entry.milestone_type as MilestoneType,
+        scope: (entry.scope === "account" ? "account" : "character") as "account" | "character",
+        level_target: entry.level_target != null ? String(entry.level_target) : "50",
+        numeric_target: entry.numeric_target != null ? String(entry.numeric_target / 1_000_000) : "",
+        time_limit_days: entry.time_limit_hours != null ? String(entry.time_limit_hours / 24) : "",
+        reward_item_name: match?.name ?? entry.reward_item_name ?? "",
+        reward_library_id: match?.id ?? null,
+      };
+    }));
+  };
+
+  const saveAsTemplate = () => {
+    saveTemplate.mutate({
+      milestones: milestones.map(m => ({
+        name: m.name,
+        milestone_type: m.milestone_type,
+        scope: m.scope,
+        level_target: m.milestone_type === "level" ? parseInt(m.level_target) || null : null,
+        numeric_target: m.milestone_type === "gold_vault" ? parseFloat(m.numeric_target) * 1_000_000 || null : null,
+        time_limit_hours: m.time_limit_days.trim() ? Math.round(parseFloat(m.time_limit_days) * 24) : null,
+        reward_item_name: m.reward_item_name.trim() || null,
+        reward_item_code: null,
+      })),
+    });
+  };
+
   const addMilestone = () => {
+    const defaultType: MilestoneType =
+      cTypeFilter === "gold" ? "gold_vault" :
+      cTypeFilter === "level" ? "level" :
+      cTypeFilter === "normal" ? "cleared_act5_normal" :
+      cTypeFilter === "nightmare" ? "cleared_act5_nightmare" :
+      cTypeFilter === "hell" ? "cleared_act5_hell" :
+      "level";
     setMilestones((prev) => [
       ...prev,
-      { id: nextKey(), name: "", milestone_type: "level", scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_name: "", reward_library_id: null },
+      { id: nextKey(), name: "", milestone_type: defaultType, scope: "account", level_target: "50", numeric_target: "", time_limit_days: "", reward_item_name: "", reward_library_id: null },
     ]);
   };
 
@@ -1316,20 +1386,113 @@ function CreateSeasonPanel() {
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <label className="text-[10px] uppercase tracking-widest text-slate-500">Milestones</label>
-          <button onClick={addMilestone} className="text-xs text-d2gold/70 hover:text-d2gold transition-colors">
-            + Add Milestone
-          </button>
+          <div className="flex items-center gap-2">
+            {template && template.milestones.length > 0 && (
+              <button
+                onClick={() => loadFromTemplate(template)}
+                className="text-xs text-d2gold/70 hover:text-d2gold border border-d2gold/30 hover:border-d2gold/60 px-2 py-0.5 transition-colors"
+                title={`Load ${template.milestones.length} milestones from saved template`}
+              >
+                ★ Load Template ({template.milestones.length})
+              </button>
+            )}
+            {milestones.length > 0 && (
+              <button
+                onClick={saveAsTemplate}
+                disabled={saveTemplate.isPending}
+                className="text-xs text-slate-500 hover:text-slate-300 border border-d2bg-border hover:border-slate-500 px-2 py-0.5 transition-colors"
+                title="Save current milestones as template"
+              >
+                {saveTemplate.isSuccess ? "★ Saved" : "★ Save as Template"}
+              </button>
+            )}
+            <button onClick={addMilestone} className="text-xs text-d2gold/70 hover:text-d2gold transition-colors">
+              + Add Milestone
+            </button>
+          </div>
         </div>
-        {milestones.map((m) => (
-          <MilestoneFormRowUI
-            key={m.id}
-            row={m}
-            onChange={(updated) => updateMs(m.id, updated)}
-            onRemove={() => removeMs(m.id)}
-          />
-        ))}
+        {milestones.length > 0 && (() => {
+          const typeMatch = (m: MilestoneFormRow, f: CTypeFilter) => {
+            if (f === "all") return true;
+            if (f === "gold") return m.milestone_type === "gold_vault";
+            if (f === "level") return m.milestone_type === "level";
+            if (f === "normal") return m.milestone_type.endsWith("_normal");
+            if (f === "nightmare") return m.milestone_type.endsWith("_nightmare");
+            if (f === "hell") return m.milestone_type.endsWith("_hell");
+            return true;
+          };
+          const scopeMatch = (m: MilestoneFormRow, f: CScopeFilter) =>
+            f === "all" || m.scope === f;
+
+          const tabs: { key: CTypeFilter; label: string }[] = [
+            { key: "all" as CTypeFilter, label: "All" },
+            { key: "gold" as CTypeFilter, label: "Gold" },
+            { key: "level" as CTypeFilter, label: "Level" },
+            { key: "normal" as CTypeFilter, label: "Normal" },
+            { key: "nightmare" as CTypeFilter, label: "Nightmare" },
+            { key: "hell" as CTypeFilter, label: "Hell" },
+          ] as { key: CTypeFilter; label: string }[];
+
+          const visible = milestones.filter(m => typeMatch(m, cTypeFilter) && scopeMatch(m, cScopeFilter));
+
+          return (
+            <>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex flex-wrap gap-1">
+                  {tabs.map(t => {
+                    const count = t.key === "all" ? milestones.length : milestones.filter(m => typeMatch(m, t.key)).length;
+                    const active = cTypeFilter === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        onClick={() => setCTypeFilter(t.key)}
+                        className={`text-[11px] px-2.5 py-1 border transition-colors ${
+                          active
+                            ? "border-d2gold text-d2gold bg-d2gold/8"
+                            : "border-d2bg-border text-slate-500 hover:border-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        {t.label}
+                        <span className={`ml-1.5 tabular-nums ${active ? "text-d2gold/60" : "text-slate-700"}`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-1">
+                  {(["all", "account", "character"] as CScopeFilter[]).map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setCScopeFilter(s)}
+                      className={`text-[10px] uppercase tracking-wider px-2 py-1 border transition-colors ${
+                        cScopeFilter === s
+                          ? "border-slate-400 text-slate-300"
+                          : "border-d2bg-border text-slate-600 hover:border-slate-600 hover:text-slate-500"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {visible.length === 0 ? (
+                <p className="text-slate-600 text-xs text-center py-4">No milestones match this filter.</p>
+              ) : (
+                visible.map((m) => (
+                  <MilestoneFormRowUI
+                    key={m.id}
+                    row={m}
+                    onChange={(updated) => updateMs(m.id, updated)}
+                    onRemove={() => removeMs(m.id)}
+                  />
+                ))
+              )}
+            </>
+          );
+        })()}
         {milestones.length === 0 && (
           <p className="text-slate-600 text-xs">No milestones yet. Add time-limited milestones like "Clear Normal in 2 days" or open-ended ones like "Reach Level 90".</p>
         )}

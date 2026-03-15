@@ -11,10 +11,13 @@ Endpoints:
   PUT  /api/settings           - Update settings
   POST /api/settings/test-connection  - Test SSH to pc or deck
   POST /api/settings/upload-key/{machine} - Upload SSH private key file
+  GET  /api/settings/milestone-template  - Get saved milestone template
+  POST /api/settings/milestone-template  - Save milestone template
 """
+import json
 import logging
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -223,3 +226,38 @@ async def upload_key(
     await session.commit()
 
     return {"success": True, "message": f"Key uploaded for {machine}"}
+
+
+# ─── Milestone template ────────────────────────────────────────────────────────
+
+class MilestoneTemplateEntry(BaseModel):
+    name: str
+    milestone_type: str
+    scope: str
+    level_target: Optional[int] = None
+    numeric_target: Optional[int] = None
+    time_limit_hours: Optional[int] = None
+    reward_item_name: Optional[str] = None
+    reward_item_code: Optional[str] = None
+
+
+class MilestoneTemplateIn(BaseModel):
+    milestones: list[MilestoneTemplateEntry]
+
+
+@router.get("/settings/milestone-template")
+async def get_milestone_template(session: AsyncSession = Depends(get_session)):
+    val = await _get_setting(session, "milestone_template")
+    if val is None:
+        return None
+    return json.loads(val)
+
+
+@router.post("/settings/milestone-template")
+async def save_milestone_template(
+    body: MilestoneTemplateIn,
+    session: AsyncSession = Depends(get_session),
+):
+    await _set_setting(session, "milestone_template", json.dumps(body.model_dump()))
+    await session.commit()
+    return {"saved": True, "count": len(body.milestones)}
