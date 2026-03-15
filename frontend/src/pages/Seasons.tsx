@@ -11,6 +11,7 @@ import {
   useAddMilestone,
   usePatchMilestone,
   useDeleteMilestone,
+  usePatchSeason,
 } from "../api/hooks";
 import type {
   SeasonDetail,
@@ -508,6 +509,7 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
   const endSeason = useEndSeason();
   const addMilestone = useAddMilestone();
   const deleteMilestone = useDeleteMilestone();
+  const patchSeason = usePatchSeason();
 
   const [showEnd, setShowEnd] = useState(false);
   const [endError, setEndError] = useState<string | null>(null);
@@ -518,6 +520,33 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newMilestone, setNewMilestone] = useState<MilestoneFormRow | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+
+  // Milestone filtering
+  type TypeFilter = "all" | "gold" | "level" | "normal" | "nightmare" | "hell";
+  type ScopeFilter = "all" | "account" | "character";
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
+
+  // Season detail editing
+  const [editName, setEditName] = useState(season.name);
+  const [editNotes, setEditNotes] = useState(season.notes ?? "");
+  const [editDuration, setEditDuration] = useState(season.duration_weeks != null ? String(season.duration_weeks) : "");
+  const [seasonEditError, setSeasonEditError] = useState<string | null>(null);
+
+  const handleSaveSeasonDetails = async () => {
+    setSeasonEditError(null);
+    const name = editName.trim();
+    if (!name) { setSeasonEditError("Name is required"); return; }
+    const duration_weeks = editDuration.trim() ? parseInt(editDuration) : null;
+    if (editDuration.trim() && (isNaN(duration_weeks!) || duration_weeks! < 1 || duration_weeks! > 26)) {
+      setSeasonEditError("Duration must be 1–26 weeks"); return;
+    }
+    try {
+      await patchSeason.mutateAsync({ id: season.id, name, notes: editNotes.trim() || null, duration_weeks });
+    } catch (e: unknown) {
+      setSeasonEditError(e instanceof Error ? e.message : "Save failed");
+    }
+  };
 
   const handleEnd = async () => {
     setEndError(null);
@@ -607,14 +636,24 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => { setEditMode((v) => !v); setShowAddForm(false); setNewMilestone(null); }}
+              onClick={() => {
+                if (!editMode) {
+                  setEditName(season.name);
+                  setEditNotes(season.notes ?? "");
+                  setEditDuration(season.duration_weeks != null ? String(season.duration_weeks) : "");
+                  setSeasonEditError(null);
+                }
+                setEditMode((v) => !v);
+                setShowAddForm(false);
+                setNewMilestone(null);
+              }}
               className={`text-xs px-3 py-1.5 border transition-colors ${
                 editMode
                   ? "border-d2gold text-d2gold bg-d2gold/8"
                   : "border-d2bg-border text-slate-500 hover:border-slate-500"
               }`}
             >
-              {editMode ? "Done Editing" : "Edit Milestones"}
+              {editMode ? "Done Editing" : "Edit Season"}
             </button>
             <button
               onClick={() => setShowEnd(true)}
@@ -626,46 +665,165 @@ function ActiveSeasonCard({ season }: { season: SeasonDetail }) {
           </div>
         </div>
 
-        {season.notes && (
+        {editMode ? (
+          <div className="px-4 py-3 border-b border-d2bg-border space-y-3">
+            <p className="text-[10px] uppercase tracking-widest text-amber-500/70">Edit Season Details</p>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Season name"
+                className="input-d2 text-sm"
+              />
+              <textarea
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                placeholder="Notes (optional)"
+                rows={2}
+                className="input-d2 text-sm resize-none"
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={editDuration}
+                  onChange={(e) => setEditDuration(e.target.value)}
+                  placeholder="Duration (weeks, 1–26)"
+                  min={1}
+                  max={26}
+                  className="input-d2 text-sm w-52"
+                />
+                {editDuration && <span className="text-slate-500 text-xs">{fmtDurationWeeks(parseInt(editDuration))}</span>}
+              </div>
+            </div>
+            {seasonEditError && <p className="text-red-400 text-xs">{seasonEditError}</p>}
+            <button
+              onClick={handleSaveSeasonDetails}
+              disabled={patchSeason.isPending}
+              className="btn-d2 text-xs"
+            >
+              {patchSeason.isPending ? "Saving…" : "Save Details"}
+            </button>
+          </div>
+        ) : season.notes ? (
           <div className="px-4 py-3 border-b border-d2bg-border">
             <p className="text-slate-400 text-sm italic">{season.notes}</p>
           </div>
-        )}
+        ) : null}
 
         <div className="p-4 space-y-2">
-          <p className="text-slate-600 text-[10px] uppercase tracking-wider mb-3">
-            Milestones
-            {editMode && <span className="text-amber-500/70 ml-2">— editing active</span>}
-          </p>
+          {/* Type tabs */}
+          {(() => {
+            const msAll = season.milestones;
+            const typeMatch = (ms: SeasonMilestone, f: TypeFilter) => {
+              if (f === "all") return true;
+              if (f === "gold") return ms.milestone_type === "gold_vault";
+              if (f === "level") return ms.milestone_type === "level";
+              if (f === "normal") return ms.milestone_type.endsWith("_normal");
+              if (f === "nightmare") return ms.milestone_type.endsWith("_nightmare");
+              if (f === "hell") return ms.milestone_type.endsWith("_hell");
+              return true;
+            };
+            const scopeMatch = (ms: SeasonMilestone, f: ScopeFilter) =>
+              f === "all" || ms.scope === f;
 
-          {season.milestones.length === 0 && !editMode && (
-            <p className="text-slate-600 text-sm">No milestones configured.</p>
-          )}
-
-          {season.milestones.map((ms) => {
-            const achCount = season.achievements.filter((a) => a.milestone_id === ms.id).length;
-            return (
-              <div key={ms.id}>
-                <MilestoneRow ms={ms} achievements={season.achievements} canClaim={!editMode} />
-                {editMode && (
-                  <div className="flex gap-2 mt-1 ml-1">
-                    <button
-                      onClick={() => setEditTarget(ms)}
-                      className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => { setDeleteTarget(ms); setDeleteError(null); }}
-                      className="text-[11px] text-slate-600 hover:text-red-400 border border-slate-800 hover:border-red-800 px-2 py-0.5 transition-colors"
-                    >
-                      Delete{achCount > 0 && ` (${achCount} achievement${achCount !== 1 ? "s" : ""})`}
-                    </button>
-                  </div>
-                )}
-              </div>
+            const tabs: { key: TypeFilter; label: string }[] = (
+              [
+                { key: "all" as TypeFilter, label: "All" },
+                { key: "gold" as TypeFilter, label: "Gold" },
+                { key: "level" as TypeFilter, label: "Level" },
+                { key: "normal" as TypeFilter, label: "Normal" },
+                { key: "nightmare" as TypeFilter, label: "Nightmare" },
+                { key: "hell" as TypeFilter, label: "Hell" },
+              ] as { key: TypeFilter; label: string }[]
             );
-          })}
+
+            const visibleMilestones = msAll.filter(
+              ms => typeMatch(ms, typeFilter) && scopeMatch(ms, scopeFilter)
+            );
+
+            return (
+              <>
+                <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                  {/* Type tabs */}
+                  <div className="flex flex-wrap gap-1">
+                    {tabs.map(t => {
+                      const count = t.key === "all" ? msAll.length : msAll.filter(ms => typeMatch(ms, t.key)).length;
+                      const active = typeFilter === t.key;
+                      return (
+                        <button
+                          key={t.key}
+                          onClick={() => setTypeFilter(t.key)}
+                          className={`text-[11px] px-2.5 py-1 border transition-colors ${
+                            active
+                              ? "border-d2gold text-d2gold bg-d2gold/8"
+                              : "border-d2bg-border text-slate-500 hover:border-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          {t.label}
+                          <span className={`ml-1.5 tabular-nums ${active ? "text-d2gold/60" : "text-slate-700"}`}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Scope filter */}
+                  <div className="flex gap-1">
+                    {(["all", "account", "character"] as ScopeFilter[]).map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setScopeFilter(s)}
+                        className={`text-[10px] uppercase tracking-wider px-2 py-1 border transition-colors ${
+                          scopeFilter === s
+                            ? "border-slate-400 text-slate-300"
+                            : "border-d2bg-border text-slate-600 hover:border-slate-600 hover:text-slate-500"
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {editMode && (
+                  <p className="text-[10px] text-amber-500/70 uppercase tracking-wider -mt-1 mb-2">editing active</p>
+                )}
+
+                {visibleMilestones.length === 0 && (
+                  <p className="text-slate-600 text-xs py-4 text-center">
+                    {season.milestones.length === 0 ? "No milestones configured." : "No milestones match this filter."}
+                  </p>
+                )}
+
+                {visibleMilestones.map((ms) => {
+                  const achCount = season.achievements.filter((a) => a.milestone_id === ms.id).length;
+                  return (
+                    <div key={ms.id}>
+                      <MilestoneRow ms={ms} achievements={season.achievements} canClaim={!editMode} />
+                      {editMode && (
+                        <div className="flex gap-2 mt-1 ml-1">
+                          <button
+                            onClick={() => setEditTarget(ms)}
+                            className="text-[11px] text-slate-600 hover:text-d2gold border border-slate-800 hover:border-d2gold px-2 py-0.5 transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => { setDeleteTarget(ms); setDeleteError(null); }}
+                            className="text-[11px] text-slate-600 hover:text-red-400 border border-slate-800 hover:border-red-800 px-2 py-0.5 transition-colors"
+                          >
+                            Delete{achCount > 0 && ` (${achCount} achievement${achCount !== 1 ? "s" : ""})`}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })()}
 
           {/* Add milestone form */}
           {editMode && (

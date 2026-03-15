@@ -8,6 +8,7 @@ Endpoints:
   POST   /api/seasons                          — create a new season
   GET    /api/seasons/active                   — active season detail
   GET    /api/seasons/{id}                     — single season detail
+  PATCH  /api/seasons/{id}                     — edit season name/notes/duration
   DELETE /api/seasons/{id}                     — delete season record
   POST   /api/seasons/{id}/start               — start season (wipe + activate)
   POST   /api/seasons/{id}/end                 — mark season completed
@@ -56,6 +57,12 @@ class SeasonCreate(BaseModel):
     notes: Optional[str] = None
     duration_weeks: Optional[int] = None    # null = no end date; 1–26
     milestones: list[MilestoneIn] = []
+
+
+class SeasonPatch(BaseModel):
+    name: Optional[str] = None
+    notes: Optional[str] = None
+    duration_weeks: Optional[int] = None    # null = clear end date
 
 
 class MilestoneOut(BaseModel):
@@ -611,6 +618,31 @@ async def _editable_season_and_milestone(
     if ms is None or ms.season_id != season_id:
         raise HTTPException(404, "Milestone not found")
     return season, ms
+
+
+@router.patch("/seasons/{season_id}", response_model=SeasonOut)
+async def patch_season(
+    season_id: int,
+    body: SeasonPatch,
+    session: AsyncSession = Depends(get_session),
+):
+    """Partially update a season's name, notes, or duration. Not allowed on completed seasons."""
+    season = await session.get(Season, season_id)
+    if season is None:
+        raise HTTPException(404, "Season not found")
+    if season.status == "completed":
+        raise HTTPException(400, "Cannot edit a completed season")
+
+    fields = body.model_fields_set
+    if "name" in fields and body.name is not None:
+        season.name = body.name.strip()
+    if "notes" in fields:
+        season.notes = body.notes.strip() if body.notes else None
+    if "duration_weeks" in fields:
+        season.duration_weeks = body.duration_weeks
+
+    await session.commit()
+    return await _season_out(season, session)
 
 
 @router.post("/seasons/{season_id}/milestones", response_model=MilestoneOut)

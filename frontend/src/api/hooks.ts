@@ -554,6 +554,14 @@ export function useCreateSeason() {
   });
 }
 
+export function usePatchSeason() {
+  const qc = useQueryClient();
+  return useMutation<SeasonDetail, Error, { id: number; name?: string; notes?: string | null; duration_weeks?: number | null }>({
+    mutationFn: ({ id, ...body }) => api.patch(`/seasons/${id}`, body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons"] }),
+  });
+}
+
 export function useStartSeason() {
   const qc = useQueryClient();
   return useMutation<SeasonDetail, Error, number>({
