@@ -909,7 +909,8 @@ const DIRECTION_LABELS: Record<string, string> = {
 };
 
 export function useSyncToasts() {
-  const lastIdRef = useRef<number | null>(null);
+  const seenIds = useRef<Set<number>>(new Set());
+  const initialized = useRef(false);
 
   useQuery({
     queryKey: ["sync", "toast-poll"],
@@ -917,27 +918,34 @@ export function useSyncToasts() {
       const res = await fetch("/api/history?page=1&page_size=10");
       const data: HistoryResponse = await res.json();
 
-      const newOps = data.items.filter(
-        (op) =>
-          (lastIdRef.current === null || op.id > lastIdRef.current) &&
-          (op.status === "success" || op.status === "failed")
+      const terminalOps = data.items.filter(
+        (op) => op.status === "success" || op.status === "failed"
       );
 
-      if (lastIdRef.current !== null) {
+      console.log("[toast-poll] fired — initialized:", initialized.current, "| terminal ops:", terminalOps.map(o => `${o.id}(${o.direction}/${o.status})`));
+
+      if (!initialized.current) {
+        // First load: seed seen IDs with all existing terminal ops — no toasts
+        terminalOps.forEach((op) => seenIds.current.add(op.id));
+        initialized.current = true;
+        console.log("[toast-poll] seeded IDs:", [...seenIds.current]);
+        return data;
+      }
+
+      const newOps = terminalOps.filter((op) => !seenIds.current.has(op.id));
+      console.log("[toast-poll] new ops to toast:", newOps.map(o => `${o.id}(${o.direction}/${o.status})`));
+      if (newOps.length > 0) {
         const { toast } = await import("sonner");
         newOps.forEach((op) => {
+          seenIds.current.add(op.id);
           const label = DIRECTION_LABELS[op.direction] ?? op.direction;
+          console.log("[toast-poll] firing toast for op", op.id, label, op.status);
           if (op.status === "success") {
             toast.success(`${label} — ${op.file_count} file${op.file_count !== 1 ? "s" : ""} synced`);
           } else {
             toast.error(`Sync failed: ${label}${op.error_message ? ` — ${op.error_message}` : ""}`);
           }
         });
-      }
-
-      if (data.items.length > 0) {
-        const maxId = Math.max(...data.items.map((i) => i.id));
-        lastIdRef.current = Math.max(lastIdRef.current ?? 0, maxId);
       }
 
       return data;

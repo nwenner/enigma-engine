@@ -233,7 +233,9 @@ async def _auto_push_to_dest(direction: str) -> None:
     """Push the latest vault snapshot to the destination machine."""
     from backend.services.backup_manager import push_snapshot_to_machine
 
-    dest = "deck" if direction == "pc_to_deck" else "pc"
+    dest = "deck" if direction.endswith("deck") else "pc"
+    dest_is_windows = dest == "pc"
+
     async with AsyncSessionLocal() as session:
         try:
             dest_conn = await _get_conn_kwargs(session, dest)
@@ -242,13 +244,35 @@ async def _auto_push_to_dest(direction: str) -> None:
             log.error("auto_sync: could not get dest conn kwargs: %s", exc)
             return
 
-    dest_is_windows = dest == "pc"
-    try:
-        async with AsyncSessionLocal() as session:
-            await push_snapshot_to_machine(session, dest, dest_conn, dest_dir, dest_is_windows)
-        log.info("auto_sync: pushed snapshot to %s", dest)
-    except Exception as exc:
-        log.error("auto_sync: push to %s failed: %s", dest, exc)
+        op = SyncOperation(direction=direction, status="running")
+        session.add(op)
+        await session.commit()
+        await session.refresh(op)
+        op_id = op.id
+
+    log.warning("auto_sync: pushing snapshot to %s (op=%s)", dest, op_id)
+    async with AsyncSessionLocal() as session:
+        try:
+            removed, uploaded = await push_snapshot_to_machine(session, dest, dest_conn, dest_dir, dest_is_windows)
+            log.info("auto_sync: pushed snapshot to %s", dest)
+            op_row = await session.get(SyncOperation, op_id)
+            if op_row:
+                op_row.status = "success"
+                op_row.file_count = removed + uploaded
+                op_row.completed_at = datetime.now(timezone.utc)
+                await session.commit()
+        except Exception as exc:
+            log.error("auto_sync: push to %s failed: %s", dest, exc)
+            try:
+                async with AsyncSessionLocal() as fail_session:
+                    op_row = await fail_session.get(SyncOperation, op_id)
+                    if op_row:
+                        op_row.status = "failed"
+                        op_row.error_message = str(exc)
+                        op_row.completed_at = datetime.now(timezone.utc)
+                        await fail_session.commit()
+            except Exception:
+                pass
 
 
 async def _snapshot_source(machine: str, is_windows: bool) -> tuple[Path, int]:
@@ -258,51 +282,81 @@ async def _snapshot_source(machine: str, is_windows: bool) -> tuple[Path, int]:
     """
     from backend.services.backup_manager import create_snapshot
 
+    # Create SyncOperation record so this shows up in history + triggers toasts
     async with AsyncSessionLocal() as session:
         kwargs = await _get_conn_kwargs(session, machine)
         save_dir = await _get_setting(session, f"{machine}_save_path") or ""
-        snapshot = await create_snapshot(
-            session=session,
-            machine=machine,
-            conn_kwargs=kwargs,
-            save_dir=save_dir,
-            label="game_close",
-        )
+        op = SyncOperation(direction=f"checkin_{machine}", status="running")
+        session.add(op)
+        await session.commit()
+        await session.refresh(op)
+        op_id = op.id
 
-    snapshot_dir = get_settings().data_dir / snapshot.snapshot_path
-    snapshot_files = [f for f in snapshot_dir.iterdir() if f.is_file()]
-    downloaded = [{"filename": f.name, "local_part": f} for f in snapshot_files]
-
-    # Run grail hook against snapshot files — dest may be offline so source-only detection
     try:
-        from backend.services.grail_service import process_portal_tab_hook
-        log.warning("Grail: snapshot hook running, files: %s", [f.name for f in snapshot_files])
-        async with AsyncSessionLocal() as grail_session:
-            await process_portal_tab_hook(
-                session=grail_session,
-                downloaded=downloaded,
-                source_conn=kwargs,
-                source_dir=save_dir,
+        async with AsyncSessionLocal() as session:
+            kwargs = await _get_conn_kwargs(session, machine)
+            save_dir = await _get_setting(session, f"{machine}_save_path") or ""
+            snapshot = await create_snapshot(
+                session=session,
+                machine=machine,
+                conn_kwargs=kwargs,
+                save_dir=save_dir,
+                label="game_close",
+                sync_operation_id=op_id,
             )
-        log.warning("Grail: snapshot hook completed")
-    except Exception as _grail_err:
-        log.warning("Grail hook failed during snapshot (snapshot unaffected): %s", _grail_err)
 
-    try:
-        from backend.services.seasons_service import check_season_milestones
-        async with AsyncSessionLocal() as s:
-            await check_season_milestones(session=s, downloaded=downloaded)
-    except Exception as _err:
-        log.warning("Seasons hook failed during auto-checkin (snapshot unaffected): %s", _err)
+        snapshot_dir = get_settings().data_dir / snapshot.snapshot_path
+        snapshot_files = [f for f in snapshot_dir.iterdir() if f.is_file()]
+        downloaded = [{"filename": f.name, "local_part": f} for f in snapshot_files]
 
-    try:
-        from backend.services.boss_summon_service import check_boss_summon_progress
-        async with AsyncSessionLocal() as s:
-            await check_boss_summon_progress(session=s, snapshot_dir=snapshot_dir)
-    except Exception as _err:
-        log.warning("Boss summon hook failed during auto-checkin (snapshot unaffected): %s", _err)
+        # Run grail hook against snapshot files — dest may be offline so source-only detection
+        try:
+            from backend.services.grail_service import process_portal_tab_hook
+            log.warning("Grail: snapshot hook running, files: %s", [f.name for f in snapshot_files])
+            async with AsyncSessionLocal() as grail_session:
+                await process_portal_tab_hook(
+                    session=grail_session,
+                    downloaded=downloaded,
+                    source_conn=kwargs,
+                    source_dir=save_dir,
+                )
+            log.warning("Grail: snapshot hook completed")
+        except Exception as _grail_err:
+            log.warning("Grail hook failed during snapshot (snapshot unaffected): %s", _grail_err)
 
-    return snapshot_dir, snapshot.file_count
+        try:
+            from backend.services.seasons_service import check_season_milestones
+            async with AsyncSessionLocal() as s:
+                await check_season_milestones(session=s, downloaded=downloaded)
+        except Exception as _err:
+            log.warning("Seasons hook failed during auto-checkin (snapshot unaffected): %s", _err)
+
+        try:
+            from backend.services.boss_summon_service import check_boss_summon_progress
+            async with AsyncSessionLocal() as s:
+                await check_boss_summon_progress(session=s, snapshot_dir=snapshot_dir)
+        except Exception as _err:
+            log.warning("Boss summon hook failed during auto-checkin (snapshot unaffected): %s", _err)
+
+        async with AsyncSessionLocal() as session:
+            op_row = await session.get(SyncOperation, op_id)
+            if op_row:
+                op_row.status = "success"
+                op_row.file_count = snapshot.file_count
+                op_row.completed_at = datetime.now(timezone.utc)
+                await session.commit()
+
+        return snapshot_dir, snapshot.file_count
+
+    except Exception as exc:
+        async with AsyncSessionLocal() as session:
+            op_row = await session.get(SyncOperation, op_id)
+            if op_row:
+                op_row.status = "failed"
+                op_row.error_message = str(exc)
+                op_row.completed_at = datetime.now(timezone.utc)
+                await session.commit()
+        raise
 
 
 # ─── Main watcher loop ────────────────────────────────────────────────────────
@@ -311,6 +365,7 @@ async def _snapshot_source(machine: str, is_windows: bool) -> tuple[Path, int]:
 async def run_auto_sync_watcher() -> None:
     """Runs forever as an asyncio background task."""
     prev: dict[str, bool | None] = {"pc": None, "deck": None}
+    prev_reachable: dict[str, bool | None] = {"pc": None, "deck": None}
 
     log.warning("auto_sync: watcher started")
 
@@ -333,6 +388,9 @@ async def run_auto_sync_watcher() -> None:
             pc_enabled = (await _get_autosync_setting("autosync_pc_enabled") or "true").lower() == "true"
             deck_enabled = (await _get_autosync_setting("autosync_deck_enabled") or "true").lower() == "true"
 
+            # Track machines pushed this iteration to avoid double-push
+            pending_pushed: set[str] = set()
+
             # Check for expired pending state
             state = await _get_state()
             if state["status"] == "pending" and state.get("expires_at"):
@@ -350,17 +408,39 @@ async def run_auto_sync_watcher() -> None:
             # If there's a pending sync, try to execute it now that dest may be online
             if state["status"] == "pending" and state.get("direction"):
                 direction = state["direction"]
-                dest = "deck" if direction == "pc_to_deck" else "pc"
+                dest = "deck" if direction.endswith("deck") else "pc"
                 dest_is_windows = dest == "pc"
                 dest_alive = await _get_d2s_mtimes(dest, dest_is_windows)
                 if dest_alive is not None:
                     log.info("auto_sync: dest %s is now reachable, pushing pending snapshot", dest)
                     await _set_state(dict(_DEFAULT_STATE))
                     asyncio.create_task(_auto_push_to_dest(direction))
+                    pending_pushed.add(dest)
 
             # Poll D2R state (skip unregistered machines)
             pc_now = await _check_d2r("pc", True) if pc_enabled else None
             deck_now = await _check_d2r("deck", False) if deck_enabled else None
+
+            # ── Device online → push vault ─────────────────────────────────────
+            # When a device transitions offline→online with D2R not running,
+            # push the latest vault snapshot so it's ready to play.
+            for machine, now_val, m_enabled in [
+                ("pc", pc_now, pc_enabled),
+                ("deck", deck_now, deck_enabled),
+            ]:
+                now_reachable = now_val is not None
+                was_reachable = prev_reachable[machine]
+                if (
+                    m_enabled
+                    and was_reachable is False
+                    and now_reachable
+                    and now_val is False  # D2R not running
+                    and machine not in pending_pushed
+                ):
+                    cur_state = await _get_state()
+                    if cur_state["status"] != "conflict":
+                        log.warning("auto_sync: %s came online — pushing vault snapshot", machine)
+                        asyncio.create_task(_auto_push_to_dest(f"app_to_{machine}"))
 
             for machine, now_val, was_val, is_windows in [
                 ("pc", pc_now, prev["pc"], True),
@@ -425,6 +505,10 @@ async def run_auto_sync_watcher() -> None:
                 prev["pc"] = pc_now
             if deck_now is not None:
                 prev["deck"] = deck_now
+
+            # Update reachability for all machines (None result = offline/disabled)
+            prev_reachable["pc"] = pc_now is not None
+            prev_reachable["deck"] = deck_now is not None
 
         except Exception as exc:
             log.error("auto_sync: unexpected error in watcher loop: %s", exc, exc_info=True)

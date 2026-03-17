@@ -118,19 +118,14 @@ class TestSSHClientConnectTimeout:
 # ─── Preflight constant ────────────────────────────────────────────────────────
 
 class TestPreflightTimeout:
-    """The PREFLIGHT_TIMEOUT constant in sync.py controls the short timeout."""
+    """The PREFLIGHT_TIMEOUT constant in sync.py controls the SSH timeout for preflight checks."""
 
-    def test_preflight_timeout_is_five_seconds(self) -> None:
+    def test_preflight_timeout_matches_connect_timeout(self) -> None:
+        """Preflight uses the same timeout as the watcher so slow devices (e.g. Steam Deck)
+        are not incorrectly reported as offline."""
         pytest.importorskip("sqlalchemy")
         from backend.routers.sync import PREFLIGHT_TIMEOUT
-        assert PREFLIGHT_TIMEOUT == 5
-
-    def test_preflight_timeout_shorter_than_connect_timeout(self) -> None:
-        """Preflight timeout must be less than the global SSH connect timeout
-        — otherwise using it for fast status checks has no benefit."""
-        pytest.importorskip("sqlalchemy")
-        from backend.routers.sync import PREFLIGHT_TIMEOUT
-        assert PREFLIGHT_TIMEOUT < CONNECT_TIMEOUT
+        assert PREFLIGHT_TIMEOUT == CONNECT_TIMEOUT
 
 
 # ─── Preflight parallel execution ─────────────────────────────────────────────

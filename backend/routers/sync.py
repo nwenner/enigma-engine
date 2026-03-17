@@ -30,7 +30,7 @@ from backend.database import get_session, AsyncSessionLocal
 from backend.models import SyncOperation, Character, Season, BackupSnapshot
 from backend.routers.settings import _get_conn_kwargs, _get_setting
 from backend.services.backup_manager import run_sync, create_snapshot, push_snapshot_to_machine
-from backend.services.ssh_client import get_sftp, check_d2r_running, SSHConnectionError, list_all_files
+from backend.services.ssh_client import get_sftp, check_d2r_running, SSHConnectionError, list_all_files, CONNECT_TIMEOUT
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["sync"])
@@ -381,19 +381,19 @@ async def get_sync_summary(session: AsyncSession = Depends(get_session)):
     )
     snap = snap_result.scalar_one_or_none()
 
-    async def _last(direction: str) -> Optional[datetime]:
+    async def _last(*directions: str) -> Optional[datetime]:
         r = await session.execute(
             select(SyncOperation.completed_at)
-            .where(SyncOperation.direction == direction, SyncOperation.status == "success")
+            .where(SyncOperation.direction.in_(directions), SyncOperation.status == "success")
             .order_by(SyncOperation.completed_at.desc())
             .limit(1)
         )
         return r.scalar_one_or_none()
 
     pc_checkin = await _last("checkin_pc")
-    pc_push = await _last("app_to_pc")
+    pc_push = await _last("app_to_pc", "deck_to_pc")
     deck_checkin = await _last("checkin_deck")
-    deck_push = await _last("app_to_deck")
+    deck_push = await _last("app_to_deck", "pc_to_deck")
 
     return SyncSummaryResponse(
         vault=VaultSummary(
@@ -498,13 +498,25 @@ async def compare_with_device(
     )
 
 
-PREFLIGHT_TIMEOUT = 5  # seconds — short timeout for status checks only
+PREFLIGHT_TIMEOUT = CONNECT_TIMEOUT  # same timeout as watcher — deck SSH can be slow
 
 @router.get("/sync/preflight", response_model=PreflightResponse)
 async def preflight_check(session: AsyncSession = Depends(get_session)):
-    async def _check(machine: str, is_windows: bool):
+    # Fetch connection kwargs sequentially — session cannot be used concurrently
+    try:
+        pc_kwargs = await _get_conn_kwargs(session, "pc")
+    except Exception as e:
+        pc_kwargs = None
+
+    try:
+        deck_kwargs = await _get_conn_kwargs(session, "deck")
+    except Exception as e:
+        deck_kwargs = None
+
+    async def _check(kwargs: dict | None, is_windows: bool):
+        if kwargs is None:
+            return None, "No connection configured"
         try:
-            kwargs = await _get_conn_kwargs(session, machine)
             def _do():
                 with get_sftp(**kwargs, connect_timeout=PREFLIGHT_TIMEOUT) as (ssh, _sftp):
                     return check_d2r_running(ssh, is_windows)
@@ -515,8 +527,8 @@ async def preflight_check(session: AsyncSession = Depends(get_session)):
             return None, str(e)
 
     (pc_running, pc_err), (deck_running, deck_err) = await asyncio.gather(
-        _check("pc", True),
-        _check("deck", False),
+        _check(pc_kwargs, True),
+        _check(deck_kwargs, False),
     )
 
     safe = (pc_running is False) and (deck_running is False)
