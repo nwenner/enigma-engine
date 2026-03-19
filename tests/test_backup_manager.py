@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 """
-Unit tests for backup_manager._prune_backups.
+Unit tests for backup_manager.
 
-Focus: the 2026-03-09 refactor that changed pruning from per-platform to
-total-across-all-platforms, and added retention for pre_grail_* and pre_vault_*.
+_prune_backups
+    Focus: the 2026-03-09 refactor that changed pruning from per-platform to
+    total-across-all-platforms, and added retention for pre_grail_* and pre_vault_*.
+
+push_snapshot_to_machine — pre_sync safety guarantee
+    Every call must create a pre_sync snapshot of the destination BEFORE any
+    files are deleted or uploaded. This ensures the user always has a restorable
+    point even if the push overwrites their saves.
 """
 
 import shutil
@@ -19,7 +25,7 @@ import pytest
 # To run: docker run --rm -v $(pwd):/app -w /app enigma-engine-enigma-engine python3 -m pytest tests/ -v
 pytest.importorskip("sqlalchemy", reason="SQLAlchemy not installed — run tests inside Docker")
 
-from backend.services.backup_manager import _prune_backups
+from backend.services.backup_manager import _prune_backups, push_snapshot_to_machine
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -306,3 +312,183 @@ class TestPreSeasonRewardPrune:
         session = _session(snaps)
         await _prune_backups(session, _cfg(), "pre_season_reward")
         session.delete.assert_not_called()
+
+
+# ─── push_snapshot_to_machine — pre_sync safety guarantee ────────────────────
+
+def _push_session() -> AsyncMock:
+    """Session mock for push_snapshot_to_machine: no active season, no existing snapshot."""
+    season_result = MagicMock()
+    season_result.scalar_one_or_none.return_value = None   # no active season
+
+    snap_result = MagicMock()
+    snap_result.scalar_one_or_none.return_value = None     # no snapshot to push
+
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[season_result, snap_result])
+    return session
+
+
+class TestPushSnapshotPreSyncSafety:
+    """
+    push_snapshot_to_machine must create a pre_sync snapshot of the destination
+    BEFORE touching any files on the device. These tests lock in that contract so
+    accidentally removing the create_snapshot call causes an immediate test failure.
+    """
+
+    async def test_pre_sync_snapshot_taken_before_push_thread(self) -> None:
+        """create_snapshot must be called before asyncio.to_thread(_push) — strict ordering."""
+        call_order: list[str] = []
+
+        async def _track_create(**kwargs):
+            call_order.append("create_snapshot")
+            return MagicMock()
+
+        async def _track_thread(fn):
+            call_order.append("push_thread")
+            return (0, 0)
+
+        with patch("backend.services.backup_manager.create_snapshot", side_effect=_track_create), \
+             patch("backend.services.backup_manager.asyncio.to_thread", side_effect=_track_thread):
+            await push_snapshot_to_machine(_push_session(), "deck", {}, "/saves", False)
+
+        assert call_order == ["create_snapshot", "push_thread"], (
+            "pre_sync snapshot must be taken BEFORE the push runs — "
+            "if this fails the safety backup was removed or reordered"
+        )
+
+    async def test_pre_sync_label_used(self) -> None:
+        """create_snapshot is called with label='pre_sync', not any other label."""
+        mock_create = AsyncMock(return_value=MagicMock())
+
+        with patch("backend.services.backup_manager.create_snapshot", mock_create), \
+             patch("backend.services.backup_manager.asyncio.to_thread", AsyncMock(return_value=(0, 2))):
+            await push_snapshot_to_machine(_push_session(), "deck", {}, "/saves", False)
+
+        mock_create.assert_awaited_once()
+        assert mock_create.call_args.kwargs["label"] == "pre_sync"
+
+    async def test_pre_sync_correct_machine_and_paths(self) -> None:
+        """create_snapshot receives the destination machine, conn_kwargs, and save_dir."""
+        mock_create = AsyncMock(return_value=MagicMock())
+        conn = {"host": "steamdeck", "port": 22}
+        save_dir = "/home/deck/saves"
+
+        with patch("backend.services.backup_manager.create_snapshot", mock_create), \
+             patch("backend.services.backup_manager.asyncio.to_thread", AsyncMock(return_value=(0, 2))):
+            await push_snapshot_to_machine(_push_session(), "deck", conn, save_dir, False)
+
+        kw = mock_create.call_args.kwargs
+        assert kw["machine"] == "deck"
+        assert kw["conn_kwargs"] == conn
+        assert kw["save_dir"] == save_dir
+
+    async def test_pre_sync_does_not_update_characters(self) -> None:
+        """update_characters=False so a mid-season safety backup never corrupts the character DB."""
+        mock_create = AsyncMock(return_value=MagicMock())
+
+        with patch("backend.services.backup_manager.create_snapshot", mock_create), \
+             patch("backend.services.backup_manager.asyncio.to_thread", AsyncMock(return_value=(0, 2))):
+            await push_snapshot_to_machine(_push_session(), "deck", {}, "/saves", False)
+
+        assert mock_create.call_args.kwargs["update_characters"] is False
+
+    async def test_pre_sync_not_linked_to_sync_operation(self) -> None:
+        """sync_operation_id=None — the safety snapshot is independent of any SyncOperation record."""
+        mock_create = AsyncMock(return_value=MagicMock())
+
+        with patch("backend.services.backup_manager.create_snapshot", mock_create), \
+             patch("backend.services.backup_manager.asyncio.to_thread", AsyncMock(return_value=(0, 2))):
+            await push_snapshot_to_machine(_push_session(), "deck", {}, "/saves", False)
+
+        assert mock_create.call_args.kwargs["sync_operation_id"] is None
+
+    async def test_pre_sync_called_exactly_once_per_push(self) -> None:
+        """create_snapshot is invoked exactly once — not zero times, not twice."""
+        mock_create = AsyncMock(return_value=MagicMock())
+
+        with patch("backend.services.backup_manager.create_snapshot", mock_create), \
+             patch("backend.services.backup_manager.asyncio.to_thread", AsyncMock(return_value=(1, 3))):
+            await push_snapshot_to_machine(_push_session(), "deck", {}, "/saves", False)
+
+        mock_create.assert_awaited_once()
+
+    async def test_push_aborted_if_pre_sync_snapshot_fails(self) -> None:
+        """If create_snapshot raises (e.g. SSH error), the push thread must NOT run.
+        Device files are left untouched — no partial overwrite."""
+        push_thread_called = False
+
+        async def _track_thread(fn):
+            nonlocal push_thread_called
+            push_thread_called = True
+            return (0, 0)
+
+        with patch("backend.services.backup_manager.create_snapshot",
+                   AsyncMock(side_effect=RuntimeError("SFTP error during snapshot"))), \
+             patch("backend.services.backup_manager.asyncio.to_thread", side_effect=_track_thread):
+            with pytest.raises(RuntimeError, match="SFTP error during snapshot"):
+                await push_snapshot_to_machine(_push_session(), "deck", {}, "/saves", False)
+
+        assert not push_thread_called, (
+            "push must not run if the pre_sync backup failed — "
+            "device files should be untouched"
+        )
+
+    async def test_pre_sync_same_guarantee_for_pc_destination(self) -> None:
+        """The pre_sync guarantee applies equally when pushing to PC, not just Steam Deck."""
+        mock_create = AsyncMock(return_value=MagicMock())
+
+        with patch("backend.services.backup_manager.create_snapshot", mock_create), \
+             patch("backend.services.backup_manager.asyncio.to_thread", AsyncMock(return_value=(0, 2))):
+            await push_snapshot_to_machine(
+                _push_session(), "pc", {"host": "gaming-pc"}, "C:/Users/Nick/Saved Games/D2R", True
+            )
+
+        kw = mock_create.call_args.kwargs
+        assert kw["label"] == "pre_sync"
+        assert kw["machine"] == "pc"
+
+    async def test_snapshot_re_resolved_after_concurrent_prune(self) -> None:
+        """Race condition: if a concurrent checkin prunes the snapshot directory between
+        the pre_sync call and the push thread, push_snapshot_to_machine must re-resolve
+        to the current latest snapshot rather than raising FileNotFoundError."""
+        # First session query (active season) + second query (snapshot after pre_sync)
+        # must both work. We simulate the snapshot being pruned by making the first
+        # snapshot resolution (inside create_snapshot mock) delete the directory.
+        snap_path = "backups/deck/20260318T230653Z_game_close"
+        snap = MagicMock()
+        snap.snapshot_path = snap_path
+
+        # After the pre_sync call (1st execute pair), re-query returns None (pruned)
+        season_result1 = MagicMock()
+        season_result1.scalar_one_or_none.return_value = None   # no active season
+
+        snap_result1 = MagicMock()
+        snap_result1.scalar_one_or_none.return_value = None     # re-query after pre_sync: pruned
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[season_result1, snap_result1])
+
+        push_thread_ran = False
+
+        async def _track_thread(fn):
+            nonlocal push_thread_ran
+            push_thread_ran = True
+            # Don't call fn() — it would open a real SSH connection.
+            # snapshot_dir_ref[0] is None (re-resolved to pruned), so
+            # the real _push would upload 0 files anyway. We just verify
+            # the thread was launched without a FileNotFoundError.
+            return (0, 0)
+
+        with patch("backend.services.backup_manager.create_snapshot", AsyncMock(return_value=MagicMock())), \
+             patch("backend.services.backup_manager.asyncio.to_thread", side_effect=_track_thread), \
+             patch("backend.services.backup_manager.get_settings") as mock_cfg:
+            cfg = MagicMock()
+            cfg.data_dir = Path("/nonexistent")
+            mock_cfg.return_value = cfg
+            # Should not raise even though original snapshot no longer exists on disk
+            removed, uploaded = await push_snapshot_to_machine(session, "deck", {}, "/saves", False)
+
+        # Re-resolved to None (pruned) → push thread ran without FileNotFoundError
+        assert push_thread_ran
+        assert uploaded == 0

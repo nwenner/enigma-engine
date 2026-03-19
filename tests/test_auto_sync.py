@@ -43,6 +43,11 @@ Coverage:
       - False when all mtimes within threshold
       - None when dest unreachable
 
+  _get_vault_snapshot_time (new)
+      - returns None when no manual/game_close snapshots exist
+      - attaches UTC tzinfo to naive datetimes from DB
+      - returns already-aware datetime unchanged
+
   run_auto_sync_watcher (one or two iterations via mocked asyncio.sleep)
       disabled            → D2R not polled
       game-close, dest online   → snapshot taken, push fires immediately
@@ -54,6 +59,17 @@ Coverage:
       pending, dest comes online → push fires, state cleared to idle
       pending, dest still offline → state unchanged
       pending expired            → state cleared to idle, no push
+
+  run_auto_sync_watcher — device-online trigger (new)
+      deck comes online, newer saves, other online   → checkin deck, push to pc
+      deck comes online, newer saves, other offline  → checkin deck, state=pending
+      deck comes online, vault is newer              → push vault to deck
+      deck comes online, mtime unreadable (None)     → skip, no push
+      no vault snapshot exists                       → treat device as newer, checkin
+      checkin from device fails                      → no push, no pending set
+      state=conflict prevents device-online action
+      pc comes online (not just deck)                → correct is_windows + direction
+      pending_pushed prevents double-action          → only pending-resolution push fires
 """
 
 import asyncio
@@ -67,6 +83,7 @@ pytest.importorskip("sqlalchemy", reason="SQLAlchemy not installed — run tests
 
 from backend.services.auto_sync import (
     _auto_push_to_dest,
+    _get_vault_snapshot_time,
     _has_new_saves,
     _push_to_machine,
     _snapshot_source,
@@ -394,6 +411,7 @@ class TestWatcherGameClose:
         *,
         state=None,
         last_sync_time=None,
+        vault_time=None,      # None = no snapshot → vault guard skipped
         has_new_saves=False,
         snapshot_result=(Path("/fake/snap"), 3),
         dest_mtimes: list | None = None,  # None=offline, list=online
@@ -405,6 +423,7 @@ class TestWatcherGameClose:
             "_get_state": AsyncMock(return_value=state or dict(_IDLE)),
             "_set_state": set_state,
             "_get_last_sync_time": AsyncMock(return_value=last_sync_time),
+            "_get_vault_snapshot_time": AsyncMock(return_value=vault_time),
             "_has_new_saves": AsyncMock(return_value=has_new_saves),
             "_snapshot_source": AsyncMock(return_value=snapshot_result),
             "_get_d2s_mtimes": AsyncMock(return_value=dest_mtimes),
@@ -428,6 +447,7 @@ class TestWatcherGameClose:
              patch("backend.services.auto_sync._get_state", patches["_get_state"]), \
              patch("backend.services.auto_sync._set_state", patches["_set_state"]), \
              patch("backend.services.auto_sync._get_last_sync_time", patches["_get_last_sync_time"]), \
+             patch("backend.services.auto_sync._get_vault_snapshot_time", patches["_get_vault_snapshot_time"]), \
              patch("backend.services.auto_sync._has_new_saves", patches["_has_new_saves"]), \
              patch("backend.services.auto_sync._snapshot_source", patches["_snapshot_source"]), \
              patch("backend.services.auto_sync._get_d2s_mtimes", patches["_get_d2s_mtimes"]), \
@@ -553,6 +573,68 @@ class TestWatcherGameClose:
         patches["_snapshot_source"].assert_awaited_once()
         patches["_auto_push_to_dest"].assert_called_once()
 
+    async def test_vault_newer_than_source_skips_checkin_and_pushes_vault(self) -> None:
+        """Game closes on PC, but vault was recently updated by deck (vault > PC saves).
+        PC must NOT overwrite the vault — instead vault is pushed to PC."""
+        patches, set_state = self._common_patches(
+            vault_time=_dt(-60),        # vault updated 1 minute ago (from deck checkin)
+            has_new_saves=False,        # PC's saves are NOT newer than vault
+            last_sync_time=_dt(-3600),
+            dest_mtimes=[1234.0],
+        )
+        await self._run_two_iters(
+            pc_d2r=[True, False],
+            deck_d2r=[False, False],
+            patches=patches,
+        )
+
+        # No checkin from PC — that would overwrite deck's fresher vault save
+        patches["_snapshot_source"].assert_not_called()
+        # Vault pushed to PC so it catches up to deck's progress
+        patches["_auto_push_to_dest"].assert_called_once_with("app_to_pc")
+
+    async def test_source_newer_than_vault_proceeds_with_checkin(self) -> None:
+        """Game closes on PC, PC has saves newer than the vault → normal checkin path.
+        _has_new_saves is called twice: vault guard (True=source newer) then conflict
+        check (False=no conflict). Use a counter to return different values per call."""
+        patches, _ = self._common_patches(
+            vault_time=_dt(-3600),      # vault is 1h old
+            has_new_saves=False,        # conflict check: deck has no new saves
+            last_sync_time=_dt(-7200),
+            dest_mtimes=[1234.0],
+        )
+        # Override _has_new_saves: call 1 = True (PC newer than vault), call 2 = False (no conflict)
+        call_n = {"n": 0}
+        async def _has_new_saves_ordered(*_a, **_kw):
+            call_n["n"] += 1
+            return call_n["n"] == 1  # True on first call, False on second
+        patches["_has_new_saves"] = AsyncMock(side_effect=_has_new_saves_ordered)
+
+        await self._run_two_iters(
+            pc_d2r=[True, False],
+            deck_d2r=[False, False],
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_awaited_once_with("pc", True)
+        patches["_auto_push_to_dest"].assert_called_once_with("pc_to_deck")
+
+    async def test_vault_guard_skipped_when_no_snapshot_exists(self) -> None:
+        """If vault_time is None (no snapshot ever), vault guard is skipped entirely
+        and the game-close checkin proceeds normally."""
+        patches, _ = self._common_patches(
+            vault_time=None,            # no snapshot in vault
+            last_sync_time=None,
+            dest_mtimes=[1234.0],
+        )
+        await self._run_two_iters(
+            pc_d2r=[True, False],
+            deck_d2r=[False, False],
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_awaited_once_with("pc", True)
+
 
 # ─── run_auto_sync_watcher — pending resolution ───────────────────────────────
 
@@ -573,6 +655,7 @@ class TestWatcherPending:
         with patch("backend.services.auto_sync._get_autosync_setting", AsyncMock(side_effect=_make_setting_fn())), \
              patch("backend.services.auto_sync._get_state", AsyncMock(return_value=state)), \
              patch("backend.services.auto_sync._set_state", set_state), \
+             patch("backend.services.auto_sync._get_vault_snapshot_time", AsyncMock(return_value=None)), \
              patch("backend.services.auto_sync._get_d2s_mtimes", AsyncMock(return_value=dest_mtimes)), \
              patch("backend.services.auto_sync._auto_push_to_dest", push), \
              patch("backend.services.auto_sync._check_d2r", AsyncMock(return_value=None)), \
@@ -632,6 +715,130 @@ class TestWatcherPending:
         set_state_calls = [c.args[0] for c in set_state.call_args_list]
         idle_calls = [s for s in set_state_calls if s.get("status") == "idle"]
         assert len(idle_calls) >= 1
+
+    async def _run_one_iter_pending_full(
+        self,
+        *,
+        state: dict,
+        dest_mtimes: list | None,
+        vault_time=None,
+        has_new_saves: bool = False,
+    ) -> tuple[AsyncMock, AsyncMock, AsyncMock]:
+        """Extended runner that also patches vault_time and _has_new_saves for pending resolution tests."""
+        set_state = AsyncMock()
+        push = AsyncMock()
+        snapshot = AsyncMock(return_value=(Path("/fake/snap"), 3))
+
+        async def _sleep(_n):
+            raise asyncio.CancelledError()
+
+        with patch("backend.services.auto_sync._get_autosync_setting", AsyncMock(side_effect=_make_setting_fn())), \
+             patch("backend.services.auto_sync._get_state", AsyncMock(return_value=state)), \
+             patch("backend.services.auto_sync._set_state", set_state), \
+             patch("backend.services.auto_sync._get_vault_snapshot_time", AsyncMock(return_value=vault_time)), \
+             patch("backend.services.auto_sync._has_new_saves", AsyncMock(return_value=has_new_saves)), \
+             patch("backend.services.auto_sync._snapshot_source", snapshot), \
+             patch("backend.services.auto_sync._get_d2s_mtimes", AsyncMock(return_value=dest_mtimes)), \
+             patch("backend.services.auto_sync._auto_push_to_dest", push), \
+             patch("backend.services.auto_sync._check_d2r", AsyncMock(return_value=None)), \
+             patch("backend.services.auto_sync.asyncio.sleep", side_effect=_sleep), \
+             patch("backend.services.auto_sync.asyncio.create_task", side_effect=lambda c: c.close() or MagicMock()):
+            try:
+                await run_auto_sync_watcher()
+            except asyncio.CancelledError:
+                pass
+
+        return set_state, push, snapshot
+
+    async def test_pending_dest_has_newer_saves_checks_in_instead_of_pushing(self) -> None:
+        """Pending pc_to_deck, but deck has saves newer than vault → check in from deck,
+        then push to PC. The vault must NOT be pushed to deck (that would overwrite newer saves)."""
+        state = {
+            "status": "pending", "direction": "pc_to_deck",
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat(),
+            "reason": "Waiting for deck to come online",
+        }
+        set_state, push, snapshot = await self._run_one_iter_pending_full(
+            state=state,
+            dest_mtimes=[1234.0],   # deck is online
+            vault_time=_dt(-3600),
+            has_new_saves=True,     # deck has saves newer than vault
+        )
+
+        # Must check in from deck (capturing its newer saves), NOT push vault to deck
+        snapshot.assert_awaited_once_with("deck", False)
+        # After checkin, should push to PC (the other device)
+        push.assert_called_once_with("deck_to_pc")
+
+    async def test_pending_dest_vault_newer_proceeds_with_original_push(self) -> None:
+        """Pending pc_to_deck, deck has no newer saves → original push fires as expected."""
+        state = {
+            "status": "pending", "direction": "pc_to_deck",
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat(),
+            "reason": "Waiting for deck to come online",
+        }
+        set_state, push, snapshot = await self._run_one_iter_pending_full(
+            state=state,
+            dest_mtimes=[1234.0],
+            vault_time=_dt(-3600),
+            has_new_saves=False,    # vault is newer than deck → proceed with push
+        )
+
+        snapshot.assert_not_called()
+        push.assert_called_once_with("pc_to_deck")
+
+    async def test_pending_dest_newer_pc_offline_sets_new_pending(self) -> None:
+        """Deck has newer saves, PC is offline → check in from deck, set pending deck_to_pc."""
+        state = {
+            "status": "pending", "direction": "pc_to_deck",
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat(),
+            "reason": "Waiting for deck to come online",
+        }
+        # _get_d2s_mtimes called twice:
+        # 1st call: deck dest_alive check (deck is online → [1234.0])
+        # 2nd call: src_alive check for PC (PC is offline → None)
+        call_n = {"n": 0}
+
+        async def _mtimes(machine, is_windows):
+            call_n["n"] += 1
+            if call_n["n"] == 1:
+                return [1234.0]   # deck online (dest_alive)
+            return None           # PC offline (src_alive)
+
+        set_state = AsyncMock()
+        push = AsyncMock()
+        snapshot = AsyncMock(return_value=(Path("/fake/snap"), 3))
+
+        async def _sleep(_n):
+            raise asyncio.CancelledError()
+
+        with patch("backend.services.auto_sync._get_autosync_setting", AsyncMock(side_effect=_make_setting_fn())), \
+             patch("backend.services.auto_sync._get_state", AsyncMock(return_value=state)), \
+             patch("backend.services.auto_sync._set_state", set_state), \
+             patch("backend.services.auto_sync._get_vault_snapshot_time", AsyncMock(return_value=_dt(-3600))), \
+             patch("backend.services.auto_sync._has_new_saves", AsyncMock(return_value=True)), \
+             patch("backend.services.auto_sync._snapshot_source", snapshot), \
+             patch("backend.services.auto_sync._get_d2s_mtimes", AsyncMock(side_effect=_mtimes)), \
+             patch("backend.services.auto_sync._auto_push_to_dest", push), \
+             patch("backend.services.auto_sync._check_d2r", AsyncMock(return_value=None)), \
+             patch("backend.services.auto_sync.asyncio.sleep", side_effect=_sleep), \
+             patch("backend.services.auto_sync.asyncio.create_task", side_effect=lambda c: c.close() or MagicMock()):
+            try:
+                await run_auto_sync_watcher()
+            except asyncio.CancelledError:
+                pass
+
+        snapshot.assert_awaited_once_with("deck", False)
+        push.assert_not_called()
+        pending_calls = [
+            c.args[0] for c in set_state.call_args_list
+            if c.args[0].get("status") == "pending"
+        ]
+        assert len(pending_calls) == 1
+        assert pending_calls[0]["direction"] == "deck_to_pc"
 
 
 # ─── _push_to_machine ─────────────────────────────────────────────────────────
@@ -878,3 +1085,334 @@ class TestGuardMothershipWrite:
              patch("backend.services.auto_sync._check_d2r", mock_check):
             await guard_mothership_write(session)  # must not raise
         mock_check.assert_not_called()
+
+
+# ─── _get_vault_snapshot_time ─────────────────────────────────────────────────
+
+class TestGetVaultSnapshotTime:
+    """_get_vault_snapshot_time returns the latest manual/game_close snapshot timestamp."""
+
+    def _session_with_scalar(self, scalar_val) -> AsyncMock:
+        """Return an AsyncSessionLocal mock whose execute → scalar_one_or_none returns scalar_val."""
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = scalar_val
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=result)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    async def test_returns_none_when_no_snapshots(self) -> None:
+        """No manual/game_close snapshots in DB → returns None."""
+        with patch("backend.services.auto_sync.AsyncSessionLocal",
+                   return_value=self._session_with_scalar(None)):
+            result = await _get_vault_snapshot_time()
+        assert result is None
+
+    async def test_naive_datetime_gets_utc_tzinfo(self) -> None:
+        """Naive datetime from DB (stored as naive UTC) gets tzinfo=UTC attached."""
+        naive = datetime(2026, 3, 10, 14, 0, 0)  # no tzinfo
+        with patch("backend.services.auto_sync.AsyncSessionLocal",
+                   return_value=self._session_with_scalar(naive)):
+            result = await _get_vault_snapshot_time()
+        assert result is not None
+        assert result.tzinfo == timezone.utc
+        assert result.replace(tzinfo=None) == naive  # value unchanged, only tzinfo added
+
+    async def test_aware_datetime_returned_unchanged(self) -> None:
+        """UTC-aware datetime from DB passes through with tzinfo intact."""
+        aware = datetime(2026, 3, 15, 9, 30, 0, tzinfo=timezone.utc)
+        with patch("backend.services.auto_sync.AsyncSessionLocal",
+                   return_value=self._session_with_scalar(aware)):
+            result = await _get_vault_snapshot_time()
+        assert result == aware
+        assert result.tzinfo == timezone.utc
+
+    async def test_only_manual_and_game_close_queried(self) -> None:
+        """The SQL execute is called exactly once (no pre_sync or other labels)."""
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=result_mock)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("backend.services.auto_sync.AsyncSessionLocal", return_value=ctx):
+            await _get_vault_snapshot_time()
+
+        # The query was compiled and executed exactly once
+        session.execute.assert_awaited_once()
+
+
+# ─── run_auto_sync_watcher — device-online trigger ────────────────────────────
+
+class TestWatcherDeviceOnline:
+    """
+    Tests for the offline→online device-online trigger.
+
+    Strategy: run 2 watcher iterations.
+      - Iter 1: target machine returns None (unreachable) → prev_reachable[machine] = False
+      - Iter 2: target machine returns False (reachable, D2R not running) → trigger fires
+
+    The game-close block is harmless here because prev["machine"] starts as None (not True),
+    so the True→False transition never fires.
+    """
+
+    def _common_patches(
+        self,
+        *,
+        state=None,
+        vault_time=None,
+        has_new_saves=None,
+        snapshot_result=(Path("/fake/snap"), 3),
+        other_machine_mtimes: list | None = None,
+    ):
+        set_state = AsyncMock()
+        return {
+            "_get_autosync_setting": AsyncMock(side_effect=_make_setting_fn()),
+            "_get_state": AsyncMock(return_value=state or dict(_IDLE)),
+            "_set_state": set_state,
+            "_get_vault_snapshot_time": AsyncMock(return_value=vault_time),
+            "_has_new_saves": AsyncMock(return_value=has_new_saves),
+            "_snapshot_source": AsyncMock(return_value=snapshot_result),
+            "_get_d2s_mtimes": AsyncMock(return_value=other_machine_mtimes),
+            "_auto_push_to_dest": AsyncMock(),
+            "_get_last_sync_time": AsyncMock(return_value=None),
+            "notify_conflict": AsyncMock(),
+        }, set_state
+
+    async def _run_two_iters(self, *, pc_d2r: list, deck_d2r: list, patches: dict) -> None:
+        sleep_count = 0
+
+        async def _sleep(_n):
+            nonlocal sleep_count
+            sleep_count += 1
+            if sleep_count >= 2:
+                raise asyncio.CancelledError()
+
+        check_d2r = _make_check_d2r(pc_d2r, deck_d2r)
+
+        with patch("backend.services.auto_sync._get_autosync_setting", patches["_get_autosync_setting"]), \
+             patch("backend.services.auto_sync._get_state", patches["_get_state"]), \
+             patch("backend.services.auto_sync._set_state", patches["_set_state"]), \
+             patch("backend.services.auto_sync._get_vault_snapshot_time", patches["_get_vault_snapshot_time"]), \
+             patch("backend.services.auto_sync._has_new_saves", patches["_has_new_saves"]), \
+             patch("backend.services.auto_sync._snapshot_source", patches["_snapshot_source"]), \
+             patch("backend.services.auto_sync._get_d2s_mtimes", patches["_get_d2s_mtimes"]), \
+             patch("backend.services.auto_sync._auto_push_to_dest", patches["_auto_push_to_dest"]), \
+             patch("backend.services.auto_sync._get_last_sync_time", patches["_get_last_sync_time"]), \
+             patch("backend.services.auto_sync.notify_conflict", patches["notify_conflict"]), \
+             patch("backend.services.auto_sync._check_d2r", check_d2r), \
+             patch("backend.services.auto_sync.asyncio.sleep", side_effect=_sleep), \
+             patch("backend.services.auto_sync.asyncio.create_task",
+                   side_effect=lambda c: c.close() or MagicMock()):
+            try:
+                await run_auto_sync_watcher()
+            except asyncio.CancelledError:
+                pass
+
+    async def test_deck_online_newer_saves_checkin_then_push_to_pc(self) -> None:
+        """Deck comes online with saves newer than vault → check in from deck → push to PC."""
+        patches, _ = self._common_patches(
+            vault_time=_dt(-3600),         # vault is 1h old
+            has_new_saves=True,            # deck saves are newer
+            other_machine_mtimes=[1234.0], # PC is online
+        )
+        await self._run_two_iters(
+            pc_d2r=[False, False],         # PC stays reachable throughout
+            deck_d2r=[None, False],        # Deck: offline → online, D2R not running
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_awaited_once_with("deck", False)
+        patches["_auto_push_to_dest"].assert_called_once_with("deck_to_pc")
+
+    async def test_deck_online_newer_saves_pc_offline_sets_pending(self) -> None:
+        """Deck comes online with newer saves, PC is offline → checkin from deck, state=pending."""
+        patches, set_state = self._common_patches(
+            vault_time=_dt(-3600),
+            has_new_saves=True,
+            other_machine_mtimes=None,    # PC is offline
+        )
+        await self._run_two_iters(
+            pc_d2r=[None, None],
+            deck_d2r=[None, False],
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_awaited_once_with("deck", False)
+        patches["_auto_push_to_dest"].assert_not_called()
+
+        set_state_calls = [c.args[0] for c in set_state.call_args_list]
+        pending_calls = [s for s in set_state_calls if s.get("status") == "pending"]
+        assert len(pending_calls) == 1
+        assert pending_calls[0]["direction"] == "deck_to_pc"
+        assert pending_calls[0]["expires_at"] is not None
+
+    async def test_deck_online_vault_newer_pushes_vault_to_deck(self) -> None:
+        """Deck comes online with saves older than vault → push vault snapshot to deck."""
+        patches, _ = self._common_patches(
+            vault_time=_dt(-300),         # vault synced 5m ago
+            has_new_saves=False,          # deck saves are NOT newer
+        )
+        await self._run_two_iters(
+            pc_d2r=[None, None],
+            deck_d2r=[None, False],
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_not_called()
+        patches["_auto_push_to_dest"].assert_called_once_with("app_to_deck")
+
+    async def test_deck_online_mtime_unreadable_skips_action(self) -> None:
+        """If has_new_saves returns None (SSH error reading mtimes) → no push, no checkin."""
+        patches, _ = self._common_patches(
+            vault_time=_dt(-3600),
+            has_new_saves=None,           # couldn't read device mtimes
+        )
+        await self._run_two_iters(
+            pc_d2r=[None, None],
+            deck_d2r=[None, False],
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_not_called()
+        patches["_auto_push_to_dest"].assert_not_called()
+
+    async def test_no_vault_snapshot_treats_device_as_newer(self) -> None:
+        """vault_time=None (no snapshots ever) → device treated as newer, checkin, no has_new_saves call."""
+        patches, _ = self._common_patches(
+            vault_time=None,              # no snapshot in vault
+            other_machine_mtimes=[1234.0],
+        )
+        await self._run_two_iters(
+            pc_d2r=[False, False],
+            deck_d2r=[None, False],
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_awaited_once_with("deck", False)
+        patches["_has_new_saves"].assert_not_called()
+
+    async def test_checkin_failure_does_not_push_or_set_pending(self) -> None:
+        """SSH failure during checkin → no push, no pending state written."""
+        patches, set_state = self._common_patches(
+            vault_time=_dt(-3600),
+            has_new_saves=True,
+        )
+        patches["_snapshot_source"] = AsyncMock(side_effect=RuntimeError("SFTP timeout"))
+
+        await self._run_two_iters(
+            pc_d2r=[False, False],
+            deck_d2r=[None, False],
+            patches=patches,
+        )
+
+        patches["_auto_push_to_dest"].assert_not_called()
+        pending_calls = [
+            c.args[0] for c in set_state.call_args_list
+            if c.args[0].get("status") == "pending"
+        ]
+        assert len(pending_calls) == 0
+
+    async def test_conflict_state_blocks_device_online_action(self) -> None:
+        """If state=conflict, device-online trigger must not check in or push."""
+        conflict_state = {
+            "status": "conflict", "direction": None,
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": None, "reason": "both machines had saves",
+        }
+        patches, _ = self._common_patches(
+            state=conflict_state,
+            vault_time=_dt(-3600),
+            has_new_saves=True,
+        )
+        await self._run_two_iters(
+            pc_d2r=[None, None],
+            deck_d2r=[None, False],
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_not_called()
+        patches["_auto_push_to_dest"].assert_not_called()
+
+    async def test_pc_online_newer_saves_checks_in_with_correct_is_windows(self) -> None:
+        """PC comes online with newer saves → checkin with is_windows=True, push direction to deck."""
+        patches, _ = self._common_patches(
+            vault_time=_dt(-3600),
+            has_new_saves=True,
+            other_machine_mtimes=[1234.0],  # deck is online
+        )
+        await self._run_two_iters(
+            pc_d2r=[None, False],          # PC: offline → online, no D2R
+            deck_d2r=[False, False],       # deck stays on
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_awaited_once_with("pc", True)
+        patches["_auto_push_to_dest"].assert_called_once_with("pc_to_deck")
+
+    async def test_d2r_running_on_newly_online_device_skips_trigger(self) -> None:
+        """If D2R IS running on the device that just came online, device-online trigger is skipped.
+        (The trigger requires now_val is False — i.e., not running.)"""
+        patches, _ = self._common_patches(
+            vault_time=_dt(-3600),
+            has_new_saves=True,
+        )
+        await self._run_two_iters(
+            pc_d2r=[None, None],
+            deck_d2r=[None, True],         # came online BUT D2R is running
+            patches=patches,
+        )
+
+        patches["_snapshot_source"].assert_not_called()
+        patches["_auto_push_to_dest"].assert_not_called()
+
+    async def test_pending_pushed_prevents_device_online_double_action(self) -> None:
+        """Deck resolved by pending-state block in same iteration → device-online trigger skipped.
+
+        Setup (2 iterations):
+          Iter 1: deck offline (None) → prev_reachable["deck"] = False; state=pending pc_to_deck,
+                  but _get_d2s_mtimes returns None → pending NOT resolved.
+          Iter 2: deck online (False) → pending resolution fires (deck reachable) → push + deck
+                  added to pending_pushed → device-online block sees deck in pending_pushed → skips.
+        """
+        pending_state = {
+            "status": "pending", "direction": "pc_to_deck",
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat(),
+            "reason": "Waiting for deck to come online",
+        }
+        patches, _ = self._common_patches(
+            state=pending_state,
+            vault_time=_dt(-3600),
+            has_new_saves=False,           # vault is newer than deck → pending push fires (not checkin)
+            other_machine_mtimes=[1234.0], # deck "reachable" for pending resolution check
+        )
+
+        # Iter 1: deck=None (pending resolution checks mtimes → None → skip)
+        # Iter 2: deck=False (pending resolution checks mtimes → [1234.0] → fires + adds to pending_pushed)
+        # We need _get_d2s_mtimes to return None on iter 1, [1234.0] on iter 2.
+        call_idx = {"n": 0}
+
+        async def _mtimes_side_effect(machine, is_windows):
+            call_idx["n"] += 1
+            if call_idx["n"] <= 1:
+                return None   # iter 1: deck still offline for pending check
+            return [1234.0]   # iter 2: deck online
+
+        patches["_get_d2s_mtimes"] = AsyncMock(side_effect=_mtimes_side_effect)
+
+        await self._run_two_iters(
+            pc_d2r=[False, False],
+            deck_d2r=[None, False],
+            patches=patches,
+        )
+
+        # Pending resolution fires → exactly one push for "pc_to_deck"
+        push_calls = [c.args[0] for c in patches["_auto_push_to_dest"].call_args_list]
+        assert push_calls == ["pc_to_deck"]
+        # Device-online block skipped → _snapshot_source never called
+        patches["_snapshot_source"].assert_not_called()

@@ -148,6 +148,24 @@ async def _has_new_saves(machine: str, is_windows: bool, since: datetime) -> boo
     return any(m > threshold for m in mtimes)
 
 
+async def _get_vault_snapshot_time() -> datetime | None:
+    """Return created_at of the latest manual/game_close BackupSnapshot, or None."""
+    from backend.models import BackupSnapshot
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(BackupSnapshot.created_at)
+            .where(BackupSnapshot.label.in_(["manual", "game_close"]))
+            .order_by(BackupSnapshot.created_at.desc())
+            .limit(1)
+        )
+        ts = result.scalar_one_or_none()
+        if ts is None:
+            return None
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts
+
+
 async def _push_to_machine(dest: str) -> None:
     """Push the latest vault snapshot to a single destination machine. Best-effort."""
     from backend.services.backup_manager import push_snapshot_to_machine
@@ -412,18 +430,58 @@ async def run_auto_sync_watcher() -> None:
                 dest_is_windows = dest == "pc"
                 dest_alive = await _get_d2s_mtimes(dest, dest_is_windows)
                 if dest_alive is not None:
-                    log.info("auto_sync: dest %s is now reachable, pushing pending snapshot", dest)
-                    await _set_state(dict(_DEFAULT_STATE))
-                    asyncio.create_task(_auto_push_to_dest(direction))
+                    # Before pushing, check whether dest played since the vault was last updated.
+                    # If dest has newer saves, check in from dest first instead of overwriting it.
+                    vault_time = await _get_vault_snapshot_time()
+                    dest_is_newer = (
+                        await _has_new_saves(dest, dest_is_windows, vault_time)
+                        if vault_time is not None else None
+                    )
+
+                    if dest_is_newer is True:
+                        log.warning(
+                            "auto_sync: pending dest %s has newer saves than vault — "
+                            "checking in from dest instead of pushing",
+                            dest,
+                        )
+                        await _set_state(dict(_DEFAULT_STATE))
+                        try:
+                            await _snapshot_source(dest, dest_is_windows)
+                            src = "pc" if dest == "deck" else "deck"
+                            src_is_windows = src == "pc"
+                            src_alive = await _get_d2s_mtimes(src, src_is_windows)
+                            if src_alive is not None:
+                                asyncio.create_task(_auto_push_to_dest(f"{dest}_to_{src}"))
+                            else:
+                                now_iso = datetime.now(timezone.utc).isoformat()
+                                expires_iso = (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat()
+                                await _set_state({
+                                    "status": "pending",
+                                    "direction": f"{dest}_to_{src}",
+                                    "detected_at": now_iso,
+                                    "expires_at": expires_iso,
+                                    "reason": f"Waiting for {src} to come online",
+                                })
+                        except Exception as exc:
+                            log.warning("auto_sync: checkin from %s on pending resolution failed: %s", dest, exc)
+                    else:
+                        # Vault is newer (or indeterminate) — proceed with original pending push
+                        log.info("auto_sync: dest %s is now reachable, pushing pending snapshot", dest)
+                        await _set_state(dict(_DEFAULT_STATE))
+                        asyncio.create_task(_auto_push_to_dest(direction))
+
                     pending_pushed.add(dest)
 
             # Poll D2R state (skip unregistered machines)
             pc_now = await _check_d2r("pc", True) if pc_enabled else None
             deck_now = await _check_d2r("deck", False) if deck_enabled else None
 
-            # ── Device online → push vault ─────────────────────────────────────
+            # ── Device online → compare saves, then push or check in ───────────
             # When a device transitions offline→online with D2R not running,
-            # push the latest vault snapshot so it's ready to play.
+            # compare its save mtimes against the vault snapshot timestamp:
+            #   - Device has newer saves → check in from device, then push to other device
+            #   - Vault is newer (or same) → push vault to device
+            #   - Can't determine (mtime fetch failed) → skip, next poll will retry
             for machine, now_val, m_enabled in [
                 ("pc", pc_now, pc_enabled),
                 ("deck", deck_now, deck_enabled),
@@ -439,8 +497,55 @@ async def run_auto_sync_watcher() -> None:
                 ):
                     cur_state = await _get_state()
                     if cur_state["status"] != "conflict":
-                        log.warning("auto_sync: %s came online — pushing vault snapshot", machine)
-                        asyncio.create_task(_auto_push_to_dest(f"app_to_{machine}"))
+                        is_windows = machine == "pc"
+                        vault_time = await _get_vault_snapshot_time()
+
+                        if vault_time is None:
+                            # No vault snapshot yet — device must have the saves; check in
+                            device_is_newer = True
+                        else:
+                            device_is_newer = await _has_new_saves(machine, is_windows, vault_time)
+
+                        if device_is_newer is True:
+                            log.warning(
+                                "auto_sync: %s came online with saves newer than vault — checking in",
+                                machine,
+                            )
+                            try:
+                                await _snapshot_source(machine, is_windows)
+                                other = "pc" if machine == "deck" else "deck"
+                                other_is_windows = other == "pc"
+                                other_alive = await _get_d2s_mtimes(other, other_is_windows)
+                                push_dir = f"{machine}_to_{other}"
+                                if other_alive is not None:
+                                    asyncio.create_task(_auto_push_to_dest(push_dir))
+                                else:
+                                    now_iso = datetime.now(timezone.utc).isoformat()
+                                    expires_iso = (datetime.now(timezone.utc) + timedelta(days=PENDING_EXPIRY_DAYS)).isoformat()
+                                    await _set_state({
+                                        "status": "pending",
+                                        "direction": push_dir,
+                                        "detected_at": now_iso,
+                                        "expires_at": expires_iso,
+                                        "reason": f"Waiting for {other} to come online",
+                                    })
+                                    log.info("auto_sync: %s offline after checkin, state=pending", other)
+                            except Exception as exc:
+                                log.warning("auto_sync: checkin from %s on device-online failed: %s", machine, exc)
+
+                        elif device_is_newer is False:
+                            log.warning(
+                                "auto_sync: %s came online — vault is newer, pushing snapshot",
+                                machine,
+                            )
+                            asyncio.create_task(_auto_push_to_dest(f"app_to_{machine}"))
+
+                        else:
+                            # None — couldn't read device mtimes; skip, next poll retries
+                            log.warning(
+                                "auto_sync: %s came online but couldn't read save mtimes — skipping push",
+                                machine,
+                            )
 
             for machine, now_val, was_val, is_windows in [
                 ("pc", pc_now, prev["pc"], True),
@@ -458,6 +563,23 @@ async def run_auto_sync_watcher() -> None:
                     if cur_state["status"] == "conflict":
                         log.info("auto_sync: unresolved conflict — skipping game-close trigger on %s", machine)
                         continue
+
+                    # Guard: if vault was recently updated by a different device, the source
+                    # machine may be playing from a stale state. If the vault is newer than
+                    # this machine's saves, push vault to source instead of overwriting it.
+                    vault_time = await _get_vault_snapshot_time()
+                    if vault_time is not None:
+                        source_is_newer = await _has_new_saves(machine, is_windows, vault_time)
+                        if source_is_newer is False:
+                            # Vault is ahead of this machine — don't overwrite it.
+                            # Push vault to source so it catches up.
+                            log.warning(
+                                "auto_sync: vault is newer than %s at game-close "
+                                "(another device checked in more recently) — pushing vault to source",
+                                machine,
+                            )
+                            asyncio.create_task(_auto_push_to_dest(f"app_to_{machine}"))
+                            continue
 
                     # Check dest for unseen saves (conflict detection)
                     last_sync_time = await _get_last_sync_time()

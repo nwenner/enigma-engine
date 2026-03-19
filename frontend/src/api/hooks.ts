@@ -58,8 +58,8 @@ export function usePreflight(refetchInterval?: number) {
   return useQuery<PreflightResponse>({
     queryKey: ["preflight"],
     queryFn: () => api.get("/sync/preflight").then((r) => r.data),
-    staleTime: 30_000,
-    refetchInterval: refetchInterval ?? 60_000,
+    staleTime: 10_000,
+    refetchInterval: refetchInterval ?? 15_000,
   });
 }
 
@@ -911,6 +911,7 @@ const DIRECTION_LABELS: Record<string, string> = {
 export function useSyncToasts() {
   const seenIds = useRef<Set<number>>(new Set());
   const initialized = useRef(false);
+  const qc = useQueryClient();
 
   useQuery({
     queryKey: ["sync", "toast-poll"],
@@ -922,30 +923,30 @@ export function useSyncToasts() {
         (op) => op.status === "success" || op.status === "failed"
       );
 
-      console.log("[toast-poll] fired — initialized:", initialized.current, "| terminal ops:", terminalOps.map(o => `${o.id}(${o.direction}/${o.status})`));
-
       if (!initialized.current) {
         // First load: seed seen IDs with all existing terminal ops — no toasts
         terminalOps.forEach((op) => seenIds.current.add(op.id));
         initialized.current = true;
-        console.log("[toast-poll] seeded IDs:", [...seenIds.current]);
         return data;
       }
 
       const newOps = terminalOps.filter((op) => !seenIds.current.has(op.id));
-      console.log("[toast-poll] new ops to toast:", newOps.map(o => `${o.id}(${o.direction}/${o.status})`));
       if (newOps.length > 0) {
         const { toast } = await import("sonner");
         newOps.forEach((op) => {
           seenIds.current.add(op.id);
           const label = DIRECTION_LABELS[op.direction] ?? op.direction;
-          console.log("[toast-poll] firing toast for op", op.id, label, op.status);
           if (op.status === "success") {
             toast.success(`${label} — ${op.file_count} file${op.file_count !== 1 ? "s" : ""} synced`);
           } else {
             toast.error(`Sync failed: ${label}${op.error_message ? ` — ${op.error_message}` : ""}`);
           }
         });
+        // Refresh dashboard data so timestamps and status reflect the completed sync
+        qc.invalidateQueries({ queryKey: ["sync", "summary"] });
+        qc.invalidateQueries({ queryKey: ["preflight"] });
+        qc.invalidateQueries({ queryKey: ["autosync"] });
+        qc.invalidateQueries({ queryKey: ["characters"] });
       }
 
       return data;

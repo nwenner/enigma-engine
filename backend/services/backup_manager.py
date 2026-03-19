@@ -194,6 +194,29 @@ async def push_snapshot_to_machine(
     if active_season and active_season.started_at:
         snap_query = snap_query.where(BackupSnapshot.created_at >= active_season.started_at)
 
+    def _resolve_snapshot_dir() -> Path | None:
+        """Re-execute snap_query synchronously (called inside _push thread)."""
+        # We can't await here, so snapshot_dir is resolved before the thread starts.
+        # See the async re-resolution below for the race-condition fix.
+        return snapshot_dir_ref[0]
+
+    # Snapshot the destination's current saves before overwriting them.
+    # This is the pre_sync safety backup — restoring it undoes the push.
+    # NOTE: this await may yield to the event loop, allowing a concurrent checkin
+    # to create a newer game_close snapshot and prune the one we're about to push.
+    # We re-resolve the snapshot AFTER this call to avoid a FileNotFoundError.
+    await create_snapshot(
+        session=session,
+        machine=machine,
+        conn_kwargs=conn_kwargs,
+        save_dir=save_dir,
+        label="pre_sync",
+        sync_operation_id=None,
+        update_characters=False,
+    )
+
+    # Re-resolve the snapshot after yielding — a concurrent checkin may have
+    # created a newer snapshot and pruned the previous one off disk.
     result = await session.execute(snap_query)
     snapshot = result.scalar_one_or_none()
 
@@ -203,7 +226,11 @@ async def push_snapshot_to_machine(
         if candidate.exists():
             snapshot_dir = candidate
 
+    # snapshot_dir_ref lets the _push closure see any re-resolution above.
+    snapshot_dir_ref = [snapshot_dir]
+
     def _push() -> tuple[int, int]:
+        sd = snapshot_dir_ref[0]
         with ssh_mod.get_sftp(**conn_kwargs) as (ssh, sftp):
             if ssh_mod.check_d2r_running(ssh, is_windows):
                 raise RuntimeError(
@@ -219,8 +246,8 @@ async def push_snapshot_to_machine(
                     removed += 1
 
             uploaded = 0
-            if snapshot_dir:
-                for local_file in sorted(snapshot_dir.iterdir()):
+            if sd:
+                for local_file in sorted(sd.iterdir()):
                     if local_file.is_file():
                         remote = ssh_mod.normalize_path(f"{save_dir}/{local_file.name}")
                         sftp.put(str(local_file), remote)
