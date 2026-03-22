@@ -101,8 +101,45 @@ class TestPushSnapshotNormal:
         assert "/saves/OldHero.d2s" in removed_paths
         assert "/saves/OldHero.d2i" in removed_paths
 
+    async def test_settings_json_not_uploaded(self, tmp_path: Path) -> None:
+        """Settings.json in the snapshot dir must NOT be uploaded — it's device-specific."""
+        snap_dir = tmp_path / "backups" / "pc" / "snap_1"
+        snap_dir.mkdir(parents=True)
+        (snap_dir / "Hero.d2s").write_bytes(b"\x00" * 10)
+        (snap_dir / "Settings.json").write_bytes(b"{}")
+
+        snap = _snap(path="backups/pc/snap_1")
+        session = _session(snap)
+
+        mock_sftp = MagicMock()
+        mock_sftp.remove = MagicMock()
+        mock_sftp.put = MagicMock()
+
+        with (
+            patch("backend.services.backup_manager.get_settings", return_value=_cfg(tmp_path)),
+            patch("backend.services.backup_manager.ssh_mod.get_sftp") as mock_get_sftp,
+            patch("backend.services.backup_manager.ssh_mod.list_all_files", return_value=[]),
+            patch("backend.services.backup_manager.ssh_mod.check_d2r_running", return_value=False),
+            patch("backend.services.backup_manager.ssh_mod.normalize_path", side_effect=lambda x: x),
+        ):
+            mock_get_sftp.return_value.__enter__ = MagicMock(return_value=(MagicMock(), mock_sftp))
+            mock_get_sftp.return_value.__exit__ = MagicMock(return_value=False)
+
+            removed, uploaded = await push_snapshot_to_machine(
+                session=session,
+                machine="pc",
+                conn_kwargs={"host": "localhost"},
+                save_dir="/saves",
+                is_windows=True,
+            )
+
+        # Only Hero.d2s uploaded — Settings.json excluded
+        assert uploaded == 1
+        uploaded_files = {call.args[0] for call in mock_sftp.put.call_args_list}
+        assert all("Settings.json" not in f for f in uploaded_files)
+
     async def test_uploads_snapshot_files(self, tmp_path: Path) -> None:
-        """All files in snapshot dir are uploaded."""
+        """All save files in snapshot dir are uploaded."""
         snap_dir = tmp_path / "backups" / "pc" / "snap_1"
         snap_dir.mkdir(parents=True)
         (snap_dir / "Hero.d2s").write_bytes(b"\x00" * 10)

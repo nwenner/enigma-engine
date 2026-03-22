@@ -25,7 +25,7 @@ import pytest
 # To run: docker run --rm -v $(pwd):/app -w /app enigma-engine-enigma-engine python3 -m pytest tests/ -v
 pytest.importorskip("sqlalchemy", reason="SQLAlchemy not installed — run tests inside Docker")
 
-from backend.services.backup_manager import _prune_backups, push_snapshot_to_machine
+from backend.services.backup_manager import _prune_backups, push_snapshot_to_machine, create_snapshot
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -492,3 +492,74 @@ class TestPushSnapshotPreSyncSafety:
         # Re-resolved to None (pruned) → push thread ran without FileNotFoundError
         assert push_thread_ran
         assert uploaded == 0
+
+
+# ─── create_snapshot — Settings.json exclusion ───────────────────────────────
+
+class TestCreateSnapshotExclusions:
+    """
+    create_snapshot must skip Settings.json when downloading from the remote device.
+    Settings.json is device-specific (graphics/display prefs) and must never be stored
+    in a snapshot — otherwise it gets pushed to the other machine and overwrites its settings.
+    """
+
+    async def test_settings_json_not_downloaded(self, tmp_path: Path) -> None:
+        """Settings.json returned by list_all_files must not be passed to _sftp_download."""
+        remote_files = [
+            {"filename": "Hero.d2s", "path": "/saves/Hero.d2s", "modified_at": 0.0},
+            {"filename": "SharedStash.d2i", "path": "/saves/SharedStash.d2i", "modified_at": 0.0},
+            {"filename": "Settings.json", "path": "/saves/Settings.json", "modified_at": 0.0},
+        ]
+
+        downloaded: list[str] = []
+
+        def _fake_download(sftp, remote_path, local_path):
+            downloaded.append(Path(local_path).name)
+            return 10
+
+        cfg = MagicMock()
+        cfg.data_dir = tmp_path
+        cfg.backups_dir = tmp_path / "backups"
+
+        session = AsyncMock()
+        prune_result = MagicMock()
+        prune_result.scalars.return_value.all.return_value = []
+        session.execute = AsyncMock(return_value=prune_result)
+        session.add = MagicMock()
+        session.commit = AsyncMock()
+
+        mock_char = MagicMock()
+        mock_char.to_dict.return_value = {"name": "Hero"}
+
+        mock_sftp = MagicMock()
+
+        with (
+            patch("backend.services.backup_manager.get_settings", return_value=cfg),
+            patch("backend.services.backup_manager.ssh_mod.get_sftp") as mock_get_sftp,
+            patch("backend.services.backup_manager.ssh_mod.list_all_files", return_value=remote_files),
+            patch("backend.services.backup_manager.ssh_mod.normalize_path", side_effect=lambda x: x),
+            patch("backend.services.backup_manager._sftp_download", side_effect=_fake_download),
+            patch("backend.services.backup_manager.asyncio.to_thread",
+                  AsyncMock(side_effect=lambda fn, *a, **kw: fn())),
+            patch("backend.services.backup_manager.parse_d2s", return_value=mock_char),
+            patch("backend.services.backup_manager._prune_backups", AsyncMock()),
+        ):
+            mock_get_sftp.return_value.__enter__ = MagicMock(return_value=(MagicMock(), mock_sftp))
+            mock_get_sftp.return_value.__exit__ = MagicMock(return_value=False)
+
+            await create_snapshot(
+                session=session,
+                machine="pc",
+                conn_kwargs={"host": "localhost"},
+                save_dir="/saves",
+                label="manual",
+                sync_operation_id=None,
+                update_characters=False,
+            )
+
+        assert "Settings.json" not in downloaded, (
+            "Settings.json must not be downloaded into a snapshot — "
+            "it's device-specific and would overwrite display settings on the other machine"
+        )
+        assert "Hero.d2s" in downloaded
+        assert "SharedStash.d2i" in downloaded

@@ -384,6 +384,7 @@ export function useDepositTab5() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["grail"] });
       qc.invalidateQueries({ queryKey: ["grail", "deposit", "preview"] });
+      qc.invalidateQueries({ queryKey: ["sync", "summary"] });
     },
   });
 }
@@ -445,6 +446,8 @@ export function useDepositGold() {
     onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
+      qc.invalidateQueries({ queryKey: ["seasons", "active", "stats"] });
+      qc.invalidateQueries({ queryKey: ["sync", "summary"] });
     },
   });
 }
@@ -460,6 +463,8 @@ export function useWithdrawGold() {
     onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
+      qc.invalidateQueries({ queryKey: ["seasons", "active", "stats"] });
+      qc.invalidateQueries({ queryKey: ["sync", "summary"] });
     },
   });
 }
@@ -475,6 +480,7 @@ export function useStoreItem() {
     onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "items", mode] });
+      qc.invalidateQueries({ queryKey: ["sync", "summary"] });
     },
   });
 }
@@ -491,6 +497,7 @@ export function useRetrieveVaultItem() {
     onSuccess: (_data, { mode }) => {
       qc.invalidateQueries({ queryKey: ["stash", mode] });
       qc.invalidateQueries({ queryKey: ["vault", "items", mode] });
+      qc.invalidateQueries({ queryKey: ["sync", "summary"] });
     },
   });
 }

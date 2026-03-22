@@ -92,6 +92,7 @@ async def _update_local_snapshot_stash(
     snap_dir = get_settings().data_dir / snap.snapshot_path
     if snap_dir.exists():
         (snap_dir / filename).write_bytes(stash_bytes)
+        snap.created_at = datetime.now(timezone.utc).replace(tzinfo=None)
         log.info("Updated local snapshot stash file: %s/%s", snap.snapshot_path, filename)
     else:
         log.warning("Local snapshot directory missing: %s", snap_dir)

@@ -8,7 +8,7 @@ Layout after the 53-bit flag block (starting at bit 53):
     item_id                 (32 bits)
     item_level              (7 bits)
     quality                 (4 bits)
-    multiple_pictures       (1 bit) [+ pic_id(11) if set]
+    multiple_pictures       (1 bit) [+ pic_id(3) if set]
     class_specific          (1 bit) [+ cs_data(11) if set]
     [quality-specific data]
       q=1 low:      3 bits (quality prefix index)
@@ -176,9 +176,9 @@ def read_item_fields(
     item_level = reader.read(7)
     quality = reader.read(4)
 
-    # Multiple pictures flag (D2R expanded Classic D2's 3-bit pic_id to 11 bits)
+    # Multiple pictures flag — pic_id is 3 bits (same as Classic D2, NOT 11)
     if reader.read(1):  # multiple_pictures
-        reader.read(11)  # pic_id
+        reader.read(3)  # pic_id
 
     # Class-specific flag
     class_specific = bool(reader.read(1))

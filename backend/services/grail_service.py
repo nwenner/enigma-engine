@@ -433,6 +433,7 @@ async def deposit_tab5(
             continue
 
         stash_path.write_bytes(new_bytes)
+        snap.created_at = datetime.now(timezone.utc).replace(tzinfo=None)
         log.info("Deposit: wrote modified %s to snapshot", filename)
         await session.commit()
 

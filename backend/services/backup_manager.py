@@ -71,11 +71,15 @@ async def create_snapshot(
     backup_subdir = cfg.backups_dir / machine / f"{timestamp}_{label}"
     backup_subdir.mkdir(parents=True, exist_ok=True)
 
+    _SNAPSHOT_EXCLUDED = {"settings.json"}
+
     def _download_all() -> list[dict]:
         backed_up = []
         with ssh_mod.get_sftp(**conn_kwargs) as (_ssh, sftp):
             all_files = ssh_mod.list_all_files(sftp, save_dir)
             for file_info in all_files:
+                if file_info["filename"].lower() in _SNAPSHOT_EXCLUDED:
+                    continue
                 remote = ssh_mod.normalize_path(file_info["path"])
                 local = backup_subdir / file_info["filename"]
                 _sftp_download(sftp, remote, local)
@@ -245,10 +249,11 @@ async def push_snapshot_to_machine(
                     sftp.remove(ssh_mod.normalize_path(f["path"]))
                     removed += 1
 
+            _PUSH_EXCLUDED = {"settings.json"}
             uploaded = 0
             if sd:
                 for local_file in sorted(sd.iterdir()):
-                    if local_file.is_file():
+                    if local_file.is_file() and local_file.name.lower() not in _PUSH_EXCLUDED:
                         remote = ssh_mod.normalize_path(f"{save_dir}/{local_file.name}")
                         sftp.put(str(local_file), remote)
                         uploaded += 1
@@ -308,7 +313,7 @@ async def run_sync(
         await asyncio.to_thread(_preflight)
 
         # --- 2+3. List and obtain source files ---
-        EXCLUDED_FILES = {"Settings.json"}
+        EXCLUDED_FILES = {"settings.json"}
 
         if staged_path is not None:
             # Use locally staged files — source machine does not need to be reachable
@@ -319,7 +324,7 @@ async def run_sync(
                 if not d2s_found:
                     raise RuntimeError(f"No .d2s files found in staged directory {staged_path}")
                 for src_file in staged_files:
-                    if src_file.name in EXCLUDED_FILES:
+                    if src_file.name.lower() in EXCLUDED_FILES:
                         continue
                     local = tmp_dir / f"{src_file.name}.part"
                     shutil.copy2(str(src_file), str(local))
@@ -348,7 +353,7 @@ async def run_sync(
             if not d2s_files:
                 raise RuntimeError(f"No .d2s files found in {source_dir} on {source_machine.upper()}")
 
-            files_to_sync = [f for f in source_files if f["filename"] not in EXCLUDED_FILES]
+            files_to_sync = [f for f in source_files if f["filename"].lower() not in EXCLUDED_FILES]
 
             def _download_source():
                 result = []
