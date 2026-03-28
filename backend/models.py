@@ -286,3 +286,19 @@ class BossSummonProgress(Base):
     last_summoned_at = Column(DateTime, nullable=True)
 
     __table_args__ = (UniqueConstraint("set_id", "season_id", name="uq_boss_summon_progress"),)
+
+
+# ─── Map Seed Library ─────────────────────────────────────────────────────────
+
+class SavedSeed(Base):
+    """A map seed saved to the named library for later apply."""
+    __tablename__ = "saved_seeds"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    seed_value = Column(Integer, nullable=False)          # raw uint32 as Python int
+    name = Column(String, nullable=False)                 # user-provided label, e.g. "Act1 Dec"
+    notes = Column(String, nullable=True)                 # optional user notes
+    source_character = Column(String, nullable=False)     # e.g. "Tald"
+    source_class = Column(String, nullable=False)         # e.g. "Warlock"
+    source_version = Column(Integer, nullable=False)      # raw version int, e.g. 105
+    saved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
