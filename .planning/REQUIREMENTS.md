@@ -19,10 +19,10 @@
 
 ### Seed Restore
 
-- [ ] **SEED-07**: User can apply any saved seed to any character's .d2s file
-- [ ] **SEED-08**: Apply operation creates a `pre_seed_restore` backup snapshot before modifying any file
-- [ ] **SEED-09**: Apply operation is blocked when D2R is detected as running
-- [ ] **SEED-10**: Apply operation creates a new vault snapshot from the modified file
+- [x] **SEED-07**: User can apply any saved seed to any character's .d2s file
+- [x] **SEED-08**: Apply operation creates a `pre_seed_restore` backup snapshot before modifying any file
+- [x] **SEED-09**: Apply operation is blocked when D2R is detected as running
+- [x] **SEED-10**: Apply operation creates a new vault snapshot from the modified file
 - [x] **SEED-11**: Checksum is recalculated correctly after patching the seed bytes
 
 ## v2 Requirements
@@ -53,10 +53,10 @@
 | SEED-04 | Phase 2 | Pending |
 | SEED-05 | Phase 2 | Pending |
 | SEED-06 | Phase 2 | Pending |
-| SEED-07 | Phase 2 | Pending |
-| SEED-08 | Phase 2 | Pending |
-| SEED-09 | Phase 2 | Pending |
-| SEED-10 | Phase 2 | Pending |
+| SEED-07 | Phase 2 | Complete |
+| SEED-08 | Phase 2 | Complete |
+| SEED-09 | Phase 2 | Complete |
+| SEED-10 | Phase 2 | Complete |
 | SEED-11 | Phase 2 | Complete |
 
 **Coverage:**
