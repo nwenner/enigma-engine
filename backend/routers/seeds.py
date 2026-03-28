@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,7 @@ from backend.config import get_settings
 from backend.database import get_session
 from backend.models import BackupSnapshot, SavedSeed, Season
 from backend.services.d2s_parser import CLASS_NAMES, D2SParseError, MAGIC, parse_d2s, read_map_seed
+from backend.services.seed_service import apply_seed_to_snapshot
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["seeds"])
@@ -97,6 +98,10 @@ class SaveSeedRequest(BaseModel):
 class UpdateSeedRequest(BaseModel):
     name: str
     notes: Optional[str] = None
+
+
+class ApplySeedRequest(BaseModel):
+    character: str       # filename stem without .d2s, e.g. "Tald"
 
 
 class SavedSeedRecord(BaseModel):
@@ -283,3 +288,31 @@ async def delete_seed(
         raise HTTPException(404, "Seed not found.")
     await session.delete(entry)
     await session.commit()
+
+
+@router.post("/seeds/{seed_id}/apply")
+async def apply_seed(
+    seed_id: int,
+    body: ApplySeedRequest,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Apply a saved seed to a character's .d2s in the local vault snapshot.
+
+    Sequence: guard D2R check → pre_seed_restore backup → patch seed bytes
+    → recalculate checksum → write file → trigger push.
+
+    Use Sync to Device afterward to push the change to the target machine.
+    """
+    result = await session.execute(select(SavedSeed).where(SavedSeed.id == seed_id))
+    saved_seed = result.scalar_one_or_none()
+    if saved_seed is None:
+        raise HTTPException(404, "Seed not found.")
+
+    return await apply_seed_to_snapshot(
+        session=session,
+        saved_seed=saved_seed,
+        character=body.character,
+        background_tasks=background_tasks,
+    )
