@@ -6,9 +6,14 @@ Map Seeds router.
 Endpoints:
   GET  /api/seeds/current             - All characters with their map seeds from latest snapshot
   GET  /api/seeds/debug/{character}    - Raw byte windows at both candidate offsets for verification
+  POST /api/seeds/library             - Save a character's current map seed to the library
+  GET  /api/seeds/library             - List all saved seeds, newest first
+  PATCH /api/seeds/library/{id}       - Update name and notes of a saved seed
+  DELETE /api/seeds/library/{id}      - Delete a saved seed (returns 204)
 """
 import logging
 import struct
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -19,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
 from backend.database import get_session
-from backend.models import BackupSnapshot, Season
+from backend.models import BackupSnapshot, SavedSeed, Season
 from backend.services.d2s_parser import CLASS_NAMES, D2SParseError, MAGIC, parse_d2s, read_map_seed
 
 log = logging.getLogger(__name__)
@@ -81,6 +86,45 @@ class SeedDebugResponse(BaseModel):
     offset_v99: int
     seed_at_v99: int
     hex_window_v99: str
+
+
+class SaveSeedRequest(BaseModel):
+    character: str       # filename without .d2s, e.g. "Tald"
+    name: str            # user label, e.g. "Act1 Dec"
+    notes: Optional[str] = None
+
+
+class UpdateSeedRequest(BaseModel):
+    name: str
+    notes: Optional[str] = None
+
+
+class SavedSeedRecord(BaseModel):
+    id: int
+    seed_value: int
+    seed_hex: str
+    name: str
+    notes: Optional[str]
+    source_character: str
+    source_class: str
+    source_version: int
+    saved_at: str
+
+
+# ─── Helper ───────────────────────────────────────────────────────────────────
+
+def _seed_record(s: SavedSeed) -> SavedSeedRecord:
+    return SavedSeedRecord(
+        id=s.id,
+        seed_value=s.seed_value,
+        seed_hex=f"0x{s.seed_value:08X}",
+        name=s.name,
+        notes=s.notes,
+        source_character=s.source_character,
+        source_class=s.source_class,
+        source_version=s.source_version,
+        saved_at=s.saved_at.isoformat(),
+    )
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -158,3 +202,84 @@ async def seeds_debug(character: str, session: AsyncSession = Depends(get_sessio
         seed_at_v99=seed_at_v99,
         hex_window_v99=_hex_window(data, offset_v99),
     )
+
+
+@router.post("/seeds/library", response_model=SavedSeedRecord, status_code=201)
+async def save_seed_to_library(
+    body: SaveSeedRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Save the current map seed of a character to the named library."""
+    snap = await _latest_snapshot(session)
+    if snap is None:
+        raise HTTPException(404, "No snapshot available. Check In from a device first.")
+
+    snap_dir = _snapshot_dir(snap)
+    d2s_path = snap_dir / f"{body.character}.d2s"
+    if not d2s_path.exists():
+        raise HTTPException(404, f"{body.character}.d2s not found in latest snapshot.")
+
+    try:
+        data = d2s_path.read_bytes()
+        seed = read_map_seed(data)
+        char = parse_d2s(d2s_path)
+        _, version = struct.unpack_from("<II", data, 0)
+    except (D2SParseError, OSError, struct.error) as e:
+        raise HTTPException(400, f"Cannot read seed from {body.character}.d2s: {e}") from e
+
+    entry = SavedSeed(
+        seed_value=seed,
+        name=body.name,
+        notes=body.notes,
+        source_character=body.character,
+        source_class=char.class_name,
+        source_version=version,
+        saved_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    session.add(entry)
+    await session.commit()
+    await session.refresh(entry)
+
+    log.info("Saved seed 0x%08X ('%s') from %s", seed, body.name, body.character)
+    return _seed_record(entry)
+
+
+@router.get("/seeds/library", response_model=list[SavedSeedRecord])
+async def list_seeds(session: AsyncSession = Depends(get_session)):
+    """List all saved seeds, newest first."""
+    result = await session.execute(
+        select(SavedSeed).order_by(SavedSeed.saved_at.desc())
+    )
+    return [_seed_record(s) for s in result.scalars().all()]
+
+
+@router.patch("/seeds/library/{seed_id}", response_model=SavedSeedRecord)
+async def update_seed(
+    seed_id: int,
+    body: UpdateSeedRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update the name and notes of a saved seed."""
+    result = await session.execute(select(SavedSeed).where(SavedSeed.id == seed_id))
+    entry = result.scalar_one_or_none()
+    if entry is None:
+        raise HTTPException(404, "Seed not found.")
+    entry.name = body.name
+    entry.notes = body.notes
+    await session.commit()
+    await session.refresh(entry)
+    return _seed_record(entry)
+
+
+@router.delete("/seeds/library/{seed_id}", status_code=204)
+async def delete_seed(
+    seed_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a saved seed from the library."""
+    result = await session.execute(select(SavedSeed).where(SavedSeed.id == seed_id))
+    entry = result.scalar_one_or_none()
+    if entry is None:
+        raise HTTPException(404, "Seed not found.")
+    await session.delete(entry)
+    await session.commit()
