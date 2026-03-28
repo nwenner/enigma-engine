@@ -39,7 +39,12 @@ Plans:
   4. Applying a seed to a character creates a `pre_seed_restore` backup snapshot before any file is touched
   5. Apply operation returns an error when D2R is detected as running; the file is not modified
   6. After a successful apply, reading the seed back from the modified vault snapshot returns the applied seed value
-**Plans**: TBD
+**Plans:** 4 plans
+Plans:
+- [x] 02-01-PLAN.md — SavedSeed model + d2s_utils.py checksum extraction (Wave 1)
+- [ ] 02-02-PLAN.md — write_map_seed() helper + seed_service.py apply orchestration (Wave 2)
+- [ ] 02-03-PLAN.md — Library CRUD endpoints (save/list/edit/delete) in seeds.py (Wave 2)
+- [ ] 02-04-PLAN.md — Apply endpoint in seeds.py + test_seed_service.py (Wave 3)
 
 ### Phase 3: Frontend
 **Goal**: Users can view all character seeds, manage their seed library, and apply seeds entirely from the web UI
@@ -61,5 +66,5 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Parser + Read Verification | 0/1 | Not started | - |
-| 2. Write Path + Library | 0/0 | Not started | - |
+| 2. Write Path + Library | 0/4 | Not started | - |
 | 3. Frontend | 0/0 | Not started | - |

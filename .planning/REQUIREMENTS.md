@@ -23,7 +23,7 @@
 - [ ] **SEED-08**: Apply operation creates a `pre_seed_restore` backup snapshot before modifying any file
 - [ ] **SEED-09**: Apply operation is blocked when D2R is detected as running
 - [ ] **SEED-10**: Apply operation creates a new vault snapshot from the modified file
-- [ ] **SEED-11**: Checksum is recalculated correctly after patching the seed bytes
+- [x] **SEED-11**: Checksum is recalculated correctly after patching the seed bytes
 
 ## v2 Requirements
 
@@ -57,7 +57,7 @@
 | SEED-08 | Phase 2 | Pending |
 | SEED-09 | Phase 2 | Pending |
 | SEED-10 | Phase 2 | Pending |
-| SEED-11 | Phase 2 | Pending |
+| SEED-11 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 11 total

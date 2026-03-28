@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-28T18:02:01.148Z"
+last_updated: "2026-03-28T18:42:27.358Z"
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_plans: 5
+  completed_plans: 2
 ---
 
 # Project State: Enigma Engine — Map Seed Milestone
@@ -22,14 +22,14 @@ progress:
 
 **Core value:** Save and restore D2R map seeds so known-good farming layouts are never lost.
 
-**Current focus:** Phase 01 — parser-read-verification
+**Current focus:** Phase 02 — write-path-library
 
 ---
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
+Phase: 02 (write-path-library) — EXECUTING
+Plan: 2 of 4
 | Field | Value |
 |-------|-------|
 | Phase | 1 — Parser + Read Verification |
@@ -38,7 +38,7 @@ Plan: Not started
 | Progress | Phase 0/3 complete |
 
 ```
-[░░░░░░░░░░░░░░░░░░░░] 0%
+[████░░░░░░] 40%
 ```
 
 ---
@@ -47,11 +47,11 @@ Plan: Not started
 
 | Metric | Value |
 |--------|-------|
-| Phases complete | 0/3 |
-| Plans complete | 0 |
-| Requirements done | 0/11 |
+| Phases complete | 1/3 |
+| Plans complete | 2 |
+| Requirements done | 1/11 |
 
----
+| Phase 02-write-path-library P01 | 10min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -61,6 +61,8 @@ Plan: Not started
 - Read/write from vault snapshot, not live SSH — consistent with grail/vault/demon pattern
 - Snapshot only after restore (no auto-push) — user controls when changes go to device
 - Apply seed to any character (not just source) — core use case is sharing great maps
+- SavedSeed has no season_id FK — seeds are globally valid across seasons (02-01)
+- _calculate_checksum extracted to d2s_utils.py — shared between demon_service and seed_service (02-01)
 
 ### Critical Technical Notes
 
@@ -94,4 +96,5 @@ Phase 1 → Phase 2 is a HARD GATE. Do not build any write code until seed value
 3. If a phase is in progress, read `.planning/plans/phase-N-*.md` for active plan
 4. Run tests: `docker run --rm -v $(pwd):/app -w /app enigma-engine-enigma-engine python3 -m pytest tests/ -q`
 
-**Next action:** Run `/gsd:plan-phase 1` to create the execution plan for Phase 1.
+**Last session:** 2026-03-28 — Completed 02-01-PLAN.md
+**Next action:** Execute 02-02-PLAN.md (seed_service.py with read + write + apply logic)
