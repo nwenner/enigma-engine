@@ -9,7 +9,7 @@
 
 - [ ] **SEED-01**: App reads the map seed from each character's .d2s file in the latest vault snapshot
 - [ ] **SEED-02**: App handles version-conditional offset (v96-99 at 0xAB, v100+ at 0x9B) correctly
-- [ ] **SEED-03**: Map Seeds page displays all characters with their current seed (hex + decimal)
+- [x] **SEED-03**: Map Seeds page displays all characters with their current seed (hex + decimal)
 
 ### Seed Library
 
@@ -49,7 +49,7 @@
 |-------------|-------|--------|
 | SEED-01 | Phase 1 | Pending |
 | SEED-02 | Phase 1 | Pending |
-| SEED-03 | Phase 3 | Pending |
+| SEED-03 | Phase 3 | Complete |
 | SEED-04 | Phase 2 | Complete |
 | SEED-05 | Phase 2 | Complete |
 | SEED-06 | Phase 2 | Complete |

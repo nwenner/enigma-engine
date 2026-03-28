@@ -51,14 +51,14 @@ Plans:
 **Depends on**: Phase 2
 **Requirements**: SEED-03
 **Success Criteria** (what must be TRUE):
-  1. The Map Seeds page loads and shows every character from the latest vault snapshot with their seed in hex and decimal
+  1. The Map Seeds page loads and shows every character from the latest vault snapshot with their seed in hex
   2. User can click Save on a character row, enter a name and optional notes, and see the entry appear in the library panel
   3. User can click Apply on a library entry, select a target character, confirm, and receive visual confirmation of success or a clear error if D2R is running
   4. User can edit a library entry's name or notes inline and see the updated values without a page reload
   5. User can delete a library entry and it disappears from the list immediately
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
-- [ ] 03-01-PLAN.md — Backend field rename (name to label) + TypeScript types + TanStack Query hooks (Wave 1)
+- [x] 03-01-PLAN.md — Backend field rename (name to label) + TypeScript types + TanStack Query hooks (Wave 1)
 - [ ] 03-02-PLAN.md — Seeds.tsx page component + App.tsx wiring + visual verification (Wave 2)
 
 ---
@@ -69,4 +69,4 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Parser + Read Verification | 0/1 | Not started | - |
 | 2. Write Path + Library | 0/4 | Not started | - |
-| 3. Frontend | 0/2 | Not started | - |
+| 3. Frontend | 1/2 | In Progress|  |
