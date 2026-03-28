@@ -32,6 +32,8 @@ import type {
   DemonStatusResponse,
   DemonRecord,
   WarlockInfo,
+  SeedsCurrentResponse,
+  SavedSeedRecord,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
@@ -826,6 +828,67 @@ export function useDeleteDemon() {
     mutationFn: (id) => api.delete(`/demon/${id}`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["demon"] });
+    },
+  });
+}
+
+// ─── Map Seeds ───────────────────────────────────────────────────────────────
+
+export function useSeedsCurrentQuery() {
+  return useQuery<SeedsCurrentResponse>({
+    queryKey: ["seeds", "current"],
+    queryFn: () => api.get("/seeds/current").then((r) => r.data),
+  });
+}
+
+export function useSeedLibrary() {
+  return useQuery<SavedSeedRecord[]>({
+    queryKey: ["seeds", "library"],
+    queryFn: () => api.get("/seeds/library").then((r) => r.data),
+  });
+}
+
+export function useSaveSeed() {
+  const qc = useQueryClient();
+  return useMutation<SavedSeedRecord, Error, { character: string; label: string; notes?: string }>({
+    mutationFn: (body) => api.post("/seeds/library", body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["seeds"] });
+    },
+  });
+}
+
+export function useUpdateSeed() {
+  const qc = useQueryClient();
+  return useMutation<SavedSeedRecord, Error, { id: number; label: string; notes?: string }>({
+    mutationFn: ({ id, ...body }) => api.patch(`/seeds/library/${id}`, body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["seeds"] });
+    },
+  });
+}
+
+export function useDeleteSeed() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, number>({
+    mutationFn: (id) => api.delete(`/seeds/library/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["seeds"] });
+    },
+  });
+}
+
+export function useApplySeed() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; seed_name: string; character: string; seed_hex: string },
+    Error,
+    { seedId: number; character: string }
+  >({
+    mutationFn: ({ seedId, character }) =>
+      api.post(`/seeds/${seedId}/apply`, { character }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["seeds"] });
     },
   });
 }

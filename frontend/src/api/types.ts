@@ -438,3 +438,31 @@ export interface DemonRecord {
   saved_at: string;
   demon_size: number;
 }
+
+// ─── Map Seeds ───────────────────────────────────────────────────────────────
+
+export interface SeedEntry {
+  character: string;
+  name: string;
+  class_name: string;
+  seed_decimal: number;
+  seed_hex: string;
+}
+
+export interface SeedsCurrentResponse {
+  seeds: SeedEntry[];
+  parse_errors: string[];
+  snapshot_at: string | null;
+}
+
+export interface SavedSeedRecord {
+  id: number;
+  seed_value: number;
+  seed_hex: string;
+  label: string;
+  notes: string | null;
+  source_character: string;
+  source_class: string;
+  source_version: number;
+  saved_at: string;
+}
