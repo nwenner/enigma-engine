@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import get_settings
 from backend.models import BackupSnapshot, SavedSeed, Season
 from backend.services.d2s_parser import D2SParseError, write_map_seed
-from backend.services.d2s_utils import _calculate_checksum
 
 log = logging.getLogger(__name__)
 
