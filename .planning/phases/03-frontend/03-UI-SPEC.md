@@ -126,8 +126,8 @@ All components are pre-existing. No new components created in Phase 3.
 - **Section heading:** `<h2 className="text-slate-400 text-xs uppercase tracking-widest mb-3">Seed Library{count > 0 && <span className="text-slate-600 font-normal ml-1 normal-case">({count})</span>}</h2>`
 - **Layout:** Single-column list of `card-d2 p-4` entries (`space-y-3`).
 - **Card anatomy:**
-  - Header row: tag chips (`chip-d2`) from `label.split(",")` + ✕ delete button (top-right, `px-2 py-1 text-xs text-slate-600 hover:text-red-400`)
-  - Notes (if present): `text-slate-500 text-xs mt-0.5`
+  - Header row: tag chips (`chip-d2`) from `label.split(",")` + ✕ delete button (top-right, `px-2 py-1 text-xs text-slate-600 hover:text-red-400`, `aria-label="Delete seed"`)
+  - Notes (if present): `text-slate-500 text-xs mt-1`
   - Metadata: source character + saved date (`text-slate-600 text-xs mt-1`)
   - Apply row: `<span className="text-slate-500 text-xs">Apply to:</span>` + `select-d2 w-auto` character dropdown + `btn-d2 text-xs` [Apply →]
   - Edit button: inline text `"edit"` or pencil — clicking toggles card into edit mode (TagInput pre-filled + notes input pre-filled + [Save ✓] / [Cancel])
