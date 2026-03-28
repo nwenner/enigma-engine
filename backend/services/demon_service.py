@@ -18,6 +18,8 @@ from __future__ import annotations
 import struct
 import logging
 
+from backend.services.d2s_utils import _calculate_checksum
+
 log = logging.getLogger(__name__)
 
 _LF = b"lf"  # 0x6c 0x66
@@ -75,11 +77,3 @@ def restore_demon_to_d2s(d2s_data: bytes, demon_bytes: bytes) -> bytes:
     log.info("Restored demon to .d2s: %d bytes → %d bytes", len(d2s_data), len(new_data))
     return bytes(new_data)
 
-
-def _calculate_checksum(data: bytes) -> int:
-    """D2S rotate-and-add checksum (checksum field must be zeroed before calling)."""
-    checksum = 0
-    for b in data:
-        checksum = ((checksum << 1) | (checksum >> 31)) & 0xFFFFFFFF
-        checksum = (checksum + b) & 0xFFFFFFFF
-    return checksum
