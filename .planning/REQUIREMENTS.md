@@ -13,9 +13,9 @@
 
 ### Seed Library
 
-- [ ] **SEED-04**: User can save a seed to the library with a name and optional notes
-- [ ] **SEED-05**: User can edit the name and notes of a saved seed
-- [ ] **SEED-06**: User can delete a seed from the library
+- [x] **SEED-04**: User can save a seed to the library with a name and optional notes
+- [x] **SEED-05**: User can edit the name and notes of a saved seed
+- [x] **SEED-06**: User can delete a seed from the library
 
 ### Seed Restore
 
@@ -50,9 +50,9 @@
 | SEED-01 | Phase 1 | Pending |
 | SEED-02 | Phase 1 | Pending |
 | SEED-03 | Phase 3 | Pending |
-| SEED-04 | Phase 2 | Pending |
-| SEED-05 | Phase 2 | Pending |
-| SEED-06 | Phase 2 | Pending |
+| SEED-04 | Phase 2 | Complete |
+| SEED-05 | Phase 2 | Complete |
+| SEED-06 | Phase 2 | Complete |
 | SEED-07 | Phase 2 | Complete |
 | SEED-08 | Phase 2 | Complete |
 | SEED-09 | Phase 2 | Complete |
