@@ -23,6 +23,8 @@ import struct
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
+from backend.services.d2s_utils import _calculate_checksum
+
 MAGIC = 0xAA55AA55
 MIN_VERSION = 96
 MAX_VERSION = 200  # generous upper bound for future patches
@@ -180,6 +182,45 @@ def read_map_seed(data: bytes) -> int:
     if len(data) < offset + 4:
         raise D2SParseError(f"file too small to read seed at 0x{offset:X}")
     return struct.unpack_from("<I", data, offset)[0]
+
+
+def write_map_seed(data: bytes, seed: int) -> bytes:
+    """Patch the map seed in raw .d2s bytes and return the updated bytes.
+
+    Version-conditional offset (same as read_map_seed):
+      v100+  : 0x9B
+      v96-99 : 0xAB
+
+    The checksum at offset 12 is recalculated after patching.
+    File size is unchanged — asserts len(result) == len(data).
+
+    Args:
+        data: Raw .d2s file bytes.
+        seed: New seed value (uint32, little-endian).
+
+    Raises:
+        D2SParseError: If file is too small to contain the version or seed offset.
+    """
+    if len(data) < 8:
+        raise D2SParseError("file too small to read version")
+    _, version = struct.unpack_from("<II", data, 0)
+    offset = 0x9B if version >= 100 else 0xAB
+    if len(data) < offset + 4:
+        raise D2SParseError(f"file too small to write seed at 0x{offset:X}")
+
+    patched = bytearray(data)
+    struct.pack_into("<I", patched, offset, seed)
+
+    # Recalculate checksum: zero the checksum field first (offset 12, 4 bytes)
+    struct.pack_into("<I", patched, 12, 0)
+    checksum = _calculate_checksum(bytes(patched))
+    struct.pack_into("<I", patched, 12, checksum)
+
+    result = bytes(patched)
+    assert len(result) == len(data), (
+        f"write_map_seed produced {len(result)} bytes (expected {len(data)})"
+    )
+    return result
 
 
 def _parse_quest_completions(data: bytes, woo_pos: int) -> dict:
