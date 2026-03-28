@@ -12,6 +12,7 @@ import Rewards from "./pages/Rewards";
 import Demon from "./pages/Demon";
 import BossPortals from "./pages/BossPortals";
 import { usePreflight, useSyncToasts } from "./api/hooks";
+import { useEventStream } from "./api/useEventStream";
 import { Toaster } from "sonner";
 
 const NAV_ITEMS = [
@@ -65,6 +66,7 @@ function ConnectionStatus() {
 const SIDEBAR_BG = "linear-gradient(180deg, #0d0f14 0%, #0b0d11 100%)";
 
 export default function App() {
+  useEventStream();
   useSyncToasts();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();

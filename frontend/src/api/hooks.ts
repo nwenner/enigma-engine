@@ -89,8 +89,8 @@ export function useSyncSummary() {
   return useQuery<SyncSummaryResponse>({
     queryKey: ["sync", "summary"],
     queryFn: () => api.get("/sync/summary").then((r) => r.data),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -241,7 +241,7 @@ export function useAutoSyncStatus() {
   return useQuery<AutoSyncStatus>({
     queryKey: ["autosync", "status"],
     queryFn: () => api.get("/autosync/status").then((r) => r.data),
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -958,7 +958,7 @@ export function useSyncToasts() {
 
       return data;
     },
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     staleTime: 0,
   });
 }

@@ -279,6 +279,8 @@ async def _auto_push_to_dest(direction: str) -> None:
                 op_row.file_count = removed + uploaded
                 op_row.completed_at = datetime.now(timezone.utc)
                 await session.commit()
+            from backend.services.event_bus import emit
+            emit("sync_complete", direction=direction)
         except Exception as exc:
             log.error("auto_sync: push to %s failed: %s", dest, exc)
             try:
@@ -363,6 +365,9 @@ async def _snapshot_source(machine: str, is_windows: bool) -> tuple[Path, int]:
                 op_row.file_count = snapshot.file_count
                 op_row.completed_at = datetime.now(timezone.utc)
                 await session.commit()
+
+        from backend.services.event_bus import emit
+        emit("sync_complete", direction=f"checkin_{machine}")
 
         return snapshot_dir, snapshot.file_count
 
@@ -596,6 +601,8 @@ async def run_auto_sync_watcher() -> None:
                                 "reason": "Both PC and Deck have unseen saves since last sync",
                             })
                             asyncio.create_task(notify_conflict())
+                            from backend.services.event_bus import emit
+                            emit("conflict")
                             continue
 
                     # Check-in from source: creates game_close snapshot + runs all hooks

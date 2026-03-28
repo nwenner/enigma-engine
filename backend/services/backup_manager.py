@@ -425,6 +425,9 @@ async def run_sync(
         await session.commit()
         print(f"[sync] op_id={operation.id} success: {len(upload_results)} files synced", flush=True)
 
+        from backend.services.event_bus import emit
+        emit("sync_complete", direction=operation.direction or "manual")
+
         # --- 8b. Update character DB from synced files ---
         from backend.routers.characters import upsert_characters
 
