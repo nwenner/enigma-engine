@@ -296,7 +296,7 @@ class SavedSeed(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     seed_value = Column(Integer, nullable=False)          # raw uint32 as Python int
-    name = Column(String, nullable=False)                 # user-provided label, e.g. "Act1 Dec"
+    label = Column(String, nullable=False)                # user-provided label/tags, e.g. "Pindleskin, Chaos Sanctuary"
     notes = Column(String, nullable=True)                 # optional user notes
     source_character = Column(String, nullable=False)     # e.g. "Tald"
     source_class = Column(String, nullable=False)         # e.g. "Warlock"

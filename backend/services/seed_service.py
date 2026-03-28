@@ -120,14 +120,14 @@ async def apply_seed_to_snapshot(
     d2s_path.write_bytes(patched)
     log.info(
         "Applied seed 0x%08X ('%s') to %s.d2s",
-        saved_seed.seed_value, saved_seed.name, character,
+        saved_seed.seed_value, saved_seed.label, character,
     )
 
     await trigger_mothership_push(background_tasks, session)
 
     return {
         "success": True,
-        "seed_name": saved_seed.name,
+        "seed_name": saved_seed.label,
         "character": character,
         "seed_hex": f"0x{saved_seed.seed_value:08X}",
     }

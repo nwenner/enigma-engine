@@ -91,12 +91,12 @@ class SeedDebugResponse(BaseModel):
 
 class SaveSeedRequest(BaseModel):
     character: str       # filename without .d2s, e.g. "Tald"
-    name: str            # user label, e.g. "Act1 Dec"
+    label: str           # comma-separated tags, e.g. "Pindleskin, Chaos Sanctuary"
     notes: Optional[str] = None
 
 
 class UpdateSeedRequest(BaseModel):
-    name: str
+    label: str
     notes: Optional[str] = None
 
 
@@ -108,7 +108,7 @@ class SavedSeedRecord(BaseModel):
     id: int
     seed_value: int
     seed_hex: str
-    name: str
+    label: str
     notes: Optional[str]
     source_character: str
     source_class: str
@@ -123,7 +123,7 @@ def _seed_record(s: SavedSeed) -> SavedSeedRecord:
         id=s.id,
         seed_value=s.seed_value,
         seed_hex=f"0x{s.seed_value:08X}",
-        name=s.name,
+        label=s.label,
         notes=s.notes,
         source_character=s.source_character,
         source_class=s.source_class,
@@ -234,7 +234,7 @@ async def save_seed_to_library(
 
     entry = SavedSeed(
         seed_value=seed,
-        name=body.name,
+        label=body.label,
         notes=body.notes,
         source_character=body.character,
         source_class=char.class_name,
@@ -245,7 +245,7 @@ async def save_seed_to_library(
     await session.commit()
     await session.refresh(entry)
 
-    log.info("Saved seed 0x%08X ('%s') from %s", seed, body.name, body.character)
+    log.info("Saved seed 0x%08X ('%s') from %s", seed, body.label, body.character)
     return _seed_record(entry)
 
 
@@ -269,7 +269,7 @@ async def update_seed(
     entry = result.scalar_one_or_none()
     if entry is None:
         raise HTTPException(404, "Seed not found.")
-    entry.name = body.name
+    entry.label = body.label
     entry.notes = body.notes
     await session.commit()
     await session.refresh(entry)

@@ -55,7 +55,7 @@ def _make_saved_seed(seed_value: int = 0xDEADBEEF, name: str = "Test Seed") -> M
     s = MagicMock()
     s.id = 1
     s.seed_value = seed_value
-    s.name = name
+    s.label = name
     s.notes = None
     s.source_character = "Tald"
     s.source_class = "Warlock"
