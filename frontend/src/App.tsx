@@ -10,6 +10,7 @@ import Stash from "./pages/Stash";
 import Seasons from "./pages/Seasons";
 import Rewards from "./pages/Rewards";
 import Demon from "./pages/Demon";
+import Seeds from "./pages/Seeds";
 import BossPortals from "./pages/BossPortals";
 import { usePreflight, useSyncToasts } from "./api/hooks";
 import { useEventStream } from "./api/useEventStream";
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { to: "/grail", label: "Holy Grail", icon: "🏆" },
   { to: "/stash", label: "Item Vault", icon: "🏺" },
   { to: "/demon", label: "Demon Registry", icon: "👹" },
+  { to: "/seeds", label: "Map Seeds", icon: "🗺️" },
   { to: "/portals", label: "Boss Portals", icon: "🌀" },
   { to: "/seasons", label: "Seasons", icon: "🗓️" },
   { to: "/rewards", label: "Reward Library", icon: "🎁" },
@@ -185,6 +187,7 @@ export default function App() {
             <Route path="/seasons" element={<Seasons />} />
             <Route path="/rewards" element={<Rewards />} />
             <Route path="/demon" element={<Demon />} />
+            <Route path="/seeds" element={<Seeds />} />
             <Route path="/portals" element={<BossPortals />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
