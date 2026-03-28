@@ -166,6 +166,22 @@ def parse_d2s(path: Path) -> D2SCharacter:
     )
 
 
+def read_map_seed(data: bytes) -> int:
+    """Read the 4-byte little-endian map seed from raw .d2s bytes.
+
+    Version-conditional offset:
+      v100+  : 0x9B
+      v96-99 : 0xAB
+    """
+    if len(data) < 8:
+        raise D2SParseError("file too small to read version")
+    _, version = struct.unpack_from("<II", data, 0)
+    offset = 0x9B if version >= 100 else 0xAB
+    if len(data) < offset + 4:
+        raise D2SParseError(f"file too small to read seed at 0x{offset:X}")
+    return struct.unpack_from("<I", data, offset)[0]
+
+
 def _parse_quest_completions(data: bytes, woo_pos: int) -> dict:
     """
     Parse act boss quest completions from the quest block.
