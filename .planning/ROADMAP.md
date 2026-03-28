@@ -24,7 +24,9 @@
   1. Calling `GET /api/seeds/current` returns each character's seed as both decimal and hex values
   2. Seed values returned for v100+ saves match a known-correct value from a hex dump or `d2mapseed` tool comparison
   3. Seed values returned for v96-99 saves use the `0xAB` offset and also match known-correct values
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 01-01-PLAN.md — Parser helper, seeds router, and empirical verification checkpoint
 
 ### Phase 2: Write Path + Library
 **Goal**: Users can save seeds to a named library and apply any saved seed to any character's vault snapshot
@@ -58,6 +60,6 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Parser + Read Verification | 0/0 | Not started | - |
+| 1. Parser + Read Verification | 0/1 | Not started | - |
 | 2. Write Path + Library | 0/0 | Not started | - |
 | 3. Frontend | 0/0 | Not started | - |
