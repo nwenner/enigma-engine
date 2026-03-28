@@ -16,7 +16,9 @@ from backend.services.d2s_parser import (
     D2SParseError,
     MAGIC,
     read_map_seed,
+    write_map_seed,
 )
+from backend.services.d2s_utils import _calculate_checksum
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -73,3 +75,45 @@ class TestReadMapSeed:
         struct.pack_into("<I", buf, 4, 105)
         with pytest.raises(D2SParseError):
             read_map_seed(bytes(buf))
+
+
+# ─── TestWriteMapSeed ─────────────────────────────────────────────────────────
+
+class TestWriteMapSeed:
+    def test_v100_seed_written_correctly(self) -> None:
+        """write_map_seed on v100+ file writes seed at 0x9B; read_map_seed reads it back."""
+        data = _make_v100_seed_file(0x00000000)
+        result = write_map_seed(data, 0xDEADBEEF)
+        assert read_map_seed(result) == 0xDEADBEEF
+
+    def test_v99_seed_written_correctly(self) -> None:
+        """write_map_seed on v99 file writes seed at 0xAB; read_map_seed reads it back."""
+        data = _make_v99_seed_file(0x00000000)
+        result = write_map_seed(data, 0x01C73932)
+        assert read_map_seed(result) == 0x01C73932
+
+    def test_file_size_unchanged(self) -> None:
+        """write_map_seed must not change the file size."""
+        data = _make_v100_seed_file(0x12345678)
+        result = write_map_seed(data, 0xABCDEF01)
+        assert len(result) == len(data)
+
+    def test_checksum_recalculated(self) -> None:
+        """After write_map_seed, zeroing checksum field and recalculating must match stored value."""
+        data = _make_v100_seed_file(0x00000000)
+        result = write_map_seed(data, 0xDEADBEEF)
+
+        # Extract stored checksum from offset 12
+        stored_checksum = struct.unpack_from("<I", result, 12)[0]
+
+        # Recalculate: zero the checksum field first, then compute
+        recalc_buf = bytearray(result)
+        struct.pack_into("<I", recalc_buf, 12, 0)
+        expected = _calculate_checksum(bytes(recalc_buf))
+
+        assert stored_checksum == expected
+
+    def test_truncated_raises_parse_error(self) -> None:
+        """A 4-byte file raises D2SParseError from write_map_seed."""
+        with pytest.raises(D2SParseError):
+            write_map_seed(b"\x00" * 4, 0xDEADBEEF)
