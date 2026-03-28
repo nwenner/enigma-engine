@@ -16,6 +16,7 @@ from backend.routers import stash as stash_router
 from backend.routers import seasons as seasons_router
 from backend.routers import rewards as rewards_router
 from backend.routers import demon as demon_router
+from backend.routers import seeds as seeds_router
 from backend.routers import boss_summon as boss_summon_router
 from backend.routers import events as events_router
 
@@ -51,6 +52,7 @@ app.include_router(stash_router.router, prefix="/api")
 app.include_router(seasons_router.router, prefix="/api")
 app.include_router(rewards_router.router, prefix="/api")
 app.include_router(demon_router.router, prefix="/api")
+app.include_router(seeds_router.router, prefix="/api")
 app.include_router(boss_summon_router.router, prefix="/api")
 app.include_router(events_router.router, prefix="/api")
 
