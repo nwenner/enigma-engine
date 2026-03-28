@@ -49,7 +49,7 @@
 |-------------|-------|--------|
 | SEED-01 | Phase 1 | Pending |
 | SEED-02 | Phase 1 | Pending |
-| SEED-03 | Phase 1 | Pending |
+| SEED-03 | Phase 3 | Pending |
 | SEED-04 | Phase 2 | Pending |
 | SEED-05 | Phase 2 | Pending |
 | SEED-06 | Phase 2 | Pending |
@@ -66,4 +66,4 @@
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-28 after initialization*
+*Last updated: 2026-03-28 after roadmap creation*

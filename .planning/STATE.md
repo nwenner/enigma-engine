@@ -1,0 +1,81 @@
+# Project State: Enigma Engine — Map Seed Milestone
+
+**Last updated:** 2026-03-28
+**Milestone:** Map Seed Milestone
+
+---
+
+## Project Reference
+
+**Core value:** Save and restore D2R map seeds so known-good farming layouts are never lost.
+
+**Current focus:** Phase 1 — Parser + Read Verification
+
+---
+
+## Current Position
+
+| Field | Value |
+|-------|-------|
+| Phase | 1 — Parser + Read Verification |
+| Plan | None (not started) |
+| Status | Not started |
+| Progress | Phase 0/3 complete |
+
+```
+[░░░░░░░░░░░░░░░░░░░░] 0%
+```
+
+---
+
+## Performance Metrics
+
+| Metric | Value |
+|--------|-------|
+| Phases complete | 0/3 |
+| Plans complete | 0 |
+| Requirements done | 0/11 |
+
+---
+
+## Accumulated Context
+
+### Key Decisions Logged
+
+- Seed library is global (not season-scoped) — seeds are valuable across seasons
+- Read/write from vault snapshot, not live SSH — consistent with grail/vault/demon pattern
+- Snapshot only after restore (no auto-push) — user controls when changes go to device
+- Apply seed to any character (not just source) — core use case is sharing great maps
+
+### Critical Technical Notes
+
+- Offset is version-conditional: `0x9B` for v100+, `0xAB` for v96-99
+  - Same 16-byte shift already handled in `d2s_parser.py` at lines 129-135 for difficulty field
+  - MUST empirically verify against real v100+ save before Phase 2 write code is built
+- Checksum algorithm: reuse `_calculate_checksum` from `demon_service.py` — extract to `d2s_utils.py` in Phase 2
+- File size must NOT change after seed patch (unlike demon restore) — `assert len(patched) == len(original)`
+- `SavedSeed` model must NOT have a `season_id` FK — seeds are globally valid
+
+### Phase Gate
+
+Phase 1 → Phase 2 is a HARD GATE. Do not build any write code until seed values from `GET /api/seeds/current` are confirmed correct against at least one v100+ and one v96-99 save file.
+
+### Todos
+
+- (none yet)
+
+### Blockers
+
+- (none)
+
+---
+
+## Session Continuity
+
+**To resume this milestone:**
+1. Read this file for current position
+2. Read `.planning/ROADMAP.md` for full phase structure
+3. If a phase is in progress, read `.planning/plans/phase-N-*.md` for active plan
+4. Run tests: `docker run --rm -v $(pwd):/app -w /app enigma-engine-enigma-engine python3 -m pytest tests/ -q`
+
+**Next action:** Run `/gsd:plan-phase 1` to create the execution plan for Phase 1.
