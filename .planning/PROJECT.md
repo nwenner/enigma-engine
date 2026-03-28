@@ -32,10 +32,10 @@ Save and restore D2R map seeds so known-good farming layouts are never lost.
 
 - [ ] Read the map seed value from a character's .d2s file (from latest vault snapshot)
 - [ ] Display all characters' current seeds on a Map Seeds page
-- [ ] Save a seed to a persistent library with a name and optional notes
-- [ ] Apply any saved seed to any character's .d2s file (patch in vault snapshot)
-- [ ] After applying, create a new snapshot from the modified file
-- [ ] Seed library persists globally (not season-scoped)
+- [x] Save a seed to a persistent library with a name and optional notes — *Validated in Phase 02: write-path-library*
+- [x] Apply any saved seed to any character's .d2s file (patch in vault snapshot) — *Validated in Phase 02: write-path-library*
+- [x] After applying, create a new snapshot from the modified file — *Validated in Phase 02: write-path-library*
+- [x] Seed library persists globally (not season-scoped) — *Validated in Phase 02: write-path-library*
 
 ### Out of Scope
 
@@ -65,10 +65,10 @@ Save and restore D2R map seeds so known-good farming layouts are never lost.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Seed library is global (not season-scoped) | A good map layout is valuable across seasons | — Pending |
-| Read/write from vault snapshot, not live SSH | Consistent with grail/vault pattern; no SSH needed for reads | — Pending |
-| Snapshot only after restore (no auto-push) | User controls when changes go to device | — Pending |
-| Apply seed to any character (not just source) | Core use case: share great maps across all characters | — Pending |
+| Seed library is global (not season-scoped) | A good map layout is valuable across seasons | Confirmed — no season_id FK on SavedSeed (Phase 02) |
+| Read/write from vault snapshot, not live SSH | Consistent with grail/vault pattern; no SSH needed for reads | Confirmed — seed_service reads from latest snapshot path (Phase 02) |
+| Snapshot only after restore (no auto-push) | User controls when changes go to device | Confirmed — apply flow creates snapshot, no auto-push (Phase 02) |
+| Apply seed to any character (not just source) | Core use case: share great maps across all characters | Confirmed — apply endpoint accepts any character filename (Phase 02) |
 
 ## Evolution
 
@@ -88,4 +88,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after initialization*
+*Last updated: 2026-03-28 after Phase 02 (write-path-library) complete*
