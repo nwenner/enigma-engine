@@ -7,6 +7,7 @@ Endpoints:
   GET  /api/demon/status                   - Check if current snapshot has a bound demon
   POST /api/demon/save                     - Save bound demon from latest snapshot to vault
   GET  /api/demon/list                     - List all saved demons
+  PATCH /api/demon/{id}                    - Update label and notes of a saved demon
   DELETE /api/demon/{id}                   - Delete a saved demon
   POST /api/demon/{id}/restore             - Restore saved demon to a machine's .d2s file
 """
@@ -106,6 +107,11 @@ class DemonStatusResponse(BaseModel):
 
 class SaveDemonRequest(BaseModel):
     character: str       # filename without .d2s, e.g. "Tald"
+    label: str
+    notes: Optional[str] = None
+
+
+class UpdateDemonRequest(BaseModel):
     label: str
     notes: Optional[str] = None
 
@@ -282,6 +288,41 @@ async def list_demons(
         )
         for d in demons
     ]
+
+
+@router.patch("/demon/{demon_id}", response_model=DemonRecord)
+async def update_demon(
+    demon_id: int,
+    body: UpdateDemonRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update the label and notes of a saved demon."""
+    result = await session.execute(select(BoundDemon).where(BoundDemon.id == demon_id))
+    demon = result.scalar_one_or_none()
+    if demon is None:
+        raise HTTPException(404, "Demon not found.")
+    demon.label = body.label
+    demon.notes = body.notes
+
+    for raw_tag in body.label.split(","):
+        tag = raw_tag.strip()
+        if tag:
+            existing = await session.execute(
+                select(DemonTagLibrary).where(DemonTagLibrary.tag == tag)
+            )
+            if existing.scalar_one_or_none() is None:
+                session.add(DemonTagLibrary(tag=tag))
+
+    await session.commit()
+    await session.refresh(demon)
+    return DemonRecord(
+        id=demon.id,
+        label=demon.label,
+        character_filename=demon.character_filename,
+        notes=demon.notes,
+        saved_at=demon.saved_at.isoformat(),
+        demon_size=len(demon.demon_bytes),
+    )
 
 
 @router.delete("/demon/{demon_id}")

@@ -832,6 +832,16 @@ export function useDeleteDemon() {
   });
 }
 
+export function useUpdateDemon() {
+  const qc = useQueryClient();
+  return useMutation<DemonRecord, Error, { id: number; label: string; notes?: string }>({
+    mutationFn: ({ id, ...body }) => api.patch(`/demon/${id}`, body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["demon"] });
+    },
+  });
+}
+
 // ─── Map Seeds ───────────────────────────────────────────────────────────────
 
 export function useSeedsCurrentQuery() {

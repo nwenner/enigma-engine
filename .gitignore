@@ -31,3 +31,9 @@ frontend/.vite/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code — commit: commands/, agents/, settings.json, CLAUDE.md
+# ignore: local overrides, ephemeral worktrees, session state
+.claude/settings.local.json
+.claude/worktrees/
+.claude/todos/
