@@ -2,32 +2,27 @@ import { useState, useEffect } from "react";
 import { Routes, Route, NavLink, Navigate, Link, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Characters from "./pages/Characters";
-import Backups from "./pages/Backups";
-import History from "./pages/History";
+import Vault from "./pages/Vault";
 import Settings from "./pages/Settings";
 import Grail from "./pages/Grail";
 import Stash from "./pages/Stash";
 import Seasons from "./pages/Seasons";
-import Rewards from "./pages/Rewards";
 import Demon from "./pages/Demon";
 import Seeds from "./pages/Seeds";
 import BossPortals from "./pages/BossPortals";
-import { usePreflight, useSyncToasts } from "./api/hooks";
+import { usePreflight, useSyncToasts, useCharacters } from "./api/hooks";
 import { useEventStream } from "./api/useEventStream";
 import { Toaster } from "sonner";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "⚔️" },
-  { to: "/characters", label: "Characters", icon: "🧙" },
-  { to: "/backups", label: "Backups", icon: "💾" },
-  { to: "/history", label: "History", icon: "📜" },
+  { to: "/vault", label: "Vault", icon: "💾" },
   { to: "/grail", label: "Holy Grail", icon: "🏆" },
   { to: "/stash", label: "Item Vault", icon: "🏺" },
   { to: "/demon", label: "Demon Registry", icon: "👹" },
   { to: "/seeds", label: "Map Seeds", icon: "🗺️" },
   { to: "/portals", label: "Boss Portals", icon: "🌀" },
   { to: "/seasons", label: "Seasons", icon: "🗓️" },
-  { to: "/rewards", label: "Reward Library", icon: "🎁" },
   { to: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
@@ -72,6 +67,8 @@ export default function App() {
   useSyncToasts();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const { data: chars } = useCharacters();
+  const hasWarlocks = (chars ?? []).some((c) => c.class_id === 7);
 
   // Close sidebar on navigation
   useEffect(() => {
@@ -109,7 +106,7 @@ export default function App() {
 
         {/* Nav */}
         <div className="flex flex-col gap-0.5 p-3 flex-1 overflow-y-auto">
-          {NAV_ITEMS.map(({ to, label, icon }) => (
+          {NAV_ITEMS.filter(({ to }) => to !== "/demon" || hasWarlocks).map(({ to, label, icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -179,13 +176,14 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/characters" element={<Characters />} />
-            <Route path="/backups" element={<Backups />} />
-            <Route path="/history" element={<History />} />
+            <Route path="/vault" element={<Vault />} />
+            <Route path="/backups" element={<Navigate to="/vault" replace />} />
+            <Route path="/history" element={<Navigate to="/vault" replace />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/grail" element={<Grail />} />
             <Route path="/stash" element={<Stash />} />
             <Route path="/seasons" element={<Seasons />} />
-            <Route path="/rewards" element={<Rewards />} />
+            <Route path="/rewards" element={<Navigate to="/seasons" replace />} />
             <Route path="/demon" element={<Demon />} />
             <Route path="/seeds" element={<Seeds />} />
             <Route path="/portals" element={<BossPortals />} />

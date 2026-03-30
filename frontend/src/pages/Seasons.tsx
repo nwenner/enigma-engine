@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Rewards from "./Rewards";
 import {
   useSeasons,
   useActiveSeason,
@@ -1685,68 +1686,93 @@ function PastSeason({ item }: { item: SeasonListItem }) {
 export default function Seasons() {
   const { data: seasons, isLoading: loadingList, error: listError } = useSeasons();
   const { data: activeSeason, isLoading: loadingActive } = useActiveSeason();
+  const [pageTab, setPageTab] = useState<"seasons" | "rewards">("seasons");
 
   const pastSeasons = seasons?.filter((s) => s.status !== "active") ?? [];
   const hasActive = !!activeSeason;
 
+  const tabActive = "px-4 py-2 text-sm text-d2gold border-b-2 border-d2gold transition-colors";
+  const tabInactive = "px-4 py-2 text-sm text-slate-500 border-b-2 border-transparent hover:text-slate-300 transition-colors";
+
   return (
-    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn space-y-8">
-      <div>
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fadeIn">
+      <div className="mb-2">
         <h1 className="font-diablo text-d2gold text-2xl tracking-widest">Seasons</h1>
-        <p className="text-slate-500 text-sm mt-1">Fresh-start mechanics with milestone rewards. SC only.</p>
       </div>
 
-      {/* Active Season */}
-      <section className="space-y-3">
-        <p className="text-slate-600 text-[10px] uppercase tracking-wider">Active Season</p>
-        {loadingActive ? (
-          <div className="card-d2 px-4 py-6 text-center text-slate-600 text-sm">Loading…</div>
-        ) : hasActive ? (
-          <ActiveSeasonCard season={activeSeason} />
-        ) : (
-          <div className="card-d2 px-4 py-6 text-center">
-            <p className="text-slate-500 text-sm">No active season.</p>
-          </div>
-        )}
-      </section>
+      {/* Tab switcher */}
+      <div className="flex gap-1 border-b border-d2bg-border mb-6">
+        <button
+          onClick={() => setPageTab("seasons")}
+          className={pageTab === "seasons" ? tabActive : tabInactive}
+        >
+          Seasons
+        </button>
+        <button
+          onClick={() => setPageTab("rewards")}
+          className={pageTab === "rewards" ? tabActive : tabInactive}
+        >
+          Reward Library
+        </button>
+      </div>
 
-      {/* Create New Season (only when no active season) */}
-      {!hasActive && (
-        <section className="space-y-3">
-          <p className="text-slate-600 text-[10px] uppercase tracking-wider">New Season</p>
-          <CreateSeasonPanel />
-        </section>
+      {pageTab === "rewards" ? (
+        <Rewards />
+      ) : (
+        <div className="space-y-8">
+          {/* Active Season */}
+          <section className="space-y-3">
+            <p className="text-slate-600 text-[10px] uppercase tracking-wider">Active Season</p>
+            {loadingActive ? (
+              <div className="card-d2 px-4 py-6 text-center text-slate-600 text-sm">Loading…</div>
+            ) : hasActive ? (
+              <ActiveSeasonCard season={activeSeason} />
+            ) : (
+              <div className="card-d2 px-4 py-6 text-center">
+                <p className="text-slate-500 text-sm">No active season.</p>
+              </div>
+            )}
+          </section>
+
+          {/* Create New Season (only when no active season) */}
+          {!hasActive && (
+            <section className="space-y-3">
+              <p className="text-slate-600 text-[10px] uppercase tracking-wider">New Season</p>
+              <CreateSeasonPanel />
+            </section>
+          )}
+
+          {/* Setup seasons waiting to start */}
+          {seasons?.filter((s) => s.status === "setup").length ? (
+            <section className="space-y-3">
+              <p className="text-slate-600 text-[10px] uppercase tracking-wider">Pending Start</p>
+              {seasons.filter((s) => s.status === "setup").map((s) => (
+                <PastSeason key={s.id} item={s} />
+              ))}
+            </section>
+          ) : null}
+
+          {/* Past Seasons */}
+          <section className="space-y-3">
+            <p className="text-slate-600 text-[10px] uppercase tracking-wider">Past Seasons</p>
+            {loadingList ? (
+              <div className="card-d2 px-4 py-6 text-center text-slate-600 text-sm">Loading…</div>
+            ) : listError ? (
+              <div className="bg-red-950/30 border border-red-800/50 px-4 py-3 text-red-400 text-sm">
+                Failed to load seasons.
+              </div>
+            ) : pastSeasons.filter((s) => s.status === "completed").length === 0 ? (
+              <div className="card-d2 px-4 py-6 text-center">
+                <p className="text-slate-600 text-sm">No completed seasons yet.</p>
+              </div>
+            ) : (
+              pastSeasons.filter((s) => s.status === "completed").map((s) => (
+                <PastSeason key={s.id} item={s} />
+              ))
+            )}
+          </section>
+        </div>
       )}
-
-      {/* Setup seasons waiting to start */}
-      {seasons?.filter((s) => s.status === "setup").length ? (
-        <section className="space-y-3">
-          <p className="text-slate-600 text-[10px] uppercase tracking-wider">Pending Start</p>
-          {seasons.filter((s) => s.status === "setup").map((s) => (
-            <PastSeason key={s.id} item={s} />
-          ))}
-        </section>
-      ) : null}
-
-      {/* Past Seasons */}
-      <section className="space-y-3">
-        <p className="text-slate-600 text-[10px] uppercase tracking-wider">Past Seasons</p>
-        {loadingList ? (
-          <div className="card-d2 px-4 py-6 text-center text-slate-600 text-sm">Loading…</div>
-        ) : listError ? (
-          <div className="bg-red-950/30 border border-red-800/50 px-4 py-3 text-red-400 text-sm">
-            Failed to load seasons.
-          </div>
-        ) : pastSeasons.filter((s) => s.status === "completed").length === 0 ? (
-          <div className="card-d2 px-4 py-6 text-center">
-            <p className="text-slate-600 text-sm">No completed seasons yet.</p>
-          </div>
-        ) : (
-          pastSeasons.filter((s) => s.status === "completed").map((s) => (
-            <PastSeason key={s.id} item={s} />
-          ))
-        )}
-      </section>
     </div>
   );
 }
