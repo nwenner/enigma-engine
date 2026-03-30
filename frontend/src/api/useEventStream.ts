@@ -31,12 +31,18 @@ export function useEventStream(): void {
         if (event.type === "connected") return;
 
         if (event.type === "sync_complete") {
+          qc.invalidateQueries({ queryKey: ["preflight"] });
           qc.invalidateQueries({ queryKey: ["sync", "summary"] });
           qc.invalidateQueries({ queryKey: ["autosync", "status"] });
           qc.invalidateQueries({ queryKey: ["characters"] });
           qc.invalidateQueries({ queryKey: ["seasons", "active", "stats"] });
           qc.invalidateQueries({ queryKey: ["sync", "toast-poll"] });
           qc.invalidateQueries({ queryKey: ["backups"] });
+        }
+
+        if (event.type === "device_online" || event.type === "device_offline") {
+          qc.invalidateQueries({ queryKey: ["preflight"] });
+          qc.invalidateQueries({ queryKey: ["autosync", "status"] });
         }
 
         if (event.type === "conflict") {

@@ -393,7 +393,7 @@ async def run_auto_sync_watcher() -> None:
     log.warning("auto_sync: watcher started")
 
     while True:
-        interval = 30  # default; overwritten below when enabled
+        interval = 15  # default; overwritten below when enabled
         try:
             enabled_raw = await _get_autosync_setting("autosync_enabled")
             enabled = (enabled_raw or "false").lower() == "true"
@@ -404,9 +404,9 @@ async def run_auto_sync_watcher() -> None:
 
             interval_raw = await _get_autosync_setting("autosync_poll_interval")
             try:
-                interval = int(interval_raw or "30")
+                interval = int(interval_raw or "15")
             except ValueError:
-                interval = 30
+                interval = 15
 
             pc_enabled = (await _get_autosync_setting("autosync_pc_enabled") or "true").lower() == "true"
             deck_enabled = (await _get_autosync_setting("autosync_deck_enabled") or "true").lower() == "true"
@@ -493,6 +493,17 @@ async def run_auto_sync_watcher() -> None:
             ]:
                 now_reachable = now_val is not None
                 was_reachable = prev_reachable[machine]
+
+                # Emit SSE events on reachability transitions
+                if was_reachable is not None and was_reachable != now_reachable:
+                    from backend.services.event_bus import emit
+                    if now_reachable:
+                        log.info("auto_sync: %s came online", machine)
+                        emit("device_online", machine=machine)
+                    else:
+                        log.info("auto_sync: %s went offline", machine)
+                        emit("device_offline", machine=machine)
+
                 if (
                     m_enabled
                     and was_reachable is False

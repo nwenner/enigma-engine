@@ -61,7 +61,7 @@ export function usePreflight(refetchInterval?: number) {
     queryKey: ["preflight"],
     queryFn: () => api.get("/sync/preflight").then((r) => r.data),
     staleTime: 10_000,
-    refetchInterval: refetchInterval ?? 15_000,
+    refetchInterval: refetchInterval ?? 30_000,
   });
 }
 
@@ -92,7 +92,7 @@ export function useSyncSummary() {
     queryKey: ["sync", "summary"],
     queryFn: () => api.get("/sync/summary").then((r) => r.data),
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 }
 
@@ -243,7 +243,7 @@ export function useAutoSyncStatus() {
   return useQuery<AutoSyncStatus>({
     queryKey: ["autosync", "status"],
     queryFn: () => api.get("/autosync/status").then((r) => r.data),
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 }
 
@@ -559,7 +559,7 @@ export function useActiveSeasonStats(refetchMs?: number) {
         throw e;
       }),
     retry: false,
-    refetchInterval: refetchMs,
+    refetchInterval: refetchMs ?? 60_000,
   });
 }
 
