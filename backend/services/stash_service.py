@@ -25,6 +25,7 @@ from backend.services.catalog_lookup import build_catalog_lookup
 from backend.services.item_parsing import ParsedStash, parse_stash, serialize_stash
 from backend.services.item_parsing.item_stats import read_item_stats, read_runeword_stats, format_item_stats
 from backend.services.item_parsing.tables.rune_effects import get_rune_socket_effects
+from backend.services.item_parsing.tables.item_dimensions import get_item_dimensions
 from backend.services.item_parsing.stash_format import (
     remove_items_from_page,
     insert_item_into_page,
@@ -199,6 +200,7 @@ async def fetch_stash(
                 socket_effects = get_rune_socket_effects(item.runeword_id, item.item_type, existing_ids)
                 properties.extend(socket_effects)
 
+            _dims = get_item_dimensions(item.item_type)
             items_out.append({
                 "page_item_index": item_idx,
                 "item_type": item.item_type.strip(),
@@ -214,6 +216,10 @@ async def fetch_stash(
                 "is_ethereal": item.is_ethereal,
                 "is_runeword": item.is_runeword,
                 "properties": properties,
+                "grid_x": item.grid_x,
+                "grid_y": item.grid_y,
+                "grid_width": _dims[0],
+                "grid_height": _dims[1],
             })
 
         tabs.append({
@@ -312,6 +318,7 @@ async def fetch_stash_local(
                 socket_effects = get_rune_socket_effects(item.runeword_id, item.item_type, existing_ids)
                 properties.extend(socket_effects)
 
+            _dims = get_item_dimensions(item.item_type)
             items_out.append({
                 "page_item_index": item_idx,
                 "item_type": item.item_type.strip(),
@@ -327,6 +334,10 @@ async def fetch_stash_local(
                 "is_ethereal": item.is_ethereal,
                 "is_runeword": item.is_runeword,
                 "properties": properties,
+                "grid_x": item.grid_x,
+                "grid_y": item.grid_y,
+                "grid_width": _dims[0],
+                "grid_height": _dims[1],
             })
 
         tabs.append({

@@ -62,6 +62,7 @@ function qualityLabel(quality: number): string {
 }
 
 const MAX_STASH_GOLD = 12_500_000;
+const CELL_PX = 29;
 
 function fmtGoldAmt(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -769,6 +770,220 @@ function ItemRow({
   );
 }
 
+// ─── Stash grid view ─────────────────────────────────────────────────────────
+
+const QUALITY_BG: Record<number, string> = {
+  7: "rgba(56,42,10,0.85)",
+  5: "rgba(10,40,10,0.85)",
+  3: "rgba(10,20,56,0.85)",
+  4: "rgba(56,50,5,0.85)",
+  6: "rgba(56,30,10,0.85)",
+};
+const QUALITY_BORDER: Record<number, string> = {
+  7: "#a67c20",
+  5: "#2d6e2d",
+  3: "#2d4ea0",
+  4: "#8e8020",
+  6: "#8e5020",
+};
+const DEFAULT_ITEM_BG = "rgba(20,20,25,0.85)";
+const DEFAULT_ITEM_BORDER = "#3a3a4a";
+
+function StashGridItem({
+  item,
+  tab,
+  mode: _mode,
+  isRegistered,
+  onStore,
+  onRegisterReward,
+}: {
+  item: StashItem;
+  tab: number;
+  mode: Mode;
+  isRegistered?: boolean;
+  onStore: () => void;
+  onRegisterReward?: () => void;
+}) {
+  const { data: preflight } = usePreflight();
+  const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
+  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
+  const hasTooltip = (item.properties?.length ?? 0) > 0 || item.is_ethereal;
+  const showStore = tab !== PORTAL_TAB;
+  const showRegister = tab === PORTAL_TAB && (item.is_runeword || item.quality >= REWARD_QUALITY_THRESHOLD);
+  const nameColor = qualityTextColor(item.quality);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: item.grid_x * CELL_PX + 1,
+        top: item.grid_y * CELL_PX + 1,
+        width: item.grid_width * CELL_PX - 2,
+        height: item.grid_height * CELL_PX - 2,
+        background: QUALITY_BG[item.quality] ?? DEFAULT_ITEM_BG,
+        border: `1px solid ${QUALITY_BORDER[item.quality] ?? DEFAULT_ITEM_BORDER}`,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        cursor: hasTooltip ? "default" : "auto",
+        zIndex: 1,
+      }}
+      onMouseMove={hasTooltip ? (e) => setTooltip({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseLeave={hasTooltip ? () => setTooltip(null) : undefined}
+    >
+      <span
+        style={{
+          fontSize: 8,
+          fontFamily: "monospace",
+          color: nameColor,
+          lineHeight: 1.2,
+          textAlign: "center",
+          padding: "0 1px",
+          overflow: "hidden",
+          maxWidth: "100%",
+          whiteSpace: "nowrap",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {item.item_type}
+      </span>
+      {item.is_ethereal && (
+        <span style={{ fontSize: 7, color: "#7dd3fc", fontFamily: "monospace", lineHeight: 1 }}>ETH</span>
+      )}
+      {(showStore || showRegister) && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 1,
+            right: 1,
+            display: "flex",
+            gap: 1,
+          }}
+        >
+          {showRegister && (
+            isRegistered ? (
+              <span style={{ fontSize: 7, color: "#22c55e", lineHeight: 1 }}>✓</span>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRegisterReward?.(); }}
+                title="Register as season reward"
+                style={{
+                  fontSize: 7,
+                  color: "#c8a84b",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+              >
+                ★
+              </button>
+            )
+          )}
+          {showStore && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onStore(); }}
+              disabled={d2rRunning}
+              title={d2rRunning ? "D2R is running — close the game first" : "Store this item in vault"}
+              style={{
+                fontSize: 7,
+                color: d2rRunning ? "#4b5563" : "#94a3b8",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: d2rRunning ? "not-allowed" : "pointer",
+                lineHeight: 1,
+              }}
+            >
+              ▼
+            </button>
+          )}
+        </div>
+      )}
+      {tooltip && hasTooltip && <D2ItemTooltip item={item} x={tooltip.x} y={tooltip.y} />}
+    </div>
+  );
+}
+
+function StashGrid({
+  items,
+  tab,
+  mode,
+  onStore,
+  onRegisterReward,
+  registeredIndices,
+}: {
+  items: StashItem[];
+  tab: number;
+  mode: Mode;
+  onStore: (item: StashItem) => void;
+  onRegisterReward?: (item: StashItem) => void;
+  registeredIndices: Set<number>;
+}) {
+  const gridSize = 10 * CELL_PX;
+
+  const visibleItems = items.filter(
+    (item) => !(item.is_simple && item.grid_x === 0 && item.grid_y === 0 && item.item_level === 0)
+  );
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: gridSize,
+        height: gridSize,
+        background: "#0a0a0e",
+        border: "1px solid rgba(100,78,28,0.3)",
+        flexShrink: 0,
+      }}
+    >
+      {/* Vertical grid lines */}
+      {Array.from({ length: 11 }).map((_, i) => (
+        <div
+          key={`v${i}`}
+          style={{
+            position: "absolute",
+            left: i * CELL_PX,
+            top: 0,
+            width: 1,
+            height: gridSize,
+            background: "rgba(80,60,20,0.15)",
+          }}
+        />
+      ))}
+      {/* Horizontal grid lines */}
+      {Array.from({ length: 11 }).map((_, i) => (
+        <div
+          key={`h${i}`}
+          style={{
+            position: "absolute",
+            top: i * CELL_PX,
+            left: 0,
+            height: 1,
+            width: gridSize,
+            background: "rgba(80,60,20,0.15)",
+          }}
+        />
+      ))}
+      {/* Items */}
+      {visibleItems.map((item, idx) => (
+        <StashGridItem
+          key={idx}
+          item={item}
+          tab={tab}
+          mode={mode}
+          isRegistered={registeredIndices.has(item.page_item_index)}
+          onStore={() => onStore(item)}
+          onRegisterReward={() => onRegisterReward?.(item)}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ─── Stash tab view ───────────────────────────────────────────────────────────
 
 function StashTabView({
@@ -787,6 +1002,7 @@ function StashTabView({
   const [storeTarget, setStoreTarget] = useState<{ item: StashItem; tab: number } | null>(null);
   const [registerTarget, setRegisterTarget] = useState<StashItem | null>(null);
   const [registeredIndices, setRegisteredIndices] = useState<Set<number>>(new Set());
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const tab = tabs[activeTab];
 
   return (
@@ -812,10 +1028,47 @@ function StashTabView({
       </div>
 
       {tab && tab.items.length > 0 && <QualitySummary items={tab.items} />}
+      {tab && tab.items.length > 0 && (
+        <div className="flex justify-end gap-1 px-3 py-1.5 border-b border-d2bg-border bg-black/10">
+          <button
+            onClick={() => setViewMode("grid")}
+            title="Grid view"
+            className={`text-[10px] px-2 py-0.5 border transition-colors ${
+              viewMode === "grid"
+                ? "text-d2gold border-d2gold/50 bg-d2gold/10"
+                : "text-slate-600 border-slate-800 hover:text-slate-400 hover:border-slate-600"
+            }`}
+          >
+            Grid
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            title="List view"
+            className={`text-[10px] px-2 py-0.5 border transition-colors ${
+              viewMode === "list"
+                ? "text-d2gold border-d2gold/50 bg-d2gold/10"
+                : "text-slate-600 border-slate-800 hover:text-slate-400 hover:border-slate-600"
+            }`}
+          >
+            List
+          </button>
+        </div>
+      )}
 
       <div className="p-3 min-h-[200px]">
         {!tab || tab.item_count === 0 ? (
           <p className="text-slate-700 text-xs text-center py-8">Empty tab</p>
+        ) : viewMode === "grid" ? (
+          <div className="flex justify-center">
+            <StashGrid
+              items={tab.items}
+              tab={activeTab}
+              mode={mode}
+              onStore={(item) => setStoreTarget({ item, tab: activeTab })}
+              onRegisterReward={(item) => setRegisterTarget(item)}
+              registeredIndices={registeredIndices}
+            />
+          </div>
         ) : (
           <div className="space-y-px">
             {tab.items.map((item, idx) => (

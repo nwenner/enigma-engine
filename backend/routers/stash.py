@@ -51,6 +51,10 @@ class StashItemResponse(BaseModel):
     is_ethereal: bool
     is_runeword: bool
     properties: list[str]
+    grid_x: int = 0
+    grid_y: int = 0
+    grid_width: int = 1
+    grid_height: int = 1
 
 
 class StashTabResponse(BaseModel):

@@ -18,7 +18,7 @@ const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "⚔️" },
   { to: "/vault", label: "Vault", icon: "💾" },
   { to: "/grail", label: "Holy Grail", icon: "🏆" },
-  { to: "/stash", label: "Item Vault", icon: "🏺" },
+  { to: "/stash", label: "Stash", icon: "🏺" },
   { to: "/demon", label: "Demon Registry", icon: "👹" },
   { to: "/seeds", label: "Map Seeds", icon: "🗺️" },
   { to: "/portals", label: "Boss Portals", icon: "🌀" },

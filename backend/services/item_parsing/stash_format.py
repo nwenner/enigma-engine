@@ -179,6 +179,8 @@ def _parse_item(
         byte_start=byte_start,
         byte_end=byte_end,
         prop_bit_start=fields.prop_bit_start,
+        grid_x=flags.position_x,
+        grid_y=flags.position_y,
     )
 
 

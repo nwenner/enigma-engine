@@ -33,6 +33,9 @@ class ParsedItem:
     # Absolute bit offset (within page raw_bytes) where the property list starts.
     # 0 for simple items and ears (no property list).
     prop_bit_start: int = 0
+    # Stash grid position (bits 42-49 of flags block). 0 for socketed child items.
+    grid_x: int = 0
+    grid_y: int = 0
 
 
 @dataclass

@@ -165,6 +165,10 @@ export interface StashItem {
   is_ethereal: boolean;
   is_runeword: boolean;
   properties: string[];
+  grid_x: number;
+  grid_y: number;
+  grid_width: number;
+  grid_height: number;
 }
 
 export interface StashTab {
