@@ -178,7 +178,7 @@ async def fetch_stash(
             # Unique/magic/rare items have a single list and parse reliably.
             properties: list[str] = []
             raw_stats = []
-            if item.prop_bit_start > 0 and item.quality not in (5,):
+            if item.prop_bit_start > 0:
                 log.warning("stash_service: parsing [%s] prop_bit_start=%d", item.display_name, item.prop_bit_start)
                 try:
                     if item.is_runeword:
@@ -297,7 +297,7 @@ async def fetch_stash_local(
 
             properties: list[str] = []
             raw_stats = []
-            if item.prop_bit_start > 0 and item.quality not in (5,):
+            if item.prop_bit_start > 0:
                 log.warning("stash_service: parsing [%s] prop_bit_start=%d", item.display_name, item.prop_bit_start)
                 try:
                     if item.is_runeword:

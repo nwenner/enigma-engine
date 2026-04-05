@@ -278,15 +278,13 @@ class TestReignOfWarlockCertification:
         from backend.services.item_parsing.item_names import base_name
         assert base_name("wac ") == "Occult Tome"
 
-    def test_display_name_is_occult_tome_without_catalog(self) -> None:
+    def test_display_name_resolved_from_static_table(self) -> None:
         """
-        Without a GrailCatalog entry seeded, display falls back to base type name.
-        With catalog seeded (unique_id=410, name='Ars Dul\\'Mephistos'), the
-        catalog lookup in stash_service will override to the full unique name.
+        unique_id=410 resolves to "Ars Dul'Mephistos" from the static
+        UNIQUE_NAMES table, even without a GrailCatalog entry.
         """
         result = self._parse()
-        # resolve_name without catalog → "{base_name} (unique)" fallback
-        assert result["item_name"] == "Occult Tome (unique)"
+        assert result["item_name"] == "Ars Dul'Mephistos"
 
     def test_is_not_ethereal_via_parse(self) -> None:
         assert self._parse()["is_ethereal"] is False

@@ -21,6 +21,7 @@ from backend.services.item_parsing.item_names import (
     resolve_name,
 )
 from backend.services.item_parsing.tables.rare_names import RARE_NAMES
+from backend.services.item_parsing.tables.unique_set_names import UNIQUE_NAMES, SET_NAMES
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -283,19 +284,39 @@ class TestResolveName:
         assert rare is None
 
     def test_unique_fallback_without_catalog(self):
+        """unique_id not in static table → base name + '(unique)' fallback."""
         display, rare = resolve_name(
             item_type="rin ", quality=7, is_simple=False, is_ear=False,
-            unique_id=42,
+            unique_id=9999,
         )
         assert display == "Ring (unique)"
         assert rare is None
 
+    def test_unique_resolved_from_static_table(self):
+        """unique_id=42 → resolved from UNIQUE_NAMES static table."""
+        display, rare = resolve_name(
+            item_type="rin ", quality=7, is_simple=False, is_ear=False,
+            unique_id=42,
+        )
+        assert display == UNIQUE_NAMES[42]
+        assert rare is None
+
     def test_set_fallback_without_catalog(self):
+        """set_id not in static table → base name + '(set)' fallback."""
+        display, rare = resolve_name(
+            item_type="amu ", quality=5, is_simple=False, is_ear=False,
+            set_id=9999,
+        )
+        assert display == "Amulet (set)"
+        assert rare is None
+
+    def test_set_resolved_from_static_table(self):
+        """set_id=10 → resolved from SET_NAMES static table."""
         display, rare = resolve_name(
             item_type="amu ", quality=5, is_simple=False, is_ear=False,
             set_id=10,
         )
-        assert display == "Amulet (set)"
+        assert display == SET_NAMES[10]
         assert rare is None
 
     def test_catalog_name_wins(self):
@@ -457,3 +478,69 @@ class TestNoFallbacksInStash:
             pytest.skip(
                 f"Skipping — {len(unknown)} charm(s) have D2R-specific IDs not yet in tables: {summary}"
             )
+
+
+# ─── Static name table tests ────────────────────────────────────────────────
+
+class TestStaticUniqueNames:
+    """Tests for UNIQUE_NAMES/SET_NAMES fallback in resolve_name()."""
+
+    def test_unique_name_from_static_table(self):
+        """unique_id=0 → 'The Gnasher' without catalog_name."""
+        name, _ = resolve_name(
+            item_type="hax ", quality=7, is_simple=False, is_ear=False,
+            unique_id=0,
+        )
+        assert name == "The Gnasher"
+
+    def test_unique_name_catalog_takes_priority(self):
+        """catalog_name overrides static table."""
+        name, _ = resolve_name(
+            item_type="hax ", quality=7, is_simple=False, is_ear=False,
+            unique_id=0, catalog_name="Custom Catalog Name",
+        )
+        assert name == "Custom Catalog Name"
+
+    def test_unique_name_unknown_id_falls_back(self):
+        """Unknown unique_id falls back to base_name + '(unique)'."""
+        name, _ = resolve_name(
+            item_type="rin ", quality=7, is_simple=False, is_ear=False,
+            unique_id=9999,
+        )
+        assert "(unique)" in name
+
+    def test_set_name_from_static_table(self):
+        """set_id=0 → "Civerb's Ward" without catalog_name."""
+        name, _ = resolve_name(
+            item_type="lrg ", quality=5, is_simple=False, is_ear=False,
+            set_id=0,
+        )
+        assert name == "Civerb's Ward"
+
+    def test_set_name_catalog_takes_priority(self):
+        """catalog_name overrides static table for sets."""
+        name, _ = resolve_name(
+            item_type="lrg ", quality=5, is_simple=False, is_ear=False,
+            set_id=0, catalog_name="Override Set Name",
+        )
+        assert name == "Override Set Name"
+
+    def test_set_name_unknown_id_falls_back(self):
+        """Unknown set_id falls back to base_name + '(set)'."""
+        name, _ = resolve_name(
+            item_type="lrg ", quality=5, is_simple=False, is_ear=False,
+            set_id=9999,
+        )
+        assert "(set)" in name
+
+    def test_unique_names_table_has_expected_entries(self):
+        """Spot-check UNIQUE_NAMES table has known items."""
+        assert UNIQUE_NAMES[0] == "The Gnasher"
+        assert UNIQUE_NAMES[1] == "Deathspade"
+        assert len(UNIQUE_NAMES) > 400
+
+    def test_set_names_table_has_expected_entries(self):
+        """Spot-check SET_NAMES table has known items."""
+        assert SET_NAMES[0] == "Civerb's Ward"
+        assert SET_NAMES[1] == "Civerb's Icon"
+        assert len(SET_NAMES) > 100

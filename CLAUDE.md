@@ -69,6 +69,21 @@ These are non-negotiable. Never skip them.
 - Nullable backend fields map to `T | null` in TypeScript, never `T | undefined`.
 - New pages go in `frontend/src/pages/PascalCase.tsx`; shared components in `frontend/src/components/PascalCase.tsx`.
 
+## D2R Data Files
+
+Extracted D2R game data files (tab-separated `.txt`) live at `data/tmp/excel/`. Use these as the authoritative source when generating or updating parser lookup tables — never hand-edit tables when data files are available.
+
+Key files for item parsing:
+- `itemstatcost.txt` — stat definitions (`*ID`, `Save Bits`, `Save Add`, `Save Param Bits`)
+- `magicprefix.txt` / `magicsuffix.txt` — magic affix names (row index = affix ID)
+- `uniqueitems.txt` / `setitems.txt` — unique/set item names and IDs
+- `rareprefix.txt` / `raresuffix.txt` — rare name word tables
+- `armor.txt` / `weapons.txt` / `misc.txt` — base item type definitions
+- `skills.txt` — skill names for stat formatting
+- `runes.txt` — runeword definitions
+
+Generation scripts in `scripts/generate_*.py` read these files and produce Python table modules.
+
 ## Key Files
 
 ```

@@ -12,6 +12,7 @@ from .tables.item_types import ITEM_TYPES
 from .tables.affixes import MAGIC_PREFIXES, MAGIC_SUFFIXES, CHARM_PREFIX_TABLE
 from .tables.rare_names import RARE_NAMES, SKILLTAB_PREFIX_NAMES
 from .tables.runewords import RUNEWORD_NAMES
+from .tables.unique_set_names import UNIQUE_NAMES, SET_NAMES
 
 log = logging.getLogger(__name__)
 
@@ -175,12 +176,18 @@ def resolve_name(
         return fallback, None
 
     elif quality == 7 and unique_id is not None:
-        # Unique without catalog entry
+        # Unique without catalog entry — try static table from D2R data files
+        static_name = UNIQUE_NAMES.get(unique_id)
+        if static_name:
+            return static_name, None
         fallback = (bname or item_type.strip()) + " (unique)"
         return fallback, None
 
     elif quality == 5 and set_id is not None:
-        # Set without catalog entry
+        # Set without catalog entry — try static table from D2R data files
+        static_name = SET_NAMES.get(set_id)
+        if static_name:
+            return static_name, None
         fallback = (bname or item_type.strip()) + " (set)"
         return fallback, None
 

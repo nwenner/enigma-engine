@@ -241,6 +241,9 @@ _SKILL_TAB_NAMES: dict[int, str] = {
     18: "Traps",
     19: "Shadow Disciplines",
     20: "Martial Arts",
+    21: "Summoning & Blood",
+    22: "Hexes & Combat",
+    23: "Sigils & Destruction",
 }
 
 # stat_id pairs: first stat_id → (second stat_id, format string).
@@ -259,6 +262,12 @@ _PAIRED_STATS: dict[int, tuple[int, str]] = {
 
 # Stats that are consumed as trailing members of a pair — never display standalone.
 _PAIRED_SECONDS: frozenset[int] = frozenset({18, 22, 24, 49, 51, 53, 55, 56, 58, 59})
+
+# Internal/cosmetic stat_ids that appear in item data but are not displayed in tooltips.
+_HIDDEN_STATS: frozenset[int] = frozenset({
+    140,  # item_extra_blood — cosmetic effect
+    154,  # item_staminadrainpct — internal stamina drain rate
+})
 
 # Simple stat_id → display template; {v} = value.
 # Only include stats common on dropped items (not internal engine stats).
@@ -284,11 +293,20 @@ _SIMPLE_TEMPLATES: dict[int, str] = {
     35:  "Magic Damage Reduced by {v}",
     36:  "{v}% Damage Reduced",
     37:  "{v}% Magic Resist",
+    38:  "+{v}% to All Resistances",
     39:  "+{v}% to Fire Resistance",
+    40:  "+{v}% to Maximum Fire Resistance",
     41:  "+{v}% to Lightning Resistance",
+    42:  "+{v}% to Maximum Lightning Resistance",
     43:  "+{v}% to Cold Resistance",
+    44:  "+{v}% to Maximum Cold Resistance",
     45:  "+{v}% to Poison Resistance",
+    46:  "+{v}% to Maximum Poison Resistance",
+    60:  "{v}% Life Stolen per Hit",
+    62:  "{v}% Mana Stolen per Hit",
     67:  "{v}% Faster Run/Walk",
+    71:  "+{v} to Maximum Stamina",
+    73:  "+{v} Maximum Durability",
     74:  "Replenish Life +{v}",
     75:  "+{v}% Enhanced Durability",
     76:  "+{v}% to Maximum Life",
@@ -307,27 +325,49 @@ _SIMPLE_TEMPLATES: dict[int, str] = {
     99:  "{v}% Faster Hit Recovery",
     102: "{v}% Faster Block Rate",
     105: "{v}% Faster Cast Rate",
+    108: "Hit Blinds Target +{v}",
     109: "Curse Resistance +{v}%",
     110: "Poison Length Reduced by {v}%",
     111: "+{v}% Damage to Undead",
+    112: "+{v} to Attack Rating against Undead",
+    113: "Hit Causes Monster to Flee {v}%",
+    114: "{v}% Damage Taken Goes to Mana",
     115: "Ignores Target's Defense",
+    116: "-{v}% to Target's Defense",
     118: "Half Freeze Duration",
     119: "{v}% Bonus to Attack Rating",
+    120: "+{v} to Attack Rating against Demons",
     121: "{v}% Damage to Demons",
     122: "{v}% Damage to Undead",
+    125: "Attract Radius +{v}",
     127: "+{v} to All Skills",
     128: "Attacker Takes Lightning Damage of {v}",
+    129: "Attacker Takes Fire Damage of {v}",
+    130: "Attacker Takes Cold Damage of {v}",
     132: "+{v} Bone Armor",
+    134: "Freezes Target +{v}",
     135: "{v}% Chance of Open Wounds",
     136: "{v}% Chance of Crushing Blow",
     138: "+{v} Mana after each Kill",
     139: "+{v} Life after each Demon Kill",
     141: "{v}% Deadly Strike",
+    142: "Fire Absorb {v}%",
+    143: "+{v} Fire Absorb",
+    144: "Lightning Absorb {v}%",
+    145: "+{v} Lightning Absorb",
+    146: "Magic Absorb {v}%",
+    147: "+{v} Magic Absorb",
+    148: "Cold Absorb {v}%",
+    149: "+{v} Cold Absorb",
     150: "Slows Target by {v}%",
     152: "Indestructible",
     153: "Cannot Be Frozen",
     156: "{v}% Piercing Attack",
+    159: "+{v} to Minimum Damage",
+    160: "+{v} to Maximum Damage",
     194: "Socketed ({v})",
+    252: "Repairs 1 Durability in {v} Seconds",
+    254: "Increased Stack Size +{v}",
     208: "+{v}% to Lightning Resistance",    # mod stat (Reign of the Warlock)
     255: "{v}% Find Item",
     385: "{v}% Extra Gold from Monsters",    # mod stat (Reign of the Warlock)
@@ -357,6 +397,10 @@ def format_item_stats(stats: list[RawStat]) -> list[str]:
         stat_id = s.stat_id
         v = s.value
         p = s.param
+
+        # Skip internal/cosmetic stats that have no in-game tooltip.
+        if stat_id in _HIDDEN_STATS:
+            continue
 
         # Skip zero-value stats — if a stat appears in the list, it should be non-zero.
         # Zero values indicate bit-alignment noise or padding.
@@ -432,6 +476,34 @@ def format_item_stats(stats: list[RawStat]) -> list[str]:
             lines.append(f"{v}% Chance to Cast Level {level} [Skill {skill_id}] on {event}")
             continue
 
+        # ── Per-level stats (214-249): value is rate in eighths per clvl ─────
+        _PERLEVEL_LABELS: dict[int, str] = {
+            214: "Defense",
+            215: "Enhanced Defense",
+            216: "Life",
+            217: "Mana",
+            218: "Maximum Damage",
+            219: "Maximum Damage",  # secondary
+            220: "Strength",
+            221: "Dexterity",
+            222: "Energy",
+            223: "Vitality",
+            224: "Attack Rating",
+            225: "Bonus to Attack Rating",
+            226: "Cold Absorb",
+            227: "Fire Absorb",
+            228: "Lightning Absorb",
+            229: "Poison Absorb",
+            230: "Cold Resist",
+            231: "Fire Resist",
+        }
+        if stat_id in _PERLEVEL_LABELS:
+            label = _PERLEVEL_LABELS[stat_id]
+            # value is rate in 8ths: at clvl 99, display = v * 99 // 8
+            display_at_99 = v * 99 // 8
+            lines.append(f"+{display_at_99} {label} (Based on Character Level)")
+            continue
+
         # ── Simple template lookup ───────────────────────────────────────────
         template = _SIMPLE_TEMPLATES.get(stat_id)
         if template is not None:
@@ -465,8 +537,7 @@ def parse_standalone_stats(item_bytes: bytes | bytearray) -> list[str]:
         if flags.is_simple or flags.is_ear or flags.is_runeword:
             return []
         fields = read_item_fields(item_bytes, flags, byte_start=0)
-        # quality 5 = set items: skip (multiple property lists produce partial/wrong results)
-        if fields.prop_bit_start == 0 or fields.quality == 5:
+        if fields.prop_bit_start == 0:
             return []
         stats = read_item_stats(item_bytes, fields.prop_bit_start, len(item_bytes) * 8)
         return format_item_stats(stats)

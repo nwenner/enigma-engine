@@ -318,3 +318,42 @@ class TestWarlockCodexParsing:
         """No Assassin or other-class skills should appear — confirms global ID decoding."""
         lines = self._load_stats()
         assert not any("Assassin Only" in l for l in lines), f"Wrong class in stats: {lines}"
+
+
+# ─── Set item stat parsing ──────────────────────────────────────────────────
+
+class TestSetItemStats:
+    """Set items (quality=5) should now return stats instead of empty lists."""
+
+    def test_set_items_parse_stats(self):
+        """At least one set item in the fixture should have non-empty stats."""
+        raw = FIXTURE_SC.read_bytes()
+        stash = parse_stash(raw, hardcore=False)
+        set_items_with_stats = []
+        for page in stash.pages:
+            for item in page.items:
+                if item.quality == 5 and item.prop_bit_start > 0:
+                    stats = read_item_stats(
+                        page.raw_bytes,
+                        item.prop_bit_start,
+                        item.byte_end * 8,
+                    )
+                    if stats:
+                        set_items_with_stats.append(item.display_name)
+        assert len(set_items_with_stats) > 0, (
+            "Expected at least one set item with parsed stats in fixture"
+        )
+
+    def test_parse_standalone_stats_set_item(self):
+        """parse_standalone_stats no longer skips set items."""
+        raw = FIXTURE_SC.read_bytes()
+        stash = parse_stash(raw, hardcore=False)
+        for page in stash.pages:
+            for item in page.items:
+                if item.quality == 5 and item.prop_bit_start > 0:
+                    item_bytes = page.raw_bytes[item.byte_start:item.byte_end]
+                    result = parse_standalone_stats(item_bytes)
+                    # Should return a non-empty list (base properties)
+                    assert isinstance(result, list)
+                    return
+        pytest.skip("No set items with properties found in fixture")

@@ -28,6 +28,7 @@ class ItemFlags:
     is_simple: bool
     is_ethereal: bool
     is_runeword: bool  # bit 26 (byte 3 bit 2)
+    is_socketed: bool   # bit 11 (byte 1 bit 3)
     position_x: int   # 4-bit grid column (bits 42–45)
     position_y: int   # 4-bit grid row    (bits 46–49)
 
@@ -52,6 +53,7 @@ def read_item_flags(data: bytes | bytearray, byte_start: int) -> ItemFlags:
       bits 50-52       = alt_position_id (3 bits)
     """
     b0 = data[byte_start]     if byte_start     < len(data) else 0
+    b1 = data[byte_start + 1] if byte_start + 1 < len(data) else 0
     b2 = data[byte_start + 2] if byte_start + 2 < len(data) else 0
     b3 = data[byte_start + 3] if byte_start + 3 < len(data) else 0
     b5 = data[byte_start + 5] if byte_start + 5 < len(data) else 0
@@ -63,6 +65,7 @@ def read_item_flags(data: bytes | bytearray, byte_start: int) -> ItemFlags:
         is_simple=bool((b2 >> 5) & 1),               # bit 21 (byte2 bit5)
         is_ethereal=bool((b2 >> 6) & 1),             # bit 22 (byte2 bit6)
         is_runeword=bool((b3 >> 2) & 1),             # bit 26 (byte3 bit2)
+        is_socketed=bool((b1 >> 3) & 1),             # bit 11 (byte1 bit3)
         position_x=(b5 >> 2) & 0xF,                  # bits 42-45
         position_y=((b5 >> 6) & 0x3) | ((b6 & 0x3) << 2),  # bits 46-49
     )

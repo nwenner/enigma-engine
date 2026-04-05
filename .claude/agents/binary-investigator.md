@@ -40,6 +40,12 @@ Your project memory at `.claude/agent-memory/binary-investigator/` is pre-loaded
 - `tests/item_parsing/fixtures/` — Real `.d2i` and `.d2s` files
 - `tests/item_parsing/fixtures/ITEM_DESCRIPTIONS.md` — Hand-documented item inventory for fixtures
 
+**D2R data files (authoritative source for lookup tables):**
+- `data/tmp/excel/` — Extracted D2R game data (tab-separated .txt)
+- Key files: `itemstatcost.txt` (stat bit widths), `magicprefix.txt`/`magicsuffix.txt` (affix names), `uniqueitems.txt`/`setitems.txt` (item names), `rareprefix.txt`/`raresuffix.txt`, `armor.txt`/`weapons.txt`/`misc.txt`, `skills.txt`
+- Generation scripts: `scripts/generate_*.py` read these files and produce Python table modules
+- Always use these data files when investigating stat widths, affix IDs, or item naming issues
+
 **Analysis scripts:**
 - `scripts/hex_compare.py` — Hex dump comparison between two files
 - `scripts/analyze_modern_header.py` — Analyze `.d2i` header

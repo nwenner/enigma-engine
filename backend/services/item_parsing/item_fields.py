@@ -31,11 +31,24 @@ from dataclasses import dataclass
 from .bit_reader import BitReader
 from .huffman import decode_item_type
 from .item_flags import FLAGS_BIT_COUNT, ItemFlags
+from .tables.item_categories import ARMOR_CODES, WEAPON_CODES, NODURABILITY_CODES, STACKABLE_CODES
 from .tables.stat_widths import STAT_TABLE
 
 log = logging.getLogger(__name__)
 
 _PROP_SENTINEL = 0x1FF  # 9-bit sentinel marking end of property list
+
+# Chained/dependent stats: when a lead stat is read, its dependent stats
+# follow inline (value bits only, no 9-bit stat_id header).
+# E.g., firemindam(48) is always followed by firemaxdam(49).
+CHAINED_STATS: dict[int, list[int]] = {
+    17: [18],         # item_maxdamage_percent → item_mindamage_percent
+    48: [49],         # firemindam → firemaxdam
+    50: [51],         # lightmindam → lightmaxdam
+    52: [53],         # magicmindam → magicmaxdam
+    54: [55, 56],     # coldmindam → coldmaxdam, coldlength
+    57: [58, 59],     # poisonmindam → poisonmaxdam, poisonlength
+}
 
 
 @dataclass
@@ -132,6 +145,20 @@ def read_charm_stats(
         param = reader.read(save_param_bits) if save_param_bits else 0
         raw_value = reader.read(save_bits) if save_bits else 0
         result.append((stat_id, param, raw_value - save_add))
+
+        # Handle chained/dependent stats (value bits follow inline, no stat_id header)
+        chained = CHAINED_STATS.get(stat_id)
+        if chained:
+            for dep_id in chained:
+                dep_entry = STAT_TABLE.get(dep_id)
+                if dep_entry is None:
+                    break
+                dep_bits, dep_add, dep_param_bits = dep_entry
+                if reader.tell() + dep_param_bits + dep_bits > item_end_bit:
+                    break
+                dep_param = reader.read(dep_param_bits) if dep_param_bits else 0
+                dep_raw = reader.read(dep_bits) if dep_bits else 0
+                result.append((dep_id, dep_param, dep_raw - dep_add))
     return result
 
 
@@ -194,6 +221,42 @@ def read_item_fields(
     if flags.is_runeword:
         runeword_id = reader.read(12)
         reader.read(4)  # property_list_count (number of stat lists that follow)
+
+    # ── Intermediate fields between quality data and property list ──────────
+    # These depend on item category (armor/weapon/misc) and flags.
+    code = item_type.strip()
+    is_armor = code in ARMOR_CODES
+    is_weapon = code in WEAPON_CODES
+    has_durability = (is_armor or is_weapon) and code not in NODURABILITY_CODES
+
+    # Prefix bit 1: always present (legacy HasRealmData, always 0 in D2R)
+    reader.read(1)
+
+    # Prefix bit 2: only for non-armor, non-weapon items (misc: charms, rings, etc.)
+    if not is_armor and not is_weapon:
+        reader.read(1)
+
+    # Defense: 11 bits if armor
+    if is_armor:
+        reader.read(11)  # armorclass: display = raw - 10
+
+    # Durability: max(8) + current(10 if max > 0)
+    if has_durability:
+        max_durability = reader.read(8)
+        if max_durability > 0:
+            reader.read(10)  # current durability
+
+    # Quantity: 9 bits if stackable (rare for complex/identified items)
+    if code in STACKABLE_CODES:
+        reader.read(9)
+
+    # Total sockets: 4 bits if IsSocketed flag is set
+    if flags.is_socketed:
+        reader.read(4)
+
+    # Set item mask: 5 bits if quality == Set
+    if quality == 5:
+        reader.read(5)  # bitmask for active partial set bonuses
 
     prop_bit_start = reader.tell()
 
