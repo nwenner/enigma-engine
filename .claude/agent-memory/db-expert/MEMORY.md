@@ -1,5 +1,8 @@
 # DB Expert Memory — Enigma Engine
 
+## Critical Rule: Working Directory
+ALWAYS write files to the canonical repo path `/Users/nickwenner/Dev/repos/enigma-engine/backend/...`. If launched from a worktree (path contains `.claude/worktrees/`), use absolute paths to the main repo. Never write code into a worktree.
+
 ## All Models (backend/models.py)
 14 SQLAlchemy ORM models, all Column() style in one file.
 

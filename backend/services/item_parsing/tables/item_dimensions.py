@@ -197,17 +197,17 @@ ITEM_DIMENSIONS: dict[str, tuple[int, int]] = {
     "7sb": (1, 3),  # Elegant Blade
     "7cm": (1, 3),  # Highland Blade
 
-    # ── Swords — Long 1H (1×4) ─────────────────────────────────────────────────
-    "bsd": (1, 4),  # Broad Sword
-    "crs": (1, 4),  # Crystal Sword
-    "bsw": (1, 4),  # Bastard Sword
+    # ── Swords — Broad/Crystal tier (2×3) — user-verified in D2R ──────────────
+    "bsd": (2, 3),  # Broad Sword
+    "crs": (2, 3),  # Crystal Sword  ← user verified
+    "bsw": (2, 3),  # Bastard Sword
     # Exceptional
-    "9bs": (1, 4),  # Battle Sword
-    "9cr": (1, 4),  # Dimensional Blade (exceptional Crystal Sword)
+    "9bs": (2, 3),  # Battle Sword
+    "9cr": (2, 3),  # Dimensional Blade (exceptional Crystal Sword)
     # Elite
-    "7bs": (1, 4),  # Conquest Sword
-    "7cr": (1, 4),  # Phase Blade
-    "7b7": (1, 4),  # Champion Sword
+    "7bs": (2, 3),  # Conquest Sword
+    "7cr": (2, 3),  # Phase Blade
+    "7b7": (2, 3),  # Champion Sword
 
     # ── Swords — 2H (2×4) ──────────────────────────────────────────────────────
     "clm": (2, 4),  # Claymore

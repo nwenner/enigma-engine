@@ -48,7 +48,7 @@ QUALITY_NAMES: dict[int, str] = {
 
 MAX_STASH_GOLD = 12_500_000
 PORTAL_TAB_INDEX = 4  # tab 5 = page index 4
-VISIBLE_TAB_COUNT = 5  # pages 0-4 are real tabs; page 5 is the terminal marker
+VISIBLE_TAB_COUNT = 6  # pages 0-5 are real tabs (page 5 = Runes tab added in Reign of the Warlock); page 6 is the terminal marker
 
 
 def _mode_hardcore(mode: str) -> bool:
@@ -220,6 +220,7 @@ async def fetch_stash(
                 "grid_y": item.grid_y,
                 "grid_width": _dims[0],
                 "grid_height": _dims[1],
+                "quantity": item.quantity,
             })
 
         tabs.append({
@@ -338,6 +339,7 @@ async def fetch_stash_local(
                 "grid_y": item.grid_y,
                 "grid_width": _dims[0],
                 "grid_height": _dims[1],
+                "quantity": item.quantity,
             })
 
         tabs.append({

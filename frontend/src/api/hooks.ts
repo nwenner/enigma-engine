@@ -34,6 +34,8 @@ import type {
   WarlockInfo,
   SeedsCurrentResponse,
   SavedSeedRecord,
+  RuneCatalogResponse,
+  Tab5RuneEntry,
 } from "./types";
 
 // ─── Characters ─────────────────────────────────────────────────────────────
@@ -959,6 +961,76 @@ export function useRestoreDemon() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["demon"] });
     },
+  });
+}
+
+// ─── Rune Store ──────────────────────────────────────────────────────────────
+
+export function useRuneCatalog() {
+  return useQuery<RuneCatalogResponse>({
+    queryKey: ["store", "catalog"],
+    queryFn: () => api.get("/store/catalog").then((r) => r.data),
+    staleTime: 0,
+  });
+}
+
+export function useTab5Runes(mode: "sc" | "hc") {
+  return useQuery<Tab5RuneEntry[]>({
+    queryKey: ["store", "tab5-runes", mode],
+    queryFn: () => api.get(`/store/tab5-runes?mode=${mode}`).then((r) => r.data),
+    staleTime: 0,
+  });
+}
+
+export function useSeedRuneLibrary() {
+  const qc = useQueryClient();
+  return useMutation<{ seeded: number }, Error, { file: File; hardcore: boolean }>({
+    mutationFn: ({ file, hardcore }) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("hardcore", String(hardcore));
+      return api.post("/store/seed", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }).then((r) => r.data);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["store", "catalog"] }),
+  });
+}
+
+export function useBuyRune() {
+  const qc = useQueryClient();
+  return useMutation<{ vault_gold: number; rune_name: string }, Error, { item_code: string; mode: string }>({
+    mutationFn: (body) => api.post("/store/buy", body).then((r) => r.data),
+    onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["store", "catalog"] });
+      qc.invalidateQueries({ queryKey: ["store", "tab5-runes", mode] });
+      qc.invalidateQueries({ queryKey: ["vault", "gold", mode] });
+      qc.invalidateQueries({ queryKey: ["seasons", "active", "stats"] });
+    },
+  });
+}
+
+export function useTradeRune() {
+  const qc = useQueryClient();
+  return useMutation<
+    { source_rune: string; target_rune: string },
+    Error,
+    { tab5_item_index: number; target_code: string; mode: string }
+  >({
+    mutationFn: (body) => api.post("/store/trade", body).then((r) => r.data),
+    onSuccess: (_data, { mode }) => {
+      qc.invalidateQueries({ queryKey: ["store", "catalog"] });
+      qc.invalidateQueries({ queryKey: ["store", "tab5-runes", mode] });
+      qc.invalidateQueries({ queryKey: ["stash", mode] });
+    },
+  });
+}
+
+export function useDeleteRuneFromLibrary() {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: string }, Error, string>({
+    mutationFn: (item_code) => api.delete(`/store/library/${item_code}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["store", "catalog"] }),
   });
 }
 

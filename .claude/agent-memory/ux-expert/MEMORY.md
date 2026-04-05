@@ -35,8 +35,9 @@ Status badge:    inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font
 ## Target Platforms
 1. Desktop browser (primary use — managing library, configuring sync)
 2. Steam Deck browser (secondary — ~1280×800, touchpad + touch input)
+3. iPhone/mobile browser (Safari — confirmed mobile-friendly; do NOT caveat phone usage)
 
-Steam Deck requirements:
+Steam Deck + mobile requirements:
 - Min touch target: 44×44px (min-h-[44px] min-w-[44px])
 - Min interactive text: text-sm (never text-xs for interactive elements)
 - Responsive: grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 for card grids

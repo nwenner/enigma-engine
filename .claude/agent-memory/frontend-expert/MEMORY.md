@@ -1,5 +1,8 @@
 # Frontend Expert Memory — Enigma Engine
 
+## Critical Rule: Working Directory
+ALWAYS write files to the canonical repo path `/Users/nickwenner/Dev/repos/enigma-engine/frontend/...`. If launched from a worktree (path contains `.claude/worktrees/`), use absolute paths to the main repo. Never write code into a worktree.
+
 ## Pages (frontend/src/pages/) — 12 total
 - Dashboard.tsx (26KB) — sync UI, device status cards, recent activity feed
 - Seasons.tsx (74KB) — LARGEST FILE — season CRUD, milestone management, rewards flow

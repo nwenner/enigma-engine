@@ -32,6 +32,7 @@
 - item_parsing/: `parse_stash(path, hardcore)`, `serialize_stash(stash)`, `insert_item_into_page(page, item)`
 
 ## Critical Rules
+- **Working directory**: ALWAYS write files to the canonical repo path `/Users/nickwenner/Dev/repos/enigma-engine/`. If launched from a worktree (path contains `.claude/worktrees/`), use absolute paths to the main repo. Never write code into a worktree.
 - Binary safety: `create_snapshot()` BEFORE any .d2s/.d2i write — always
 - D2R check: `check_d2r_running(conn_kwargs)` before file writes → raise HTTPException(409) if True
 - SFTP: always `await asyncio.to_thread(sftp_func, ...)` — paramiko is synchronous

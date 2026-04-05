@@ -1,7 +1,7 @@
 Enigma Engine project context — load this for a full project briefing.
 
 ## What It Is
-Dockerized web app (FastAPI + React, single Docker container on port 8080) that bidirectionally syncs Diablo 2 Resurrected `.d2s` save files between a Windows PC and Steam Deck. Manages sync state, backups, character tracking, Holy Grail, Item Vault, Demon Vault, Map Seeds, and Seasons — all via a local LAN web UI.
+Dockerized web app (FastAPI + React, single Docker container on port 8080) that bidirectionally syncs Diablo 2 Resurrected `.d2s` save files between a Windows PC and Steam Deck. Manages sync state, backups, character tracking, Holy Grail, Item Vault, Demon Vault, Map Seeds, and Seasons — accessible via web UI on local LAN or remotely via Tailscale VPN. UI is mobile-friendly (Desktop, Steam Deck, and iPhone all supported).
 
 ## Stack
 - Backend: Python 3.12 + FastAPI + SQLAlchemy async + aiosqlite (SQLite at data/db.sqlite)

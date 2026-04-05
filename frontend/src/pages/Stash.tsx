@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   useStash,
@@ -62,7 +62,21 @@ function qualityLabel(quality: number): string {
 }
 
 const MAX_STASH_GOLD = 12_500_000;
-const CELL_PX = 29;
+
+function useCellSize(): number {
+  const getSize = () => {
+    if (window.innerWidth >= 1024) return 60;  // lg desktop / Steam Deck → 600px grid
+    if (window.innerWidth >= 640)  return 40;  // sm–md tablet → 400px grid
+    return 28;                                  // mobile → 280px grid
+  };
+  const [cellPx, setCellPx] = useState(getSize);
+  useEffect(() => {
+    const handler = () => setCellPx(getSize());
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return cellPx;
+}
 
 function fmtGoldAmt(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -796,6 +810,7 @@ function StashGridItem({
   isRegistered,
   onStore,
   onRegisterReward,
+  cellPx,
 }: {
   item: StashItem;
   tab: number;
@@ -803,6 +818,7 @@ function StashGridItem({
   isRegistered?: boolean;
   onStore: () => void;
   onRegisterReward?: () => void;
+  cellPx: number;
 }) {
   const { data: preflight } = usePreflight();
   const d2rRunning = preflight?.pc_running === true || preflight?.deck_running === true;
@@ -816,10 +832,10 @@ function StashGridItem({
     <div
       style={{
         position: "absolute",
-        left: item.grid_x * CELL_PX + 1,
-        top: item.grid_y * CELL_PX + 1,
-        width: item.grid_width * CELL_PX - 2,
-        height: item.grid_height * CELL_PX - 2,
+        left: item.grid_x * cellPx + 1,
+        top: item.grid_y * cellPx + 1,
+        width: item.grid_width * cellPx - 2,
+        height: item.grid_height * cellPx - 2,
         background: QUALITY_BG[item.quality] ?? DEFAULT_ITEM_BG,
         border: `1px solid ${QUALITY_BORDER[item.quality] ?? DEFAULT_ITEM_BORDER}`,
         display: "flex",
@@ -923,7 +939,8 @@ function StashGrid({
   onRegisterReward?: (item: StashItem) => void;
   registeredIndices: Set<number>;
 }) {
-  const gridSize = 10 * CELL_PX;
+  const cellPx = useCellSize();
+  const gridSize = 10 * cellPx;
 
   const visibleItems = items.filter(
     (item) => !(item.is_simple && item.grid_x === 0 && item.grid_y === 0 && item.item_level === 0)
@@ -946,7 +963,7 @@ function StashGrid({
           key={`v${i}`}
           style={{
             position: "absolute",
-            left: i * CELL_PX,
+            left: i * cellPx,
             top: 0,
             width: 1,
             height: gridSize,
@@ -960,7 +977,7 @@ function StashGrid({
           key={`h${i}`}
           style={{
             position: "absolute",
-            top: i * CELL_PX,
+            top: i * cellPx,
             left: 0,
             height: 1,
             width: gridSize,
@@ -978,8 +995,90 @@ function StashGrid({
           isRegistered={registeredIndices.has(item.page_item_index)}
           onStore={() => onStore(item)}
           onRegisterReward={() => onRegisterReward?.(item)}
+          cellPx={cellPx}
         />
       ))}
+    </div>
+  );
+}
+
+// ─── Rune count view ─────────────────────────────────────────────────────────
+
+// r01–r15 = low, r16–r24 = mid, r25–r33 = high (matches Rune Store tier costs)
+function runeТier(num: number): "low" | "mid" | "high" {
+  if (num <= 15) return "low";
+  if (num <= 24) return "mid";
+  return "high";
+}
+
+const TIER_LABEL = { low: "Low", mid: "Mid", high: "High" } as const;
+const TIER_COLOR = {
+  low: "text-slate-300",
+  mid: "text-blue-300",
+  high: "text-d2gold",
+} as const;
+
+type RuneTier = "all" | "low" | "mid" | "high";
+
+function RuneCountView({ items }: { items: StashItem[] }) {
+  const [filter, setFilter] = useState<RuneTier>("all");
+
+  const runes = items.filter((it) => /^r\d{2}$/.test(it.item_type));
+  const entries = runes.map((it) => {
+    const num = parseInt(it.item_type.slice(1), 10);
+    return { name: it.base_item ?? it.item_type, count: it.quantity, num, tier: runeТier(num) };
+  });
+  const sorted = entries.sort((a, b) => a.num - b.num);
+  const visible = filter === "all" ? sorted : sorted.filter((r) => r.tier === filter);
+
+  if (sorted.length === 0) {
+    return <p className="text-slate-700 text-xs text-center py-8">No runes</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Tier filter */}
+      <div className="flex gap-1">
+        {(["all", "low", "mid", "high"] as RuneTier[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setFilter(t)}
+            className={`text-[10px] px-2 py-0.5 border transition-colors capitalize ${
+              filter === t
+                ? "text-d2gold border-d2gold/50 bg-d2gold/10"
+                : "text-slate-600 border-slate-800 hover:text-slate-400 hover:border-slate-600"
+            }`}
+          >
+            {t === "all" ? "All" : TIER_LABEL[t]}
+          </button>
+        ))}
+      </div>
+
+      {/* Rune rows grouped by tier */}
+      {(["low", "mid", "high"] as const)
+        .filter((t) => filter === "all" || filter === t)
+        .map((tier) => {
+          const tierRunes = visible.filter((r) => r.tier === tier);
+          if (tierRunes.length === 0) return null;
+          return (
+            <div key={tier}>
+              <p className={`text-[10px] uppercase tracking-widest font-diablo mb-1.5 ${TIER_COLOR[tier]}`}>
+                {TIER_LABEL[tier]} Runes
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                {tierRunes.map(({ name, count, num }) => (
+                  <div
+                    key={num}
+                    className="flex items-center justify-between px-3 py-2 bg-black/20 border border-d2bg-border/50"
+                  >
+                    <span className={`text-xs font-diablo ${TIER_COLOR[tier]}`}>{name}</span>
+                    <span className="text-xs text-slate-400 font-bold ml-2">×{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
     </div>
   );
 }
@@ -1019,7 +1118,7 @@ function StashTabView({
                 : "text-slate-600 hover:text-slate-400"
             }`}
           >
-            Tab {i + 1}
+            {i === 5 ? "Runes" : `Tab ${i + 1}`}
             {t.item_count > 0 && (
               <span className="ml-1 text-slate-700 text-[10px]">({t.item_count})</span>
             )}
@@ -1058,6 +1157,8 @@ function StashTabView({
       <div className="p-3 min-h-[200px]">
         {!tab || tab.item_count === 0 ? (
           <p className="text-slate-700 text-xs text-center py-8">Empty tab</p>
+        ) : activeTab === 5 ? (
+          <RuneCountView items={tab.items} />
         ) : viewMode === "grid" ? (
           <div className="flex justify-center">
             <StashGrid

@@ -141,6 +141,20 @@ async def init_db() -> None:
             pass
 
 
+        # rune_store_library (new table — CREATE IF NOT EXISTS for existing installs)
+        try:
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS rune_store_library (
+                    item_code TEXT NOT NULL PRIMARY KEY,
+                    tier TEXT NOT NULL,
+                    rune_name TEXT NOT NULL,
+                    raw_item_bytes BLOB NOT NULL,
+                    seeded_at DATETIME NOT NULL DEFAULT (datetime('now'))
+                )
+            """))
+        except Exception:
+            pass
+
         # Seed default demon tags (idempotent — INSERT OR IGNORE)
         default_tags = ["Fanaticism Aura", "Cursed", "Hephisto", "Listor"]
         for tag in default_tags:

@@ -55,6 +55,7 @@ class StashItemResponse(BaseModel):
     grid_y: int = 0
     grid_width: int = 1
     grid_height: int = 1
+    quantity: int = 1
 
 
 class StashTabResponse(BaseModel):

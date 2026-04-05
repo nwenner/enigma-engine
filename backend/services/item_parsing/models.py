@@ -36,6 +36,8 @@ class ParsedItem:
     # Stash grid position (bits 42-49 of flags block). 0 for socketed child items.
     grid_x: int = 0
     grid_y: int = 0
+    # Stack count from the rune section (runes tab only). 1 for all other items.
+    quantity: int = 1
 
 
 @dataclass

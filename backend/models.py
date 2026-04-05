@@ -302,3 +302,16 @@ class SavedSeed(Base):
     source_class = Column(String, nullable=False)         # e.g. "Warlock"
     source_version = Column(Integer, nullable=False)      # raw version int, e.g. 105
     saved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ─── Rune Store Library ───────────────────────────────────────────────────────
+
+class RuneStoreLibrary(Base):
+    """One raw-bytes entry per rune type, seeded by uploading a stash file."""
+    __tablename__ = "rune_store_library"
+
+    item_code      = Column(String(4), primary_key=True)        # "r01"–"r33"
+    tier           = Column(String, nullable=False)              # "low"|"mid"|"high"
+    rune_name      = Column(String, nullable=False)              # "El Rune", etc.
+    raw_item_bytes = Column(LargeBinary, nullable=False)
+    seeded_at      = Column(DateTime, default=datetime.utcnow, nullable=False)

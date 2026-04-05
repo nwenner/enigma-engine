@@ -169,6 +169,7 @@ export interface StashItem {
   grid_y: number;
   grid_width: number;
   grid_height: number;
+  quantity: number;
 }
 
 export interface StashTab {
@@ -441,6 +442,29 @@ export interface DemonRecord {
   notes: string | null;
   saved_at: string;
   demon_size: number;
+}
+
+// ─── Rune Store ──────────────────────────────────────────────────────────────
+
+export interface RuneCatalogEntry {
+  item_code: string;
+  rune_name: string;
+  tier: "low" | "mid" | "high";
+  gold_cost: number;
+  seeded: boolean;
+}
+
+export interface RuneCatalogResponse {
+  low: RuneCatalogEntry[];
+  mid: RuneCatalogEntry[];
+  high: RuneCatalogEntry[];
+}
+
+export interface Tab5RuneEntry {
+  item_index: number;
+  item_code: string;
+  rune_name: string;
+  tier: "low" | "mid" | "high";
 }
 
 // ─── Map Seeds ───────────────────────────────────────────────────────────────

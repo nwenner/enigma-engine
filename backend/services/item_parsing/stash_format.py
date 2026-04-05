@@ -23,7 +23,8 @@ import struct
 from pathlib import Path
 
 from .bit_reader import BitReader
-from .item_flags import read_item_flags
+from .huffman import decode_item_type
+from .item_flags import read_item_flags, FLAGS_BIT_COUNT
 from .item_fields import read_item_fields, read_charm_stats
 from .item_names import base_name, resolve_name
 from .tables.rare_names import RARE_NAMES
@@ -33,6 +34,52 @@ log = logging.getLogger(__name__)
 
 MODERN_HEADER_SIZE = 64   # bytes
 MODERN_SEP_SIZE    = 64   # bytes (same as header)
+
+_RUNE_SECTION_MARKER = bytes([0x55, 0xAA, 0x55, 0xAA])
+_RUNE_SECTION_INNER_MAGIC = 0xC0EAEDC0
+
+
+# ─── Rune section parser ──────────────────────────────────────────────────────
+
+def _parse_rune_section(raw: bytes | bytearray) -> dict[str, int]:
+    """
+    Extract per-type stack counts from the rune section appended to page 5 raw bytes.
+
+    The rune section is a structured binary block starting with the 4-byte marker
+    55 AA 55 AA, appended after the regular JM item bytes on the runes tab page.
+
+    Structure:
+      Outer header (64 bytes): magic(4)+version(4)+const(4)+gold(4)+size(4)+zeros(44)
+      Inner header (20 bytes): inner_magic(4)+version(2)+n1(2)+n2(2)+n3(2)+zeros(8)
+      Records: (n1+n2+n3) * 10 bytes each: count(uint32 LE) + timestamp(6 bytes)
+      Records 0–32: rune types r01–r33 in order.
+
+    Returns a dict mapping 4-char item_type (e.g. 'r01 ') → count.
+    Returns {} if no rune section is found.
+    """
+    rune_off = raw.find(_RUNE_SECTION_MARKER)
+    if rune_off < 0:
+        return {}
+
+    rune_sec = raw[rune_off:]
+    if len(rune_sec) < 64 + 20:
+        return {}
+
+    body = rune_sec[64:]
+    inner_magic = struct.unpack_from("<I", body, 0)[0]
+    if inner_magic != _RUNE_SECTION_INNER_MAGIC:
+        return {}
+
+    n1 = struct.unpack_from("<H", body, 6)[0]
+    counts: dict[str, int] = {}
+    for i in range(min(33, n1)):
+        record_off = 20 + i * 10
+        if record_off + 4 > len(body):
+            break
+        count = struct.unpack_from("<I", body, record_off)[0]
+        rune_type = f"r{i + 1:02d} "  # 4-char padded form matching Huffman output
+        counts[rune_type] = count
+    return counts
 
 
 # ─── Item start scanning ──────────────────────────────────────────────────────
@@ -186,18 +233,43 @@ def _parse_item(
 
 # ─── Page item parsing ────────────────────────────────────────────────────────
 
+def _read_simple_item_quantity(raw: bytes | bytearray, byte_start: int, byte_end: int) -> int:
+    """
+    Read the 8-bit quantity field that follows the Huffman type code in a rune-tab simple item.
+
+    In the Reign of the Warlock rune stash tab, each simple item (rune/gem) stores its
+    current stack count as 8 bits immediately after the 4-char Huffman type code.
+    This field is absent in regular stash tabs, so this function must only be called
+    for items on pages that contain the rune section marker.
+    """
+    reader = BitReader(raw, byte_start * 8 + FLAGS_BIT_COUNT)
+    decode_item_type(reader)   # advance past the type code
+    reader.read(2)             # skip socket_count(1) + unknown_flag(1)
+    if reader.tell() + 8 <= byte_end * 8:
+        return reader.read(8)
+    return 1
+
+
 def _parse_page_items(raw: bytearray, item_count: int, page_idx: int = 0) -> list[ParsedItem]:
     """Parse all items from a Modern format page's raw data."""
     if item_count == 0:
         return []
 
-    starts = _find_item_starts(raw, item_count)
+    # Cap item byte ranges at the rune section marker so the last item's byte_end
+    # doesn't bleed into the rune section binary block.
+    rune_section_start = raw.find(_RUNE_SECTION_MARKER)
+    items_end = rune_section_start if rune_section_start >= 0 else len(raw)
+    has_rune_section = rune_section_start >= 0
+
+    starts = _find_item_starts(raw[:items_end], item_count)
     items: list[ParsedItem] = []
 
     for i, byte_start in enumerate(starts):
-        byte_end = starts[i + 1] if i + 1 < len(starts) else len(raw)
+        byte_end = starts[i + 1] if i + 1 < len(starts) else items_end
         item = _parse_item(raw, byte_start, byte_end, page_idx=page_idx)
         if item is not None:
+            if has_rune_section and item.is_simple:
+                item.quantity = _read_simple_item_quantity(raw, byte_start, byte_end)
             items.append(item)
 
     return items
